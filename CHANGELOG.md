@@ -28,7 +28,7 @@ user-visible change, added in the same commit as the change. The format follows
   `retiredAt` and `timezone` with each team. `team create --name <TEXT> [--key <KEY>]
   [--description] [--timezone <TZ>] [--cycles-enabled <true|false>] [--parent <KEY>]
   [--copy-settings-from <KEY>]` makes a team through Linear's `teamCreate`, whose
-  creator becomes a member and owner with Linear's default states and labels; a name a
+  creator becomes a member, with Linear's default states and labels; a name a
   team already has is refused, exit 6, unless `--allow-duplicate`, and Linear keeps the
   key unique itself. `team retire` and `team unretire` set and clear `retiredAt`, so
   that a team keeps its issues and takes no new ones; `team delete` archives a team and

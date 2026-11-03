@@ -55,7 +55,7 @@ The team itself is `muster team get`: one JSON line with every setting of the te
 muster would use (`muster team get SMK` for another), from `cyclesEnabled` and the
 cycle settings to the `defaultIssueState`, the `timezone`, the `visibility` and the
 `issueCount`. `muster team create --name "Trying muster" --key TRY` makes a team:
-you become its member and owner and Linear makes its default states and labels; a name
+you become its member and Linear makes its default states and labels; a name
 a team already has is exit 6 unless `--allow-duplicate`, and Linear keeps the key
 unique itself. The team's lifecycle is four commands: `muster team retire TRY` sets
 `retiredAt`, so the team keeps its issues and takes no new ones, `muster team unretire
