@@ -28,8 +28,8 @@ for a new product does all of that in a browser, and the house has no browser in
 agents' path.
 
 Linear's schema, introspected on 2026-11-03 with the house's key by a read-only
-research session (every `Query` and `Mutation` field and 660 types, saved beside the
-session's report), has every piece and marks what it does not support. The facts that
+research session (every `Query` and `Mutation` field and 660 types; Evidence names the
+ones read), has every piece and marks what it does not support. The facts that
 shape the set: roles change through one mutation,
 `userChangeRole(id, role: owner | admin | user | guest | app)`, and there is no promote
 or demote mutation; the schema exposes no API-key query or mutation at all; labels have
@@ -297,7 +297,9 @@ project is made of, 0.5.0 for the rest.
 
 **Rules every group follows.** A setting that is a boolean in Linear takes `true` or
 `false` as its value, so one flag sets it either way and a flag left out leaves the
-setting alone. `none` clears a nullable field, as `--assignee none` does. A name
+setting alone; the listing above writes such a flag bare, `--private` for
+`--private <true|false>`, except where the value matters to the sentence. `none`
+clears a nullable field, as `--assignee none` does. A name
 resolves to one thing as `issue create --project` resolves a project: a team by key, a
 user by `me`, an email address or a name, a label, state, project, milestone,
 initiative, template or document by name in its scope, a cycle by number, an invite by
@@ -380,6 +382,11 @@ until a skill needs one; and every operation Linear marks deprecated.
   warning instead.
 - **`user promote` and `user demote`.** Lost: the schema has one mutation,
   `userChangeRole`, and one command per operation is the rule.
+- **`organization get` and `organization update`, after Linear's API type.** Lost:
+  Linear's product, its settings page and its documentation say workspace, the
+  glossary row maps the word to the type, and `whoami` keeps printing `organization`,
+  since a field is Linear's and a command name is the reader's; a reader who has never
+  used the API looks for the product's word.
 - **Every field of `TeamUpdateInput` and `OrganizationUpdateInput` as a flag.** Lost:
   the Internal, Alpha, deprecated and integration-coupled fields change under a released
   flag, which invariant 2 forbids; each flag costs a glossary row and a reference row
