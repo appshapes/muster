@@ -76,6 +76,14 @@ One JSON line: the comment, with its `body`, `createdAt`, `user` and `issue.iden
 Exit 0. A long comment goes through a file: `--body-file notes.md`, or `--body-file -`
 to read it from stdin.
 
+A link is `muster issue attach APP-12 --url https://github.com/appshapes/muster/pull/3
+--title "Pull request 3"`: one JSON line, the attachment with its `url`, `title`,
+`subtitle` and `issue.identifier`, which step 6 prints under `attachments.nodes`. The
+title is required; Linear requires one and muster invents none. Run it again with the
+same URL and a new title and you get the same `id` back with the new title: Linear
+updates a link the issue already has rather than adding a second
+([ADR 0013](../decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md)).
+
 ## 6. Read it back (one minute)
 
 ```sh

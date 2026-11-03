@@ -3,7 +3,16 @@
     "archivedAt": null,
     "assignee": null,
     "attachments": {
-      "nodes": [],
+      "nodes": [
+        {
+          "createdAt": "<string>",
+          "id": "<string>",
+          "sourceType": "<string>",
+          "subtitle": "<string>",
+          "title": "<string>",
+          "url": "<string>"
+        }
+      ],
       "pageInfo": {
         "hasNextPage": true
       }

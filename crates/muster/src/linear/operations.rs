@@ -188,6 +188,15 @@ op!(
     &[COMMENT_FIELDS]
 );
 
+op!(
+    ATTACHMENT_CREATE,
+    "AttachmentCreate",
+    Kind::Mutation,
+    "mutation AttachmentCreate($input: AttachmentCreateInput!) {
+  attachmentCreate(input: $input) { success attachment { id title subtitle url sourceType createdAt issue { id identifier } } }
+}"
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -201,7 +210,12 @@ pub static READS: &[&Operation] = &[
 ];
 
 /// Every write operation.
-pub static WRITES: &[&Operation] = &[&ISSUE_CREATE, &ISSUE_UPDATE, &COMMENT_CREATE];
+pub static WRITES: &[&Operation] = &[
+    &ISSUE_CREATE,
+    &ISSUE_UPDATE,
+    &COMMENT_CREATE,
+    &ATTACHMENT_CREATE,
+];
 
 /// An operation by its name, for the fixture test and the fake.
 pub fn by_name(name: &str) -> Option<&'static Operation> {

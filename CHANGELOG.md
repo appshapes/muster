@@ -18,6 +18,18 @@ user-visible change, added in the same commit as the change. The format follows
   `MUSTER_TEAM` names one, and an issue named as its own parent is a usage error,
   exit 2, before any request (ADR 0013, feature 1;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `issue attach <ISSUE> --url <URL> --title <TEXT> [--subtitle <TEXT>]` adds a link to an
+  issue through Linear's `attachmentCreate` and prints the attachment as Linear returned
+  it, with its `issue.identifier`; `issue get` lists it under `attachments.nodes`, newest
+  first. A URL the issue already has is updated in place, same id, and a subtitle left
+  out stays, as Linear does; an empty URL or title is a usage error, exit 2, before any
+  request (ADR 0013, feature 2; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `BODY_MAX_BYTES` now bounds a title, a link and a subtitle as it bounds a description
+  and a comment: a larger one is refused, exit 6, before any request, and the message
+  names which one was too long with a hint that fits it; only a body is told it can be
+  split over several comments. Linux refuses one argv string over 128 KiB before
+  muster runs, so from a flag's value the bound is reached only where the OS allows
+  the argument, as macOS does; from a file or stdin it is reached everywhere.
 - `just lint-docs` and `just docs` check the glossary: every command group and every
   flag noun the reference introduces has a row in `docs/glossary.md`, and a flag that
   is a switch or a mode is listed in the script with its reason (ADR 0006's Revisit;

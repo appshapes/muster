@@ -69,7 +69,7 @@ pub enum Command {
         #[command(subcommand)]
         command: ListCommand,
     },
-    /// Issues: get, list, create, comment, close, update
+    /// Issues: get, list, create, comment, attach, close, update
     Issue {
         /// The issue command.
         #[command(subcommand)]
@@ -108,6 +108,8 @@ pub enum IssueCommand {
     Create(Box<CreateArgs>),
     /// Add a comment to an issue
     Comment(CommentArgs),
+    /// Add a link to an issue: a URL with a title, which Linear shows as an attachment
+    Attach(AttachArgs),
     /// Move an issue to the team's completed state, or to --state, or with --cancel to its canceled state, after an optional comment; prints the comment, then the issue
     Close(CloseArgs),
     /// Change an issue's title, state, labels, priority, assignee, project, parent or description
@@ -203,6 +205,23 @@ pub struct CommentArgs {
     /// The comment from a file, or from stdin when PATH is `-`
     #[arg(long, value_name = "PATH")]
     pub body_file: Option<String>,
+}
+
+/// `issue attach`.
+#[derive(Args, Debug)]
+pub struct AttachArgs {
+    /// The identifier (APP-12), the number alone (12, in the team) or the id
+    #[arg(value_name = "ISSUE")]
+    pub issue: String,
+    /// The link; a URL the issue already has is updated in place, with the same id, not added again
+    #[arg(long, value_name = "URL")]
+    pub url: String,
+    /// The title Linear shows for the link; required, because Linear requires one and muster invents none
+    #[arg(long, value_name = "TEXT")]
+    pub title: String,
+    /// A line under the title
+    #[arg(long, value_name = "TEXT")]
+    pub subtitle: Option<String>,
 }
 
 /// `issue close`.
