@@ -40,7 +40,7 @@ jq -e '.urlKey == "fake" and (.userCount | type) == "number" and .subscription =
 
 step "muster team get"
 "$bin" team get | tee "$tmp/team.json"
-jq -e '.key == "APP" and .cyclesEnabled == false and .defaultIssueState.name == "Backlog"' "$tmp/team.json" >/dev/null
+jq -e '.key == "APP" and .cyclesEnabled == true and .defaultIssueState.name == "Backlog"' "$tmp/team.json" >/dev/null
 
 step "muster user get me"
 "$bin" user get me | tee "$tmp/user.json"
@@ -83,6 +83,26 @@ step "muster project get and update"
 "$bin" project update "Trying muster" --status "In Progress" --lead me | jq -e '.status.name == "In Progress" and .lead.id' >/dev/null
 "$bin" project get "Trying muster" | tee "$tmp/project-get.json"
 jq -e '.name == "Trying muster" and .status.name == "In Progress" and (.members.nodes | type) == "array"' "$tmp/project-get.json" >/dev/null
+
+step "muster cycle list --active and the issue's --cycle"
+"$bin" cycle list --active | tee "$tmp/cycle.json"
+jq -e '.isActive == true and .number == 2 and .team.key == "APP"' "$tmp/cycle.json" >/dev/null
+"$bin" issue update "$id" --cycle active | jq -e '.cycle.number == 2' >/dev/null
+"$bin" cycle get 2 | jq -e --arg id "$id" '[.issues.nodes[].identifier] | index($id) != null' >/dev/null
+
+step "muster document create, list --project and get"
+# The fake seeds a document titled "Plan", so the README's is "Kickoff".
+"$bin" document create --title "Kickoff" --project "Trying muster" --content "# Kickoff" | tee "$tmp/document.json"
+jq -e '.title == "Kickoff" and .project.name == "Trying muster" and .content == "# Kickoff"' "$tmp/document.json" >/dev/null
+"$bin" document list --project "Trying muster" | jq -s -e 'map(.title) == ["Kickoff"]' >/dev/null
+"$bin" document get Kickoff | jq -e '.content == "# Kickoff"' >/dev/null
+
+step "muster template create --data-file, list --type and get"
+printf '{"title": "Feature: ", "priority": 3}\n' > "$tmp/feature.json"
+"$bin" template create --name "Feature" --type issue --data-file "$tmp/feature.json" --description "For a feature." | tee "$tmp/template.json"
+jq -e '.name == "Feature" and .type == "issue" and .team.key == "APP" and (.templateData | fromjson).priority == 3' "$tmp/template.json" >/dev/null
+"$bin" template list --type issue | jq -s -e 'map(.name) | index("Feature") != null' >/dev/null
+"$bin" template get Feature | jq -e '(.templateData | fromjson).title == "Feature: "' >/dev/null
 
 step "muster webhook create, update --enabled false and list"
 printf 'quickstart-signing-secret\n' > "$tmp/secret"

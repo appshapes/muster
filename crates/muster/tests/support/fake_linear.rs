@@ -56,6 +56,12 @@ struct Workspace {
     initiatives: Vec<Value>,
     /// The initiative-to-project links, each with `initiativeId` and `projectId`.
     initiative_links: Vec<Value>,
+    /// The cycles of every team, each with its `team` by id and key, newest first.
+    cycles: Vec<Value>,
+    /// The documents, with `content`, newest first.
+    documents: Vec<Value>,
+    /// The templates, the team's and the workspace's, newest first.
+    templates: Vec<Value>,
     /// The webhooks, newest first, each with its `secret`, which no answer carries.
     webhooks: Vec<Value>,
 }
@@ -190,6 +196,34 @@ impl Fake {
             st.ws.projects.push(project);
             let (id, now) = (st.ws.id(), st.ws.now());
             st.ws.initiative_links.push(json!({ "id": id, "createdAt": now, "initiativeId": initiative_id, "projectId": project_id }));
+        }
+    }
+
+    /// Put `n` new issues of the team in its cycle `number`, for the bound test of
+    /// `cycle get`.
+    pub fn add_cycle_issues(&self, team_key: &str, number: f64, n: usize) {
+        let mut st = self.state.lock().unwrap();
+        let cycle = st
+            .ws
+            .cycles
+            .iter()
+            .find(|c| c["team"]["key"] == team_key && c["number"].as_f64() == Some(number))
+            .map(|c| json!({ "id": c["id"], "number": c["number"], "name": c["name"] }))
+            .expect("the cycle exists");
+        for k in 1..=n {
+            let mut issue = st.ws.new_issue(
+                team_key,
+                &format!("In the cycle {k}"),
+                None,
+                "Todo",
+                &[],
+                0,
+                None,
+                None,
+                None,
+            );
+            issue["cycle"] = cycle.clone();
+            st.ws.issues.push(issue);
         }
     }
 
@@ -473,6 +507,9 @@ fn compare(value: &Value, comparator: &Value) -> bool {
     })
 }
 
+/// How many nodes a collection clause of a filter sees, Linear's largest page.
+const PAGE_CAP_FOR_FILTERS: usize = 250;
+
 /// Whether an object passes a filter: each key is a field (with nested filters for
 /// objects), `and`/`or` combine, and a `nodes` list under a field matches if any node does.
 fn passes(object: &Value, filter: &Value) -> bool {
@@ -555,6 +592,9 @@ impl Workspace {
             project_updates: Vec::new(),
             initiatives: Vec::new(),
             initiative_links: Vec::new(),
+            cycles: Vec::new(),
+            documents: Vec::new(),
+            templates: Vec::new(),
             webhooks: Vec::new(),
         };
         // Every field `Workspace` asks for, with the values a Free workspace shows; the
@@ -586,7 +626,38 @@ impl Workspace {
             let label = ws.new_label(name, color, None, None, false);
             ws.labels.push(label);
         }
-        let team = ws.new_team("APP", "Fake Team");
+        let mut team = ws.new_team("APP", "Fake Team");
+        // The seeded team uses cycles: one past, one active, one to come, so that every
+        // cycle answer has a node and `--cycle active` and `next` resolve (ADR 0014,
+        // group 13).
+        team["cyclesEnabled"] = json!(true);
+        let past = ws.new_cycle(
+            &team,
+            1.0,
+            "2026-10-19T00:00:00.000Z",
+            "2026-10-26T00:00:00.000Z",
+            Some("2026-10-26T00:00:00.000Z"),
+            (false, false, true, false, true),
+        );
+        let active = ws.new_cycle(
+            &team,
+            2.0,
+            "2026-10-26T00:00:00.000Z",
+            "2026-11-02T00:00:00.000Z",
+            None,
+            (true, false, false, false, false),
+        );
+        let next = ws.new_cycle(
+            &team,
+            3.0,
+            "2026-11-02T00:00:00.000Z",
+            "2026-11-09T00:00:00.000Z",
+            None,
+            (false, true, false, true, false),
+        );
+        let _ = (&past, &next);
+        team["activeCycle"] =
+            json!({ "id": active["id"], "number": active["number"], "name": active["name"] });
         ws.teams.push(team.clone());
         // The seeded people are the team's members, the first its owner (ADR 0014,
         // group 3).
@@ -625,6 +696,22 @@ impl Workspace {
             json!({ "id": me["id"], "name": me["name"], "displayName": me["displayName"] });
         project["memberIds"] = json!([me["id"]]);
         ws.projects.push(project.clone());
+        // One document in the project, so that every document answer has a node and
+        // the recorder finds one (ADR 0014, group 14).
+        let _ = ws
+            .new_document(
+                "Plan",
+                &json!({ "content": "# Plan\n\nThe fake project's plan.", "projectId": project["id"] }),
+            )
+            .expect("the seeded project exists");
+        // One issue template the workspace shares, so that every template answer has a
+        // node and the recorder finds one (ADR 0014, group 15).
+        let _ = ws
+            .new_template(&json!({
+                "type": "issue", "name": "Bug report", "description": "For a bug.",
+                "templateData": { "title": "Bug: ", "description": "## Steps\n\n1. " },
+            }))
+            .expect("a workspace template needs no team");
         // One webhook of the team, so that every webhook answer has a node and the
         // recorder finds one (ADR 0014, group 16).
         let _ = ws
@@ -671,7 +758,7 @@ impl Workspace {
             "https://example.com/first",
         );
         let label_id = ws.labels[2]["id"].clone();
-        let b = ws.new_issue(
+        let mut b = ws.new_issue(
             "APP",
             "Connect your tools",
             Some("The second onboarding issue."),
@@ -682,6 +769,9 @@ impl Workspace {
             Some(&other),
             None,
         );
+        // In the active cycle, so that `cycle get` and the recorder find an issue node.
+        b["cycle"] =
+            json!({ "id": active["id"], "number": active["number"], "name": active["name"] });
         ws.issues.push(b);
         let c = ws.new_issue(
             "APP",
@@ -1131,6 +1221,154 @@ impl Workspace {
             .map(|i| json!({ "id": i["id"], "name": i["name"] }))
             .unwrap_or(Value::Null);
         json!({ "id": link["id"], "createdAt": link["createdAt"], "project": project, "initiative": initiative })
+    }
+
+    /// A cycle of a team with every `CycleFields` field (ADR 0014, group 13), newest
+    /// first in the store as Linear orders a connection; the flags are
+    /// `(isActive, isNext, isPrevious, isFuture, isPast)`.
+    fn new_cycle(
+        &mut self,
+        team: &Value,
+        number: f64,
+        starts_at: &str,
+        ends_at: &str,
+        completed_at: Option<&str>,
+        flags: (bool, bool, bool, bool, bool),
+    ) -> Value {
+        let (id, now) = (self.id(), self.now());
+        let cycle = json!({
+            "id": id, "number": number, "name": null, "description": null,
+            "startsAt": starts_at, "endsAt": ends_at, "completedAt": completed_at,
+            "isActive": flags.0, "isNext": flags.1, "isPrevious": flags.2, "isFuture": flags.3, "isPast": flags.4,
+            "progress": 0.0, "createdAt": now, "updatedAt": now, "archivedAt": null,
+            "team": { "id": team["id"], "key": team["key"] },
+        });
+        self.cycles.insert(0, cycle.clone());
+        cycle
+    }
+
+    /// A cycle as `CycleByNumber` answers it: with its issues paged at the bound.
+    fn cycle_detail(&self, cycle: &Value, issues: usize) -> Value {
+        let mut view = cycle.clone();
+        let in_cycle: Vec<Value> = self
+            .issues
+            .iter()
+            .filter(|i| i["cycle"]["id"] == cycle["id"] && i["archivedAt"].is_null())
+            .map(|i| json!({ "id": i["id"], "identifier": i["identifier"], "title": i["title"], "state": i["state"] }))
+            .collect();
+        view["issues"] = Workspace::page(in_cycle, issues);
+        view
+    }
+
+    /// The cycle `cycleId` names, as an issue carries it, for the issue's team; `None`
+    /// to clear; a cycle of another team is Linear's refusal.
+    fn cycle_for(&self, input: &Value, team_id: &Value) -> Result<Value, (u16, Value)> {
+        match input["cycleId"].as_str() {
+            Some(cid) => match self.cycles.iter().find(|c| c["id"] == cid) {
+                Some(c) if c["team"]["id"] == *team_id => {
+                    Ok(json!({ "id": c["id"], "number": c["number"], "name": c["name"] }))
+                }
+                Some(_) => Err((
+                    200,
+                    json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "The cycle belongs to another team." } } ], "data": null }),
+                )),
+                None => Err(not_found("Cycle")),
+            },
+            None => Ok(Value::Null),
+        }
+    }
+
+    /// A document with every `DocumentFields` field (ADR 0014, group 14) and its
+    /// `content`, newest first in the store as Linear orders a connection.
+    fn new_document(&mut self, title: &str, input: &Value) -> Result<Value, (u16, Value)> {
+        let slug: String = title
+            .to_ascii_lowercase()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect();
+        let (id, now) = (self.id(), self.now());
+        let me = self.users[0].clone();
+        let person =
+            json!({ "id": me["id"], "name": me["name"], "displayName": me["displayName"] });
+        let project = match input["projectId"].as_str() {
+            Some(pid) => match self.projects.iter().find(|p| p["id"] == pid) {
+                Some(p) => json!({ "id": p["id"], "name": p["name"] }),
+                None => return Err(not_found("Project")),
+            },
+            None => Value::Null,
+        };
+        let issue = match input["issueId"].as_str() {
+            Some(iid) => match self.issues.iter().find(|i| i["id"] == iid) {
+                Some(i) => json!({ "id": i["id"], "identifier": i["identifier"] }),
+                None => return Err(not_found("Issue")),
+            },
+            None => Value::Null,
+        };
+        // Linear, 2026-11-03: "A document needs a project, initiative, team, issue,
+        // release, or cycle."; muster offers the project and the issue.
+        if project.is_null() && issue.is_null() {
+            return Err(Workspace::document_needs_a_home());
+        }
+        let document = json!({
+            "id": id, "title": title, "icon": null, "color": null,
+            "url": format!("https://linear.app/fake/document/{slug}"), "slugId": slug,
+            "createdAt": now, "updatedAt": now, "archivedAt": null, "trashed": null,
+            "creator": person, "owner": person, "updatedBy": person,
+            "project": project, "issue": issue, "content": input["content"],
+        });
+        self.documents.insert(0, document.clone());
+        Ok(document)
+    }
+
+    /// Linear's refusal of a document with nothing to live under, as answered on
+    /// 2026-11-03.
+    fn document_needs_a_home() -> (u16, Value) {
+        (
+            200,
+            json!({ "errors": [ { "message": "invalid document input", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "A document needs a project, initiative, team, issue, release, or cycle." } } ], "data": null }),
+        )
+    }
+
+    /// A document as `DocumentFields` answers it: without `content`.
+    fn document_view(document: &Value) -> Value {
+        let mut view = document.clone();
+        if let Some(map) = view.as_object_mut() {
+            map.remove("content");
+        }
+        view
+    }
+
+    /// A template with every `TemplateFields` field (ADR 0014, group 15), newest first
+    /// in the store; `team` is `None` for one the workspace shares.
+    fn new_template(&mut self, input: &Value) -> Result<Value, (u16, Value)> {
+        let (id, now) = (self.id(), self.now());
+        let me = self.users[0].clone();
+        let team = match input["teamId"].as_str() {
+            Some(tid) => match self.teams.iter().find(|t| t["id"] == tid) {
+                Some(t) => json!({ "id": t["id"], "key": t["key"] }),
+                None => return Err(not_found("Team")),
+            },
+            None => Value::Null,
+        };
+        // Linear takes `templateData` as JSON and returns it as a string of JSON
+        // (read on 2026-11-03), so the store keeps the string.
+        let data = Workspace::template_data_string(&input["templateData"]);
+        let template = json!({
+            "id": id, "type": input["type"], "name": input["name"], "description": input["description"],
+            "icon": null, "color": null, "templateData": data, "sortOrder": 0.0,
+            "lastAppliedAt": null, "createdAt": now, "updatedAt": now, "archivedAt": null,
+            "team": team, "creator": { "id": me["id"], "name": me["name"], "displayName": me["displayName"] },
+        });
+        self.templates.insert(0, template.clone());
+        Ok(template)
+    }
+
+    /// `templateData` as Linear returns it: a string of JSON, whatever JSON came in.
+    fn template_data_string(data: &Value) -> Value {
+        match data {
+            Value::String(s) => Value::String(s.clone()),
+            other => Value::String(other.to_string()),
+        }
     }
 
     /// A webhook with every `WebhookFields` field (ADR 0014, group 16) and its
@@ -2056,6 +2294,291 @@ impl Workspace {
                     json!({ "data": { "initiativeToProjectDelete": { "success": true, "entityId": id } } }),
                 )
             }
+            "Cycles" => {
+                // The filter sees the cycle with its issues, so that a collection
+                // clause such as the recorder's `issues: { length: { gt: 0 } }` works.
+                let cycles: Vec<Value> = self
+                    .cycles
+                    .iter()
+                    .filter(|c| {
+                        c["archivedAt"].is_null()
+                            && passes(&self.cycle_detail(c, PAGE_CAP_FOR_FILTERS), filter)
+                    })
+                    .cloned()
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "cycles": Workspace::page(cycles, first) } }),
+                )
+            }
+            "CycleByNumber" => {
+                let Some(issues) = vars["issues"].as_u64().map(|n| n as usize) else {
+                    return missing_variable("issues", "Int!");
+                };
+                let key = vars["key"].as_str().unwrap_or("");
+                let number = vars["number"].as_f64();
+                let found: Vec<Value> = self
+                    .cycles
+                    .iter()
+                    .filter(|c| {
+                        c["archivedAt"].is_null()
+                            && c["team"]["key"] == key
+                            && c["number"].as_f64() == number
+                    })
+                    .map(|c| self.cycle_detail(c, issues))
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "cycles": Workspace::page(found, 1) } }),
+                )
+            }
+            "CycleUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "CycleUpdateInput!");
+                };
+                let Some(index) = self.cycles.iter().position(|c| c["id"] == id) else {
+                    return not_found("Cycle");
+                };
+                let now = self.now();
+                for (field, value) in input {
+                    if ["name", "description", "startsAt", "endsAt", "completedAt"]
+                        .contains(&field.as_str())
+                    {
+                        self.cycles[index][field] = value;
+                    }
+                }
+                self.cycles[index]["updatedAt"] = json!(now);
+                (
+                    200,
+                    json!({ "data": { "cycleUpdate": { "success": true, "cycle": self.cycles[index].clone() } } }),
+                )
+            }
+            "Documents" => {
+                let documents: Vec<Value> = self
+                    .documents
+                    .iter()
+                    .filter(|d| d["archivedAt"].is_null() && passes(d, filter))
+                    .map(Workspace::document_view)
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "documents": Workspace::page(documents, first) } }),
+                )
+            }
+            "DocumentByTitle" => {
+                let title = vars["title"].as_str().unwrap_or("");
+                let include_archived = vars["includeArchived"].as_bool().unwrap_or(false);
+                let found: Vec<Value> = self
+                    .documents
+                    .iter()
+                    .filter(|d| {
+                        (include_archived || d["archivedAt"].is_null())
+                            && d["title"]
+                                .as_str()
+                                .is_some_and(|t| t.eq_ignore_ascii_case(title))
+                    })
+                    .cloned()
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "documents": Workspace::page(found, 1) } }),
+                )
+            }
+            "DocumentCreate" => {
+                let input = vars["input"].clone();
+                let Some(title) = input["title"].as_str().filter(|t| !t.trim().is_empty()) else {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "title should not be empty" } } ], "data": null }),
+                    );
+                };
+                match self.new_document(title, &input) {
+                    Ok(document) => (
+                        200,
+                        json!({ "data": { "documentCreate": { "success": true, "document": document } } }),
+                    ),
+                    Err(answer) => answer,
+                }
+            }
+            "DocumentUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "DocumentUpdateInput!");
+                };
+                let Some(index) = self
+                    .documents
+                    .iter()
+                    .position(|d| d["id"] == id && d["archivedAt"].is_null())
+                else {
+                    return not_found("Document");
+                };
+                let now = self.now();
+                let mut document = self.documents[index].clone();
+                for (field, value) in input {
+                    match field.as_str() {
+                        "projectId" => {
+                            document["project"] = match value.as_str() {
+                                Some(pid) => match self.projects.iter().find(|p| p["id"] == pid) {
+                                    Some(p) => json!({ "id": p["id"], "name": p["name"] }),
+                                    None => return not_found("Project"),
+                                },
+                                None => Value::Null,
+                            };
+                        }
+                        "issueId" => {
+                            document["issue"] = match value.as_str() {
+                                Some(iid) => match self.issues.iter().find(|i| i["id"] == iid) {
+                                    Some(i) => {
+                                        json!({ "id": i["id"], "identifier": i["identifier"] })
+                                    }
+                                    None => return not_found("Issue"),
+                                },
+                                None => Value::Null,
+                            };
+                        }
+                        other => {
+                            document[other] = value;
+                        }
+                    }
+                }
+                if document["project"].is_null() && document["issue"].is_null() {
+                    return Workspace::document_needs_a_home();
+                }
+                document["updatedAt"] = json!(now);
+                let me = &self.users[0];
+                document["updatedBy"] =
+                    json!({ "id": me["id"], "name": me["name"], "displayName": me["displayName"] });
+                self.documents[index] = document.clone();
+                (
+                    200,
+                    json!({ "data": { "documentUpdate": { "success": true, "document": document } } }),
+                )
+            }
+            "DocumentDelete" | "DocumentUnarchive" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let deleting = op == "DocumentDelete";
+                let Some(index) = self
+                    .documents
+                    .iter()
+                    .position(|d| d["id"] == id && (d["archivedAt"].is_null() == deleting))
+                else {
+                    return not_found("Document");
+                };
+                let now = self.now();
+                if deleting {
+                    self.documents[index]["archivedAt"] = json!(now);
+                    self.documents[index]["trashed"] = json!(true);
+                } else {
+                    self.documents[index]["archivedAt"] = Value::Null;
+                    self.documents[index]["trashed"] = Value::Null;
+                }
+                let field = if deleting {
+                    "documentDelete"
+                } else {
+                    "documentUnarchive"
+                };
+                (
+                    200,
+                    json!({ "data": { field: { "success": true, "entity": Workspace::document_view(&self.documents[index]) } } }),
+                )
+            }
+            "Templates" => {
+                let include_archived = vars["includeArchived"].as_bool().unwrap_or(false);
+                let templates: Vec<Value> = self
+                    .templates
+                    .iter()
+                    .filter(|t| {
+                        (include_archived || t["archivedAt"].is_null()) && passes(t, filter)
+                    })
+                    .take(first)
+                    .cloned()
+                    .collect();
+                (200, json!({ "data": { "templateSearch": templates } }))
+            }
+            "TemplateByName" => {
+                // The name in the team's scope, its own and the workspace's, two at
+                // most, as the operation's filter and `first` ask (ADR 0014, group 15).
+                let key = vars["key"].as_str().unwrap_or("");
+                let name = vars["name"].as_str().unwrap_or("");
+                let include_archived = vars["includeArchived"].as_bool().unwrap_or(false);
+                let found: Vec<Value> = self
+                    .templates
+                    .iter()
+                    .filter(|t| {
+                        (include_archived || t["archivedAt"].is_null())
+                            && t["name"]
+                                .as_str()
+                                .is_some_and(|n| n.eq_ignore_ascii_case(name))
+                            && (t["team"].is_null() || t["team"]["key"] == key)
+                    })
+                    .take(2)
+                    .cloned()
+                    .collect();
+                (200, json!({ "data": { "templateSearch": found } }))
+            }
+            "TemplateCreate" => {
+                let input = vars["input"].clone();
+                if input["name"].as_str().is_none_or(|n| n.trim().is_empty()) {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "name should not be empty" } } ], "data": null }),
+                    );
+                }
+                if !["issue", "project", "document"].contains(&input["type"].as_str().unwrap_or(""))
+                {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "type must be one of issue, project, document" } } ], "data": null }),
+                    );
+                }
+                match self.new_template(&input) {
+                    Ok(template) => (
+                        200,
+                        json!({ "data": { "templateCreate": { "success": true, "template": template } } }),
+                    ),
+                    Err(answer) => answer,
+                }
+            }
+            "TemplateUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "TemplateUpdateInput!");
+                };
+                let Some(index) = self
+                    .templates
+                    .iter()
+                    .position(|t| t["id"] == id && t["archivedAt"].is_null())
+                else {
+                    return not_found("Template");
+                };
+                let now = self.now();
+                for (field, value) in input {
+                    if field == "templateData" {
+                        self.templates[index][field] = Workspace::template_data_string(&value);
+                    } else if ["name", "description", "icon", "color", "sortOrder"]
+                        .contains(&field.as_str())
+                    {
+                        self.templates[index][field] = value;
+                    }
+                }
+                self.templates[index]["updatedAt"] = json!(now);
+                (
+                    200,
+                    json!({ "data": { "templateUpdate": { "success": true, "template": self.templates[index].clone() } } }),
+                )
+            }
+            "TemplateDelete" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.templates.iter().position(|t| t["id"] == id) else {
+                    return not_found("Template");
+                };
+                self.templates.remove(index);
+                (
+                    200,
+                    json!({ "data": { "templateDelete": { "success": true, "entityId": id } } }),
+                )
+            }
             "Webhooks" => {
                 let hooks: Vec<Value> = self
                     .webhooks
@@ -2755,6 +3278,13 @@ impl Workspace {
                     },
                     None => Value::Null,
                 };
+                let cycle = match input.get("cycleId") {
+                    Some(_) => match self.cycle_for(input, &team["id"]) {
+                        Ok(c) => c,
+                        Err(answer) => return answer,
+                    },
+                    None => Value::Null,
+                };
                 let mut issue = self.new_issue(
                     &team_key,
                     title,
@@ -2767,6 +3297,7 @@ impl Workspace {
                     parent.as_ref(),
                 );
                 issue["projectMilestone"] = milestone;
+                issue["cycle"] = cycle;
                 self.issues.push(issue.clone());
                 (
                     200,
@@ -2879,6 +3410,12 @@ impl Workspace {
                             },
                             (None, Some(_)) => return not_found("ProjectMilestone"),
                         };
+                }
+                if input.get("cycleId").is_some() {
+                    issue["cycle"] = match self.cycle_for(&input, &issue["team"]["id"]) {
+                        Ok(c) => c,
+                        Err(answer) => return answer,
+                    };
                 }
                 if input.get("parentId").is_some() {
                     issue["parent"] = match input["parentId"].as_str() {

@@ -81,6 +81,24 @@ pub enum Command {
         #[command(subcommand)]
         command: InitiativeCommand,
     },
+    /// A team's cycles, Linear's time-boxed sprints: list, get, update
+    Cycle {
+        /// The cycle command.
+        #[command(subcommand)]
+        command: CycleCommand,
+    },
+    /// Documents, Linear's pages of markdown on a project or an issue: list, get, create, update, delete, unarchive
+    Document {
+        /// The document command.
+        #[command(subcommand)]
+        command: DocumentCommand,
+    },
+    /// Templates for issues, projects and documents: list, get, create, update, delete
+    Template {
+        /// The template command.
+        #[command(subcommand)]
+        command: TemplateCommand,
+    },
     /// Webhooks, the URLs Linear posts changes to: list, create, update, delete
     Webhook {
         /// The webhook command.
@@ -1163,6 +1181,246 @@ impl InitiativeStatus {
     }
 }
 
+/// The cycle commands (ADR 0014, group 13). Linear makes a team's cycles from its
+/// settings (`team update --cycles-enabled true`), so there is no create; `cycleArchive`
+/// unlinks every issue with no inverse and stays out.
+#[derive(Subcommand, Debug)]
+pub enum CycleCommand {
+    /// List the team's cycles, one JSON object per line, newest first
+    List(CycleListArgs),
+    /// One cycle with its issues, by number
+    Get(CycleRefArgs),
+    /// Change a cycle's name, description, start or end
+    Update(Box<CycleUpdateArgs>),
+}
+
+/// `cycle list`.
+#[derive(Args, Debug)]
+pub struct CycleListArgs {
+    /// Only the active cycle
+    #[arg(long, conflicts_with_all = ["upcoming", "past"])]
+    pub active: bool,
+    /// Only the cycles still to come
+    #[arg(long, conflicts_with_all = ["active", "past"])]
+    pub upcoming: bool,
+    /// Only the cycles that have ended
+    #[arg(long, conflicts_with_all = ["active", "upcoming"])]
+    pub past: bool,
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+}
+
+/// A cycle of the team, by number.
+#[derive(Args, Debug)]
+pub struct CycleRefArgs {
+    /// The cycle's number in its team
+    #[arg(value_name = "NUMBER")]
+    pub number: u64,
+}
+
+/// `cycle update`.
+#[derive(Args, Debug, Default)]
+pub struct CycleUpdateArgs {
+    /// The cycle's number in its team
+    #[arg(value_name = "NUMBER")]
+    pub number: u64,
+    /// A new name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new description
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// A new start, a time (2026-11-10T00:00:00Z)
+    #[arg(long, value_name = "TIME")]
+    pub starts_at: Option<String>,
+    /// A new end, a time (2026-11-24T00:00:00Z)
+    #[arg(long, value_name = "TIME")]
+    pub ends_at: Option<String>,
+}
+
+/// The document commands (ADR 0014, group 14).
+#[derive(Subcommand, Debug)]
+pub enum DocumentCommand {
+    /// List documents, one JSON object per line, without their content
+    List(DocumentListArgs),
+    /// One document with its content, by title
+    Get(DocumentRefArgs),
+    /// Create a document; a title a document already has is refused unless --allow-duplicate
+    Create(Box<DocumentCreateArgs>),
+    /// Change a document's title, content, project or issue
+    Update(Box<DocumentUpdateArgs>),
+    /// Put a document in the trash; `document unarchive` brings it back
+    Delete(DocumentRefArgs),
+    /// Bring a trashed document back
+    Unarchive(DocumentRefArgs),
+}
+
+/// `document list`.
+#[derive(Args, Debug)]
+pub struct DocumentListArgs {
+    /// Only documents of this project, by name
+    #[arg(long, value_name = "NAME")]
+    pub project: Option<String>,
+    /// Only documents of this issue, by identifier (APP-12)
+    #[arg(long, value_name = "ISSUE")]
+    pub issue: Option<String>,
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+}
+
+/// A document, by title.
+#[derive(Args, Debug)]
+pub struct DocumentRefArgs {
+    /// The document, by title
+    #[arg(value_name = "TITLE")]
+    pub title: String,
+}
+
+/// `document create`.
+#[derive(Args, Debug, Default)]
+pub struct DocumentCreateArgs {
+    /// The title
+    #[arg(long, value_name = "TEXT")]
+    pub title: String,
+    /// The content, markdown
+    #[arg(long, value_name = "TEXT", conflicts_with = "content_file")]
+    pub content: Option<String>,
+    /// The content, markdown, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub content_file: Option<String>,
+    /// The project it belongs to, by name
+    #[arg(long, value_name = "NAME")]
+    pub project: Option<String>,
+    /// The issue it belongs to, by identifier (APP-12)
+    #[arg(long, value_name = "ISSUE")]
+    pub issue: Option<String>,
+    /// Create it even when a document has the title
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `document update`.
+#[derive(Args, Debug, Default)]
+pub struct DocumentUpdateArgs {
+    /// The document, by title
+    #[arg(value_name = "TITLE")]
+    pub document: String,
+    /// A new title
+    #[arg(long, value_name = "TEXT")]
+    pub title: Option<String>,
+    /// New content, markdown
+    #[arg(long, value_name = "TEXT", conflicts_with = "content_file")]
+    pub content: Option<String>,
+    /// New content, markdown, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub content_file: Option<String>,
+    /// A new project, by name, or `none`
+    #[arg(long, value_name = "NAME")]
+    pub project: Option<String>,
+    /// A new issue, by identifier, or `none`
+    #[arg(long, value_name = "ISSUE")]
+    pub issue: Option<String>,
+}
+
+/// The template commands (ADR 0014, group 15).
+#[derive(Subcommand, Debug)]
+pub enum TemplateCommand {
+    /// List the team's and the workspace's templates, one JSON object per line
+    List(TemplateListArgs),
+    /// One template with its data, by name, the team's own before the workspace's; `templateData` is a string of JSON, as Linear returns it
+    Get(TemplateRefArgs),
+    /// Create a template for the team, or for the workspace with --workspace, from a JSON data file; a name a template of the same scope has is refused unless --allow-duplicate
+    Create(Box<TemplateCreateArgs>),
+    /// Change a template's name, description or data
+    Update(Box<TemplateUpdateArgs>),
+    /// Delete a template; there is no undo
+    Delete(TemplateRefArgs),
+}
+
+/// `template list`.
+#[derive(Args, Debug)]
+pub struct TemplateListArgs {
+    /// Only templates of this kind
+    #[arg(long, value_name = "TYPE", value_enum)]
+    pub r#type: Option<TemplateType>,
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+}
+
+/// A template, by name.
+#[derive(Args, Debug)]
+pub struct TemplateRefArgs {
+    /// The template, by name, among the team's own and the workspace's
+    #[arg(value_name = "NAME")]
+    pub name: String,
+}
+
+/// `template create`.
+#[derive(Args, Debug, Default)]
+pub struct TemplateCreateArgs {
+    /// The name
+    #[arg(long, value_name = "TEXT")]
+    pub name: String,
+    /// What the template makes
+    #[arg(long, value_name = "TYPE", value_enum)]
+    pub r#type: TemplateType,
+    /// The template's data, JSON as Linear's `templateData`, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub data_file: String,
+    /// A template every team shares, rather than the team's own
+    #[arg(long)]
+    pub workspace: bool,
+    /// The description
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// Create it even when a template of the same scope has the name
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `template update`.
+#[derive(Args, Debug, Default)]
+pub struct TemplateUpdateArgs {
+    /// The template, by name, among the team's own and the workspace's
+    #[arg(value_name = "NAME")]
+    pub template: String,
+    /// A new name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new description
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// New data, JSON as Linear's `templateData`, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub data_file: Option<String>,
+}
+
+/// What a template makes, as Linear's `type` spells it.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TemplateType {
+    /// An issue.
+    #[default]
+    Issue,
+    /// A project.
+    Project,
+    /// A document.
+    Document,
+}
+
+impl TemplateType {
+    /// The value Linear takes and returns.
+    pub fn linear(self) -> &'static str {
+        match self {
+            TemplateType::Issue => "issue",
+            TemplateType::Project => "project",
+            TemplateType::Document => "document",
+        }
+    }
+}
+
 /// The webhook commands (ADR 0014, group 16). The secret comes from a file and is never
 /// printed; `--enabled false` is the reversible stop, `delete` has no undo.
 #[derive(Subcommand, Debug)]
@@ -1449,6 +1707,9 @@ pub struct IssueListArgs {
     /// Only issues in this milestone, by name, or `none` for issues in no milestone
     #[arg(long, value_name = "NAME")]
     pub milestone: Option<String>,
+    /// Only issues in this cycle of the team: a number, `active`, `next`, or `none` for issues in no cycle
+    #[arg(long, value_name = "NUMBER|active|next|none")]
+    pub cycle: Option<String>,
     /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
     #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
     pub limit: usize,
@@ -1481,6 +1742,9 @@ pub struct CreateArgs {
     /// The milestone, by name, in the project --project names
     #[arg(long, value_name = "NAME", requires = "project")]
     pub milestone: Option<String>,
+    /// The cycle of the team to put it in: a number, `active` or `next`
+    #[arg(long, value_name = "NUMBER|active|next")]
+    pub cycle: Option<String>,
     /// The assignee: `me`, an email address or a name
     #[arg(long, value_name = "WHO")]
     pub assignee: Option<String>,
@@ -1578,6 +1842,9 @@ pub struct UpdateArgs {
     /// A new milestone, by name, in the issue's project (or the one --project names), or `none` to remove it
     #[arg(long, value_name = "NAME")]
     pub milestone: Option<String>,
+    /// A new cycle, in the issue's team: a number, `active`, `next`, or `none` to take it out of its cycle
+    #[arg(long, value_name = "NUMBER|active|next|none")]
+    pub cycle: Option<String>,
     /// A new parent, which makes this a sub-issue, or `none` to take it out from under its parent
     #[arg(long, value_name = "ISSUE")]
     pub parent: Option<String>,

@@ -7,6 +7,47 @@ user-visible change, added in the same commit as the change. The format follows
 ## Unreleased
 
 ### Added
+
+- `cycle list [--active|--upcoming|--past]` prints the team's cycles, Linear's
+  time-boxed sprints, newest first, each with its `number`, `name`, `startsAt`,
+  `endsAt`, `completedAt`, the `isActive`, `isNext`, `isPrevious`, `isFuture` and
+  `isPast` flags, `progress` and `team`; `cycle get <NUMBER>` adds its `issues`,
+  bounded by the new `ISSUES_PER_CYCLE` with a `truncated` notice past it; `cycle
+  update <NUMBER> [--name] [--description] [--starts-at <TIME>] [--ends-at <TIME>]`
+  changes one. `--cycle <NUMBER|active|next>` on `issue list`, `issue create` and
+  `issue update` names a cycle of the team, and `none` on `issue list` and `issue
+  update` the issues in no cycle, or takes an issue out (`issue create` does not
+  take it: a new issue starts in no cycle); a word that is none of these is exit 2
+  and a cycle the team does not have is exit 4, before any request. Linear makes cycles from a team's
+  settings, so there is no create, and `cycleArchive`, which unlinks every issue
+  with no inverse, stays out (ADR 0014, group 13;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `document list [--project <NAME>] [--issue <ISSUE>]` prints documents, Linear's
+  pages of markdown kept with a project or an issue, newest first, each with its
+  `title`, `url`, `project`, `issue`, `creator`, `owner`, `updatedBy` and `trashed`;
+  `document get <TITLE>` adds its `content`; `document create --title <TEXT>
+  [--content <TEXT>|--content-file <PATH>] [--project <NAME>] [--issue <ISSUE>]` makes
+  one (a title a document has is refused, exit 6, unless `--allow-duplicate`);
+  `document update <TITLE>` changes the title, content, project or issue, `none`
+  clearing the last two; `document delete <TITLE>` puts one in the trash and
+  `document unarchive <TITLE>` brings it back, each printing Linear's entity (ADR
+  0014, group 14; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `template list [--type <issue|project|document>]` prints the team's and the
+  workspace's templates, each with its `type`, `name`, `description`, `templateData`
+  as Linear returns it (a string of JSON), `team`, `creator` and `lastAppliedAt`
+  (Linear's search is a
+  list with no page info, so one more than `--limit` is asked for and a cut list is
+  known from it); `template get <NAME>` prints one, by name among the team's own
+  and the workspace's, the team's own first, as `--label` resolves a label (another
+  team's is exit 4); `template create --name <TEXT> --type <TYPE> --data-file <PATH>
+  [--workspace] [--description <TEXT>]` makes one from JSON in a file, or stdin as
+  `-` (a file that is not JSON is exit 2 before any request; a name a template of
+  the same scope has, the team's or the workspace's with `--workspace`, is refused,
+  exit 6, unless `--allow-duplicate`); `template update <NAME> [--name]
+  [--description] [--data-file <PATH>]` changes one; `template delete <NAME>`
+  deletes one, with no undo, printing Linear's answer; each resolves the name as
+  `template get` does (ADR 0014, group 15; [the
+  tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 - `webhook list` prints the workspace's webhooks, the URLs Linear posts changes to,
   each with its `label`, `url`, `enabled`, `resourceTypes`, `allPublicTeams`, `team`
   and `creator`, never with its secret; `webhook create --url <URL> --resource-type
