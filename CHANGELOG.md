@@ -6,6 +6,22 @@ user-visible change, added in the same commit as the change. The format follows
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.5.0 - 2026-11-03
+
+The third block of the third slice ([ADR 0014](docs/decisions/0014-build-the-third-slice-administrative-commands.md)),
+the rest of Linear's administration, for an agent that runs a workspace end to end:
+`cycle list`, `get` and `update` with `--cycle` on the issue commands; `document
+list`, `get`, `create`, `update`, `delete` and `unarchive`; `template list`, `get`,
+`create`, `update` and `delete`; `webhook list`, `create`, `update` and `delete`;
+`audit list`; `issue archive`, `unarchive`, `delete` and `batch-update`; `comment
+update` and `delete`; `attachment update` and `delete`. With it, nineteen of the
+slice's twenty groups are released; the invite group waits on a paid plan. Every
+list is bounded, a secret or a template's data comes from a file and never argv, a
+delete prints Linear's own answer, and nothing is ever deleted for good. The crate is
+`muster-linear`: `cargo install muster-linear`.
+
 ### Added
 
 - `cycle list [--active|--upcoming|--past]` prints the team's cycles, Linear's
