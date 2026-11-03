@@ -33,7 +33,7 @@ pub const CHILDREN_PER_ISSUE: usize = 50;
 /// mutation exits 8.
 pub const REQUEST_TIMEOUT_SECS: u64 = 30;
 /// The largest description, comment, title, link or subtitle muster sends. A larger
-/// one is refused, exit 6, before any request.
+/// one is refused, exit 6, before any request, and the message names which one it was.
 pub const BODY_MAX_BYTES: usize = 256 * 1024;
 /// The largest answer muster reads. A larger one is muster's failure, exit 1.
 pub const RESPONSE_MAX_BYTES: u64 = 16 * 1024 * 1024;
@@ -83,7 +83,7 @@ pub const ALL: &[Bound] = &[
         name: "BODY_MAX_BYTES",
         value: BODY_MAX_BYTES as u64,
         unit: "bytes",
-        meaning: "the largest description, comment, title, link or subtitle sent; a larger one is refused, exit 6, before any request",
+        meaning: "the largest description, comment, title, link or subtitle sent; a larger one is refused, exit 6, before any request, and the message names which one it was",
     },
     Bound {
         name: "RESPONSE_MAX_BYTES",

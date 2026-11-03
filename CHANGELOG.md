@@ -25,7 +25,9 @@ user-visible change, added in the same commit as the change. The format follows
   out stays, as Linear does; an empty URL or title is a usage error, exit 2, before any
   request (ADR 0013, feature 2; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 - `BODY_MAX_BYTES` now bounds a title, a link and a subtitle as it bounds a description
-  and a comment: a larger one is refused, exit 6, before any request.
+  and a comment: a larger one is refused, exit 6, before any request, and the message
+  names which one was too long with a hint that fits it; only a body is told it can be
+  split over several comments.
 - `muster fixtures` records `IssueById` on an issue that has comments, attachments and
   sub-issues when the workspace has one, and writes a `partial` notice saying what the
   recording lacks; `skipped` and `partial` join the notices table of the reference.

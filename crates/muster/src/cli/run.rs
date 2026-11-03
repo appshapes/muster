@@ -16,7 +16,7 @@ use crate::linear::operations as ops;
 use crate::linear::select::{
     Filter, at, find_by, has_next_page, is_identifier, is_uuid, names, need_str, nodes, str_at,
 };
-use crate::output::{Output, check_body, read_body};
+use crate::output::{Output, Text, check_body, read_body};
 use crate::{DOCS_URL, VERSION};
 
 /// Run the parsed command line.
@@ -624,7 +624,7 @@ fn issue_list(session: &Session, args: &IssueListArgs, out: &Output) -> Result<(
 fn body_from(text: &Option<String>, file: &Option<String>) -> Result<Option<String>, Error> {
     match (text, file) {
         (Some(text), _) => {
-            check_body(text)?;
+            check_body(Text::Body, text)?;
             Ok(Some(text.clone()))
         }
         (None, Some(path)) => Ok(Some(read_body(path)?)),
@@ -633,7 +633,7 @@ fn body_from(text: &Option<String>, file: &Option<String>) -> Result<Option<Stri
 }
 
 fn issue_create(session: &Session, args: &CreateArgs, out: &Output) -> Result<(), Error> {
-    check_body(&args.title)?;
+    check_body(Text::Title, &args.title)?;
     let description = body_from(&args.description, &args.description_file)?;
     let parent = match &args.parent {
         Some(reference) => Some(session.issue_brief(reference)?),
@@ -752,10 +752,10 @@ fn issue_attach(session: &Session, args: &AttachArgs, out: &Output) -> Result<()
             ));
         }
     }
-    check_body(&args.url)?;
-    check_body(&args.title)?;
+    check_body(Text::Link, &args.url)?;
+    check_body(Text::Title, &args.title)?;
     if let Some(subtitle) = &args.subtitle {
-        check_body(subtitle)?;
+        check_body(Text::Subtitle, subtitle)?;
     }
     let issue = session.issue_brief(&args.issue)?;
     let issue_id = need_str(&issue, "id", "Issues")?;
@@ -797,7 +797,7 @@ fn issue_close(session: &Session, args: &CloseArgs, out: &Output) -> Result<(), 
 
 fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<(), Error> {
     if let Some(title) = &args.title {
-        check_body(title)?;
+        check_body(Text::Title, title)?;
     }
     let description = body_from(&args.description, &args.description_file)?;
     let issue = session.issue(&args.issue, 1, 1, 1)?;
