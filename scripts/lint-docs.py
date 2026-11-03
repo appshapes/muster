@@ -203,14 +203,23 @@ def pick_range() -> tuple[str | None, str | None]:
         if path and Path(path).exists():
             before = json.loads(Path(path).read_text()).get("before")
         if not before or set(before) == {"0"}:
-            return "HEAD~1", "HEAD"
+            return parent_of_head(), "HEAD"
         return before, "HEAD"
     if event:
-        return "HEAD~1", "HEAD"
+        return parent_of_head(), "HEAD"
     dirty = git("status", "--porcelain", "--untracked-files=all").strip()
     if dirty:
         return "HEAD", None
-    return "HEAD~1", "HEAD"
+    return parent_of_head(), "HEAD"
+
+
+def parent_of_head() -> str:
+    """HEAD~1, or the empty tree when HEAD is a root commit, so that the repository's
+    first commit is checked whole instead of failing for want of a parent (CI run
+    41559093461 on muster's first push)."""
+    if git("rev-parse", "--verify", "--quiet", "HEAD~1", check=False).strip():
+        return "HEAD~1"
+    return git("hash-object", "-t", "tree", "/dev/null").strip()
 
 
 def split_range(spec: str) -> tuple[str, str]:
