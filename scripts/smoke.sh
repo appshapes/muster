@@ -115,6 +115,21 @@ jq -e '.retiredAt == null' "$tmp/label-restore.json" >/dev/null
 "$bin" label delete "Smoky $stamp" | tee "$tmp/label-delete.json"
 jq -e '.success == true' "$tmp/label-delete.json" >/dev/null
 echo
+echo "smoke: muster project get 'Smoke tests', then a throwaway project updated, deleted, unarchived and deleted again (ADR 0014)"
+"$bin" project get "Smoke tests" | jq -c '{name, status: .status.name, members: (.members.nodes | length), milestones: (.projectMilestones.nodes | length), trashed}' | tee "$tmp/project-get.json"
+jq -e '.name == "Smoke tests"' "$tmp/project-get.json" >/dev/null
+"$bin" project create --name "Smoke project $stamp" --description "A throwaway project made by scripts/smoke.sh at $stamp; it ends in the trash." | jq -c '{name}' >/dev/null
+"$bin" project update "Smoke project $stamp" --status "In Progress" --lead me --start-date "${stamp%%T*}" --priority 3 --add-member me | jq -c '{name, status: .status.name, lead: .lead.displayName, startDate, priority}' | tee "$tmp/project-update.json"
+jq -e '.status == "In Progress" and .priority == 3' "$tmp/project-update.json" >/dev/null
+"$bin" project get "Smoke project $stamp" | jq -c '{name, members: [.members.nodes[].displayName]}' | tee "$tmp/project-members.json"
+jq -e '(.members | length) == 1' "$tmp/project-members.json" >/dev/null
+"$bin" project delete "Smoke project $stamp" | jq -c '{name, trashed}' >/dev/null
+"$bin" project list | jq -c 'select(.name == "Smoke project '"$stamp"'")' | tee "$tmp/project-gone.jsonl"
+[ ! -s "$tmp/project-gone.jsonl" ] || { echo "smoke: the trashed project is still listed" >&2; exit 1; }
+"$bin" project unarchive "Smoke project $stamp" | jq -c '{name}' | tee "$tmp/project-back.json"
+jq -e --arg n "Smoke project $stamp" '.name == $n' "$tmp/project-back.json" >/dev/null
+"$bin" project delete "Smoke project $stamp" | jq -c '{name}' >/dev/null
+echo
 echo "smoke: muster issue create --project 'Smoke tests'"
 "$bin" issue create --title "Smoke test $stamp" --project "Smoke tests" --description "Created by scripts/smoke.sh at $stamp. It is canceled by the same run." | tee "$tmp/create.json"
 jq -e '.project.name == "Smoke tests"' "$tmp/create.json" >/dev/null

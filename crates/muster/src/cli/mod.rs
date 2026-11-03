@@ -796,13 +796,76 @@ pub struct ListArgs {
     pub limit: usize,
 }
 
-/// The project commands.
+/// The project commands (ADR 0013; ADR 0014, group 8).
 #[derive(Subcommand, Debug)]
 pub enum ProjectCommand {
     /// List them, one JSON object per line
     List(ListArgs),
+    /// One project with its content, lifecycle, health, members and milestones, by name
+    Get(ProjectRefArgs),
     /// Create a project for the team; a name a project of the workspace already has is refused unless --allow-duplicate
     Create(ProjectCreateArgs),
+    /// Change a project's name, description, content, status, lead, dates, priority, teams, members, colour or icon
+    Update(Box<ProjectUpdateArgs>),
+    /// Trash a project; Linear keeps it for thirty days, and `project unarchive` brings it back
+    Delete(ProjectRefArgs),
+    /// Bring a trashed or archived project back
+    Unarchive(ProjectRefArgs),
+}
+
+/// A project named as `--project` names one.
+#[derive(Args, Debug)]
+pub struct ProjectRefArgs {
+    /// The project, by name
+    #[arg(value_name = "NAME")]
+    pub name: String,
+}
+
+/// `project update`.
+#[derive(Args, Debug, Default)]
+pub struct ProjectUpdateArgs {
+    /// The project, by name
+    #[arg(value_name = "NAME")]
+    pub project: String,
+    /// A new name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new description, plain text
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// The project's content, markdown, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub content_file: Option<String>,
+    /// A new status, by name, one of the workspace's project statuses
+    #[arg(long, value_name = "NAME")]
+    pub status: Option<String>,
+    /// A new lead: `me`, an email address, a name, or `none`
+    #[arg(long, value_name = "WHO")]
+    pub lead: Option<String>,
+    /// The planned start, a date (2026-11-10), or `none`
+    #[arg(long, value_name = "DATE")]
+    pub start_date: Option<String>,
+    /// The planned end, a date (2026-12-01), or `none`
+    #[arg(long, value_name = "DATE")]
+    pub target_date: Option<String>,
+    /// A new priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low
+    #[arg(long, value_name = "0-4", value_parser = clap::value_parser!(u8).range(0..=4))]
+    pub priority: Option<u8>,
+    /// The teams the project spans, by key, comma-separated; replaces the list
+    #[arg(long, value_name = "KEY,...", value_delimiter = ',')]
+    pub teams: Option<Vec<String>>,
+    /// A member to add: `me`, an email address or a name; repeatable
+    #[arg(long, value_name = "WHO")]
+    pub add_member: Vec<String>,
+    /// A member to remove: `me`, an email address or a name; repeatable
+    #[arg(long, value_name = "WHO")]
+    pub remove_member: Vec<String>,
+    /// A new colour, a hex string (#4ea7fc)
+    #[arg(long, value_name = "HEX")]
+    pub color: Option<String>,
+    /// A new icon
+    #[arg(long, value_name = "TEXT")]
+    pub icon: Option<String>,
 }
 
 /// `project create`.

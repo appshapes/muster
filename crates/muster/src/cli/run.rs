@@ -5,15 +5,16 @@
 use serde_json::{Map, Value, json};
 
 use crate::bounds::{
-    ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, PAGE_CAP, TEAMS_PER_PROJECT,
+    ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, MEMBERS_PER_PROJECT,
+    MILESTONES_PER_PROJECT, PAGE_CAP, TEAMS_PER_PROJECT,
 };
 use crate::cli::{
     AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
     IssueListArgs, LabelCommand, LabelCreateArgs, LabelRefArgs, LabelUpdateArgs, ListArgs,
-    MemberArgs, MemberCommand, ProjectCommand, ProjectCreateArgs, StateCommand, StateCreateArgs,
-    StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs, TeamRefArgs, TeamUpdateArgs,
-    UpdateArgs, UserCommand, UserListArgs, UserRefArgs, UserRoleArgs, UserUpdateArgs,
-    WorkspaceCommand, WorkspaceUpdateArgs,
+    MemberArgs, MemberCommand, ProjectCommand, ProjectCreateArgs, ProjectRefArgs,
+    ProjectUpdateArgs, StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand,
+    TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs,
+    UserRefArgs, UserRoleArgs, UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -94,7 +95,11 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
             let session = Session::open(&config)?;
             match command {
                 ProjectCommand::List(args) => list_projects(&session, args, out),
+                ProjectCommand::Get(args) => project_get(&session, args, out),
                 ProjectCommand::Create(args) => project_create(&session, args, out),
+                ProjectCommand::Update(args) => project_update(&session, args, out),
+                ProjectCommand::Delete(args) => project_delete(&session, args, out),
+                ProjectCommand::Unarchive(args) => project_unarchive(&session, args, out),
             }
         }
         Command::User { command } => {
@@ -344,6 +349,46 @@ impl Session {
             json!({ "first": 1, "filter": { "name": { "eqIgnoreCase": name } }, "teams": TEAMS_PER_PROJECT }),
         )?;
         Ok(nodes(&data, "projects").into_iter().next())
+    }
+
+    /// One project with every detail field, by name, in one `ProjectByName` request;
+    /// a trashed or archived project only when asked (ADR 0014, group 8).
+    fn project_full(&self, name: &str, include_archived: bool) -> Result<Value, Error> {
+        let data = self.linear.run(
+            &ops::PROJECT_BY_NAME,
+            json!({ "name": name, "includeArchived": include_archived, "teams": TEAMS_PER_PROJECT, "members": MEMBERS_PER_PROJECT, "milestones": MILESTONES_PER_PROJECT }),
+        )?;
+        match nodes(&data, "projects").into_iter().next() {
+            Some(project) => Ok(project),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("no project named {name:?}"),
+                "name one from `muster project list`; a trashed project is reached by `project unarchive <NAME>` within Linear's thirty days",
+            )),
+        }
+    }
+
+    /// The workspace's project statuses, up to `PAGE_CAP`.
+    fn project_statuses(&self) -> Result<Vec<Value>, Error> {
+        let data = self
+            .linear
+            .run(&ops::PROJECT_STATUSES, json!({ "first": PAGE_CAP }))?;
+        Ok(nodes(&data, "projectStatuses"))
+    }
+
+    fn project_status_id(&self, name: &str) -> Result<String, Error> {
+        let statuses = self.project_statuses()?;
+        match find_by(&statuses, "name", name) {
+            Some(status) => need_str(status, "id", "ProjectStatuses"),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!(
+                    "the workspace has no project status named {name:?} (statuses: {})",
+                    names(&statuses, "name")
+                ),
+                "name one of the workspace's project statuses",
+            )),
+        }
     }
 
     fn project_id(&self, name: &str) -> Result<String, Error> {
@@ -1525,6 +1570,178 @@ fn project_create(session: &Session, args: &ProjectCreateArgs, out: &Output) -> 
     Ok(())
 }
 
+/// The team ids of `--teams`, each key resolved with `TeamByKey`.
+fn team_ids(session: &Session, keys: &[String]) -> Result<Vec<String>, Error> {
+    keys.iter()
+        .map(|key| key.trim())
+        .filter(|key| !key.is_empty())
+        .map(|key| need_str(&session.team_full(key, false)?, "id", "TeamByKey"))
+        .collect()
+}
+
+fn project_get(session: &Session, args: &ProjectRefArgs, out: &Output) -> Result<(), Error> {
+    let project = session.project_full(&args.name, false)?;
+    out.emit(&project);
+    let name = str_at(&project, "name").unwrap_or(&args.name).to_string();
+    if has_next_page(&project, "teams") {
+        teams_notice(out, std::slice::from_ref(&name));
+    }
+    if has_next_page(&project, "members") {
+        out.notice(
+            "truncated",
+            &format!("members: {name} has more than the {MEMBERS_PER_PROJECT} printed"),
+            "MEMBERS_PER_PROJECT is the bound (docs/reference/commands.md#bounds); `project update --add-member` and `--remove-member` refuse a list they cannot read whole",
+        );
+    }
+    if has_next_page(&project, "projectMilestones") {
+        out.notice(
+            "truncated",
+            &format!(
+                "projectMilestones: {name} has more than the {MILESTONES_PER_PROJECT} printed"
+            ),
+            "MILESTONES_PER_PROJECT is the bound (docs/reference/commands.md#bounds)",
+        );
+    }
+    Ok(())
+}
+
+/// A date flag's value: `none` clears, anything else is sent as it is for Linear to
+/// validate.
+fn date_or_none(value: &str) -> Value {
+    if is_none(value) {
+        Value::Null
+    } else {
+        json!(value.trim())
+    }
+}
+
+/// The scalar part of a `projectUpdate` input from `project update`'s flags: only
+/// what was passed, the texts bounded, `none` clearing a date.
+fn project_update_input(args: &ProjectUpdateArgs) -> Result<Map<String, Value>, Error> {
+    let mut input = Map::new();
+    if let Some(name) = &args.name {
+        check_body(Text::Name, name)?;
+        input.insert("name".into(), json!(name));
+    }
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if let Some(path) = &args.content_file {
+        input.insert("content".into(), json!(read_body(path)?));
+    }
+    if let Some(date) = &args.start_date {
+        input.insert("startDate".into(), date_or_none(date));
+    }
+    if let Some(date) = &args.target_date {
+        input.insert("targetDate".into(), date_or_none(date));
+    }
+    if let Some(priority) = args.priority {
+        input.insert("priority".into(), json!(priority));
+    }
+    if let Some(color) = &args.color {
+        input.insert("color".into(), json!(color));
+    }
+    if let Some(icon) = &args.icon {
+        input.insert("icon".into(), json!(icon));
+    }
+    Ok(input)
+}
+
+fn project_update(session: &Session, args: &ProjectUpdateArgs, out: &Output) -> Result<(), Error> {
+    let mut input = project_update_input(args)?;
+    let project = session.project_full(&args.project, false)?;
+    let id = need_str(&project, "id", "ProjectByName")?;
+    let name = str_at(&project, "name")
+        .unwrap_or(&args.project)
+        .to_string();
+    if let Some(status) = &args.status {
+        input.insert("statusId".into(), json!(session.project_status_id(status)?));
+    }
+    if let Some(lead) = &args.lead {
+        let value = if is_none(lead) {
+            Value::Null
+        } else {
+            json!(session.user_id(lead)?)
+        };
+        input.insert("leadId".into(), value);
+    }
+    if let Some(keys) = &args.teams {
+        let ids = team_ids(session, keys)?;
+        if ids.is_empty() {
+            return Err(Error::with_hint(
+                ErrorCode::Usage,
+                "--teams must name at least one team",
+                "a project belongs to one team or more",
+            ));
+        }
+        input.insert("teamIds".into(), json!(ids));
+    }
+    if !args.add_member.is_empty() || !args.remove_member.is_empty() {
+        // Linear replaces `memberIds` whole, so the list is read first; a list cut
+        // at MEMBERS_PER_PROJECT is refused rather than shortened (ADR 0014).
+        if has_next_page(&project, "members") {
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "{name} has more than MEMBERS_PER_PROJECT ({MEMBERS_PER_PROJECT}) members, so its member list cannot be read whole and would be cut"
+                ),
+                "change the members in Linear's own page; the bound is docs/reference/commands.md#bounds",
+            )
+            .at("bounds"));
+        }
+        let mut members: Vec<String> = nodes(&project, "members")
+            .iter()
+            .filter_map(|m| str_at(m, "id").map(str::to_string))
+            .collect();
+        for who in &args.add_member {
+            let uid = session.user_id(who)?;
+            if !members.contains(&uid) {
+                members.push(uid);
+            }
+        }
+        for who in &args.remove_member {
+            let uid = session.user_id(who)?;
+            members.retain(|m| m != &uid);
+        }
+        input.insert("memberIds".into(), json!(members));
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --name, --description, --content-file, --status, --lead, --start-date, --target-date, --priority, --teams, --add-member, --remove-member, --color, --icon",
+        ));
+    }
+    let data = session.linear.run(
+        &ops::PROJECT_UPDATE,
+        json!({ "id": id, "input": Value::Object(input), "teams": TEAMS_PER_PROJECT }),
+    )?;
+    out.emit(&payload(&data, "projectUpdate", "project")?);
+    Ok(())
+}
+
+fn project_delete(session: &Session, args: &ProjectRefArgs, out: &Output) -> Result<(), Error> {
+    let id = session.project_id(&args.name)?;
+    let data = session.linear.run(
+        &ops::PROJECT_DELETE,
+        json!({ "id": id, "teams": TEAMS_PER_PROJECT }),
+    )?;
+    out.emit(&payload(&data, "projectDelete", "entity")?);
+    Ok(())
+}
+
+fn project_unarchive(session: &Session, args: &ProjectRefArgs, out: &Output) -> Result<(), Error> {
+    let project = session.project_full(&args.name, true)?;
+    let id = need_str(&project, "id", "ProjectByName")?;
+    let data = session.linear.run(
+        &ops::PROJECT_UNARCHIVE,
+        json!({ "id": id, "teams": TEAMS_PER_PROJECT }),
+    )?;
+    out.emit(&payload(&data, "projectUnarchive", "entity")?);
+    Ok(())
+}
+
 fn issue_get(session: &Session, args: &GetArgs, out: &Output) -> Result<(), Error> {
     let (comments, attachments) = if args.no_comments {
         (1, 1)
@@ -2382,6 +2599,51 @@ mod tests {
             .err()
             .map(|e| e.code),
             Some(ErrorCode::Refused)
+        );
+    }
+
+    #[test]
+    fn a_project_update_input_holds_only_what_was_passed() {
+        let args = ProjectUpdateArgs {
+            project: "Smoke tests".into(),
+            name: Some("Smoke".into()),
+            start_date: Some("none".into()),
+            target_date: Some(" 2026-12-01 ".into()),
+            priority: Some(2),
+            ..ProjectUpdateArgs::default()
+        };
+        let input = project_update_input(&args).unwrap_or_default();
+        assert_eq!(input.get("name"), Some(&json!("Smoke")));
+        assert_eq!(
+            input.get("startDate"),
+            Some(&Value::Null),
+            "`none` clears a date"
+        );
+        assert_eq!(
+            input.get("targetDate"),
+            Some(&json!("2026-12-01")),
+            "trimmed"
+        );
+        assert_eq!(input.get("priority"), Some(&json!(2)));
+        assert_eq!(
+            input.get("description"),
+            None,
+            "a flag left out is not sent"
+        );
+        assert_eq!(
+            input.get("statusId"),
+            None,
+            "the status is resolved after the checks"
+        );
+        let long = ProjectUpdateArgs {
+            project: "x".into(),
+            name: Some("n".repeat(BODY_MAX_BYTES + 1)),
+            ..ProjectUpdateArgs::default()
+        };
+        assert!(
+            project_update_input(&long)
+                .err()
+                .is_some_and(|e| e.code == ErrorCode::Refused)
         );
     }
 

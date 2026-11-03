@@ -87,6 +87,21 @@ user-visible change, added in the same commit as the change. The format follows
   refuses, exit 6, while the state holds an issue that is not archived, and nothing
   brings an archived state back (ADR 0014, group 7;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `project get <NAME>` prints a project whole, in one request: what `project list`
+  prints, with its `content`, `slugId`, `color`, `icon`, `health`, `progress`,
+  `scope`, the lifecycle times, `trashed`, `creator`, `lastUpdate`, and its
+  `members` and `projectMilestones`, each bounded by a new constant,
+  `MEMBERS_PER_PROJECT` and `MILESTONES_PER_PROJECT`, with a `truncated` notice past
+  it. `project update <NAME>` changes a project through Linear's `projectUpdate`:
+  `--name`, `--description`, `--content-file`, `--status <NAME>` (one of the
+  workspace's project statuses), `--lead <WHO|none>`, `--start-date` and
+  `--target-date` (a date or `none`), `--priority`, `--teams <KEY,...>` (which
+  replaces the list), `--add-member` and `--remove-member` (Linear replaces the
+  member list whole, so muster reads it first and refuses, exit 6, before any
+  request, a project whose list is cut at `MEMBERS_PER_PROJECT`), `--color` and
+  `--icon`. `project delete <NAME>` trashes a project, which Linear keeps for thirty
+  days, and `project unarchive <NAME>` brings it back; both print Linear's entity
+  (ADR 0014, group 8; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.2.0 - 2026-11-03
 
