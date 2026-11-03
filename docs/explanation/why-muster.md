@@ -37,8 +37,8 @@ on what it can see. So muster gives it, in this order of importance:
 - **An exit code per failure class**: `3` authentication, `4` not found, `5` rate
   limited, `6` refused, `7` network, `8` unknown. An agent that cannot tell not-found
   from rate-limited retries the wrong one.
-- **One error object** on stderr with muster's code, Linear's message, Linear's request
-  id and what to do next.
+- **One error object** on stderr with muster's code, Linear's message and the reason
+  it puts beside it, Linear's request id and what to do next.
 - **No prompt, ever.** Every input is a flag, a file, or stdin named `-`. The lint
   configuration disallows `std::io::stdin` so the rule cannot erode.
 - **The key from a file or the environment**, never from argv, which is in `ps`, the

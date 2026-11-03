@@ -14,8 +14,9 @@ name is `muster`, with `muster::Linear`, the client the binary is built on.
   `issue get`, `issue list`, `issue create`, `issue comment`, `issue close`,
   `issue update` and `schema` (ADR 0007), and the second slice adds `--parent` and
   `--project` on `issue list` and its kin, `issue attach` and `project create`
-  (ADR 0013); `docs/reference/commands.md` is generated from `muster schema` and is the
-  reference.
+  (ADR 0013); the third slice adds the administrative commands, group by group
+  (ADR 0014); `docs/reference/commands.md` is generated from `muster schema` and is
+  the reference.
 - The library: `muster::Linear` holds the key and the endpoint and runs one named
   operation at a time; `muster::Config` resolves the key, the team and the endpoint from
   the environment and the key file; `muster::Error` is the error object with its
@@ -78,8 +79,9 @@ line, such as `"APP-5" "Try muster" ("Backlog")`; a missing key is an `Error` wh
 - [`docs/reference/commands.md`](../../docs/reference/commands.md), every command, exit
   code, bound and variable, generated from the binary.
 - [ADR 0007](../../docs/decisions/0007-build-the-trello-command-set-first.md), the first
-  slice, and [ADR 0013](../../docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md),
-  the second; [ADR 0008](../../docs/decisions/0008-speak-to-agents-first.md), the agent
+  slice, [ADR 0013](../../docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md),
+  the second, and [ADR 0014](../../docs/decisions/0014-build-the-third-slice-administrative-commands.md),
+  the third; [ADR 0008](../../docs/decisions/0008-speak-to-agents-first.md), the agent
   contract; [ADR 0010](../../docs/decisions/0010-test-against-a-fake-linear-held-to-recorded-shapes.md),
   how it is tested; [ADR 0011](../../docs/decisions/0011-release-as-muster-cli.md) and
   [ADR 0012](../../docs/decisions/0012-publish-as-muster-linear.md), how it is released

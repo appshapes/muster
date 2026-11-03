@@ -436,19 +436,10 @@ impl Session {
         }
     }
 
+    /// The id of one live project status by name, what `project update --status`
+    /// sends: [`Session::project_status`] and its `id`.
     fn project_status_id(&self, name: &str) -> Result<String, Error> {
-        let statuses = self.project_statuses(false)?;
-        match find_by(&statuses, "name", name) {
-            Some(status) => need_str(status, "id", "ProjectStatuses"),
-            None => Err(Error::with_hint(
-                ErrorCode::NotFound,
-                format!(
-                    "the workspace has no project status named {name:?} (statuses: {})",
-                    names(&statuses, "name")
-                ),
-                "name one of the workspace's project statuses",
-            )),
-        }
+        need_str(&self.project_status(name, false)?, "id", "ProjectStatuses")
     }
 
     /// A project's milestones, `first` of them, in one `Milestones` request.
@@ -698,8 +689,9 @@ fn workspace_get(session: &Session, out: &Output) -> Result<(), Error> {
 /// The input of `organizationUpdate` from `workspace update`'s flags: only what was
 /// passed, so that a flag left out leaves its setting alone; `none` clears the branch
 /// format; the roles go under `securitySettings` and the sign-in services under
-/// `authSettings`, as Linear nests them; `all` is Linear's empty list. No flag at all
-/// is a usage error before any request.
+/// `authSettings`, as Linear nests them; `all` is Linear's empty list, and the one way
+/// to send it, since a value that names no service is a usage error. No flag at all is
+/// a usage error too, before any request.
 fn workspace_input(args: &WorkspaceUpdateArgs) -> Result<Map<String, Value>, Error> {
     let mut input = Map::new();
     if let Some(name) = &args.name {
@@ -785,11 +777,22 @@ fn workspace_input(args: &WorkspaceUpdateArgs) -> Result<Map<String, Value>, Err
         let list: Vec<&str> = if services.trim().eq_ignore_ascii_case("all") {
             Vec::new()
         } else {
-            services
+            let named: Vec<&str> = services
                 .split(',')
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
-                .collect()
+                .collect();
+            // An empty value, or commas alone, would also be the empty list, which
+            // Linear reads as every service allowed: a security setting opened by an
+            // empty variable. Exit 2 rather than guess (CLAUDE.md, When in doubt).
+            if named.is_empty() {
+                return Err(Error::with_hint(
+                    ErrorCode::Usage,
+                    "--allowed-auth-services names no service",
+                    "name the services to allow, comma-separated (google,saml); `all`, which lets every service sign in, is the one spelling of Linear's empty list",
+                ));
+            }
+            named
         };
         auth.insert("allowedAuthServices".into(), json!(list));
     }
@@ -826,6 +829,24 @@ fn workspace_update(
     Ok(())
 }
 
+/// Refuse a `--position` that is not finite, before any request. `clap` parses the
+/// flag with `f64::from_str`, which accepts `nan`, `inf`, `-inf` and `1e400` (which
+/// overflows to infinity), and `serde_json` writes a number that is not finite as
+/// `null`: a value the caller never typed, which Linear would read as its own default.
+/// Exit 2 rather than guess (CLAUDE.md, When in doubt). `list` is the command that
+/// shows the positions the number sits among: `muster state list` for a state,
+/// `muster project-status list` for a project status.
+fn check_position(position: f64, list: &str) -> Result<(), Error> {
+    if position.is_finite() {
+        return Ok(());
+    }
+    Err(Error::with_hint(
+        ErrorCode::Usage,
+        format!("--position {position} is not a finite number"),
+        format!("pass a finite number, such as 2.5; `{list}` shows each one's position"),
+    ))
+}
+
 /// The input of `workflowStateCreate` but its `teamId`: the flags, checked before any
 /// request.
 fn state_input(args: &StateCreateArgs) -> Result<Map<String, Value>, Error> {
@@ -839,6 +860,7 @@ fn state_input(args: &StateCreateArgs) -> Result<Map<String, Value>, Error> {
         input.insert("description".into(), json!(description));
     }
     if let Some(position) = args.position {
+        check_position(position, "muster state list")?;
         input.insert("position".into(), json!(position));
     }
     Ok(input)
@@ -871,7 +893,11 @@ fn state_create(session: &Session, args: &StateCreateArgs, out: &Output) -> Resu
     Ok(())
 }
 
-fn state_update(session: &Session, args: &StateUpdateArgs, out: &Output) -> Result<(), Error> {
+/// The input of `workflowStateUpdate`: the flags, checked before any request; no flag
+/// is a usage error, since Linear's input has no field for the type and nothing else
+/// would change. The state is resolved by the handler, after these checks, so that a
+/// refusal here sends nothing.
+fn state_update_input(args: &StateUpdateArgs) -> Result<Map<String, Value>, Error> {
     let mut input = Map::new();
     if let Some(name) = &args.name {
         check_body(Text::Name, name)?;
@@ -885,6 +911,7 @@ fn state_update(session: &Session, args: &StateUpdateArgs, out: &Output) -> Resu
         input.insert("description".into(), json!(description));
     }
     if let Some(position) = args.position {
+        check_position(position, "muster state list")?;
         input.insert("position".into(), json!(position));
     }
     if input.is_empty() {
@@ -894,6 +921,11 @@ fn state_update(session: &Session, args: &StateUpdateArgs, out: &Output) -> Resu
             "pass at least one of --name, --color, --description, --position; a state's type cannot change",
         ));
     }
+    Ok(input)
+}
+
+fn state_update(session: &Session, args: &StateUpdateArgs, out: &Output) -> Result<(), Error> {
+    let input = state_update_input(args)?;
     let team_key = session.team_key()?;
     let id = session.state_id(&team_key, &args.state)?;
     let data = session.linear.run(
@@ -1055,15 +1087,39 @@ fn label_delete(session: &Session, args: &LabelRefArgs, out: &Output) -> Result<
     Ok(())
 }
 
-/// One user with every `UserFields` field, by `me`, email or name, in one `UserById`
-/// request after the resolution (ADR 0014, group 4).
-fn user_full(session: &Session, who: &str) -> Result<Value, Error> {
-    let id = session.user_id(who)?;
+/// One user with every `UserFields` field, by id, in one `UserById` request; `who` is
+/// the name the caller gave, for the message when Linear has no such user.
+fn user_by_id(session: &Session, id: &str, who: &str) -> Result<Value, Error> {
     let data = session.linear.run(&ops::USER_BY_ID, json!({ "id": id }))?;
     match data.get("user") {
         Some(user) if !user.is_null() => Ok(user.clone()),
         _ => Err(Error::new(ErrorCode::NotFound, format!("no user {who:?}"))),
     }
+}
+
+/// One user by `me`, email or name: the resolution, then [`user_by_id`] (ADR 0014,
+/// group 4).
+fn user_full(session: &Session, who: &str) -> Result<Value, Error> {
+    let id = session.user_id(who)?;
+    user_by_id(session, &id, who)
+}
+
+/// The user read back after a mutation that landed, by the id already resolved, with
+/// Linear's `success` already on stdout. A failure here keeps the read-back's own code
+/// (7 for a dropped query, 5 for the rate limit), but its message and hint say that
+/// the mutation landed and that `user get` prints the result: the code's general
+/// words, "nothing changed in Linear", would be a lie here (invariant 4).
+fn user_read_back(session: &Session, id: &str, who: &str, field: &str) -> Result<Value, Error> {
+    user_by_id(session, id, who).map_err(|error| Error {
+        message: format!(
+            "{field} succeeded in Linear and its success line is on stdout, but the user could not be read back: {}",
+            error.message
+        ),
+        hint: format!(
+            "`muster user get {who:?}` prints the user as Linear has them now; the mutation needs no repeating"
+        ),
+        ..error
+    })
 }
 
 fn user_get(session: &Session, args: &UserRefArgs, out: &Output) -> Result<(), Error> {
@@ -1136,8 +1192,9 @@ fn success_payload(data: &Value, field: &str) -> Result<Value, Error> {
     }
 }
 
-/// `user change-role`: Linear's `success`, then the user read back, so that the new
-/// role is on the output (two lines, as `issue close` prints two).
+/// `user change-role`: Linear's `success`, then the user read back by the id already
+/// resolved, so that the new role is on the output (two lines, as `issue close` prints
+/// two).
 fn user_change_role(session: &Session, args: &UserRoleArgs, out: &Output) -> Result<(), Error> {
     let id = session.user_id(&args.who)?;
     let data = session.linear.run(
@@ -1145,12 +1202,12 @@ fn user_change_role(session: &Session, args: &UserRoleArgs, out: &Output) -> Res
         json!({ "id": id, "role": args.role.linear() }),
     )?;
     out.emit(&success_payload(&data, "userChangeRole")?);
-    out.emit(&user_full(session, &args.who)?);
+    out.emit(&user_read_back(session, &id, &args.who, "userChangeRole")?);
     Ok(())
 }
 
 /// `user suspend`, `user unsuspend` and `user revoke-sessions`: one mutation with the
-/// user's id, Linear's `success`, then the user read back.
+/// user's id, Linear's `success`, then the user read back by that id.
 fn user_admin(
     session: &Session,
     args: &UserRefArgs,
@@ -1161,7 +1218,7 @@ fn user_admin(
     let id = session.user_id(&args.who)?;
     let data = session.linear.run(op, json!({ "id": id }))?;
     out.emit(&success_payload(&data, field)?);
-    out.emit(&user_full(session, &args.who)?);
+    out.emit(&user_read_back(session, &id, &args.who, field)?);
     Ok(())
 }
 
@@ -1191,8 +1248,12 @@ fn member_add(session: &Session, args: &MemberArgs, out: &Output) -> Result<(), 
     Ok(())
 }
 
-/// `member remove`: the membership is resolved from the team's list, up to
-/// `PAGE_CAP`, before the one mutation; a user who is not a member is exit 4.
+/// `member remove`: the membership is resolved from the team's list, one page of
+/// `PAGE_CAP`, before the one mutation. A user who is not in a page that holds the
+/// whole team is exit 4. When the page is cut (`pageInfo.hasNextPage`), a user who
+/// is not in it may be a member past the bound, so the command refuses before any
+/// mutation, exit 6, a muster guard, rather than call them a non-member (invariant 1;
+/// ADR 0014 settles the same case for `project update --remove-member`).
 fn member_remove(session: &Session, args: &MemberArgs, out: &Output) -> Result<(), Error> {
     let key = session.team_key()?;
     let user_id = session.user_id(&args.user)?;
@@ -1201,6 +1262,17 @@ fn member_remove(session: &Session, args: &MemberArgs, out: &Output) -> Result<(
         .into_iter()
         .find(|m| str_at(m, "user.id") == Some(user_id.as_str()));
     let Some(membership) = found else {
+        if has_next_page(&team, "memberships") {
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "team {key} has more than PAGE_CAP ({PAGE_CAP}) members and {:?} is not among the first {PAGE_CAP}",
+                    args.user
+                ),
+                "remove the member in the browser, on the team's members page in Linear; PAGE_CAP is the bound",
+            )
+            .at("bounds"));
+        }
         return Err(Error::with_hint(
             ErrorCode::NotFound,
             format!("{:?} is not a member of team {key}", args.user),
@@ -1375,13 +1447,22 @@ fn team_update_input(args: &TeamUpdateArgs) -> Result<Map<String, Value>, Error>
         let value = if is_none(period) {
             Value::Null
         } else {
-            let months: f64 = period.trim().parse().map_err(|_| {
-                Error::with_hint(
-                    ErrorCode::Usage,
-                    format!("--auto-close-period {period:?} is not a number of months"),
-                    "pass a number of months, or `none` to never close an idle issue",
-                )
-            })?;
+            // `f64::from_str` accepts `nan`, `inf` and a sign, and serde_json turns a
+            // number that is not finite into `null`, the `none` sentinel: only a
+            // finite, non-negative number is sent, and anything else is refused before
+            // any request (CLAUDE.md, When in doubt: exit non-zero rather than guess).
+            let months = period
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|months| months.is_finite() && *months >= 0.0)
+                .ok_or_else(|| {
+                    Error::with_hint(
+                        ErrorCode::Usage,
+                        format!("--auto-close-period {period:?} is not a number of months"),
+                        "pass a non-negative number of months, or `none` to never close idle issues",
+                    )
+                })?;
             json!(months)
         };
         input.insert("autoClosePeriod".into(), value);
@@ -1410,9 +1491,12 @@ fn team_update_input(args: &TeamUpdateArgs) -> Result<Map<String, Value>, Error>
 /// is exit 6 with its message.
 fn team_update(session: &Session, args: &TeamUpdateArgs, out: &Output) -> Result<(), Error> {
     let mut input = team_update_input(args)?;
-    let key = session.team_key_of(&args.key_of)?;
-    let team = session.team_full(&key, false)?;
+    let team = session.team_full(&session.team_key_of(&args.key_of)?, false)?;
     let id = need_str(&team, "id", "TeamByKey")?;
+    // The key as Linear spells it, not as typed: `TeamByKey` matches a key in any
+    // case, but the states are filtered with `eq`, which is case-sensitive, so a
+    // lowercase key would report a state that exists as matching nothing.
+    let key = need_str(&team, "key", "TeamByKey")?;
     if let Some(parent) = &args.parent {
         let value = if is_none(parent) {
             Value::Null
@@ -1777,9 +1861,11 @@ fn project_status_list(session: &Session, args: &ListArgs, out: &Output) -> Resu
     Ok(())
 }
 
-/// The input of `projectStatusCreate`: the flags, checked before any request.
+/// The input of `projectStatusCreate`: the flags, checked before any request, the
+/// position by [`check_position`] since Linear requires one here.
 fn project_status_input(args: &ProjectStatusCreateArgs) -> Result<Map<String, Value>, Error> {
     check_body(Text::Name, &args.name)?;
+    check_position(args.position, "muster project-status list")?;
     let mut input = Map::new();
     input.insert("name".into(), json!(args.name));
     input.insert("type".into(), json!(args.r#type.linear()));
@@ -1842,6 +1928,7 @@ fn project_status_update(
         input.insert("description".into(), json!(description));
     }
     if let Some(position) = args.position {
+        check_position(position, "muster project-status list")?;
         input.insert("position".into(), json!(position));
     }
     if let Some(kind) = args.r#type {
@@ -1941,8 +2028,8 @@ fn project_update_input(args: &ProjectUpdateArgs) -> Result<Map<String, Value>, 
         check_body(Text::Body, description)?;
         input.insert("description".into(), json!(description));
     }
-    if let Some(path) = &args.content_file {
-        input.insert("content".into(), json!(read_body(path)?));
+    if let Some(content) = body_from(&args.content, &args.content_file)? {
+        input.insert("content".into(), json!(content));
     }
     if let Some(date) = &args.start_date {
         input.insert("startDate".into(), date_or_none(date));
@@ -2024,7 +2111,7 @@ fn project_update(session: &Session, args: &ProjectUpdateArgs, out: &Output) -> 
         return Err(Error::with_hint(
             ErrorCode::Usage,
             "nothing to change",
-            "pass at least one of --name, --description, --content-file, --status, --lead, --start-date, --target-date, --priority, --teams, --add-member, --remove-member, --color, --icon",
+            "pass at least one of --name, --description, --content, --content-file, --status, --lead, --start-date, --target-date, --priority, --teams, --add-member, --remove-member, --color, --icon",
         ));
     }
     let data = session.linear.run(
@@ -2098,8 +2185,8 @@ fn issue_get(session: &Session, args: &GetArgs, out: &Output) -> Result<(), Erro
     Ok(())
 }
 
-/// Whether a flag's value is the `none` sentinel of `--assignee`, `--project` and
-/// `--parent`.
+/// Whether a flag's value is the `none` sentinel of `--assignee`, `--project`,
+/// `--parent` and `team update`'s `--auto-close-period`.
 fn is_none(value: &str) -> bool {
     value.trim().eq_ignore_ascii_case("none")
 }
@@ -2771,6 +2858,22 @@ mod tests {
             at(&Value::Object(input), "authSettings.allowedAuthServices"),
             &json!(["google", "saml"])
         );
+        for empty in ["", " ", ",", " , ,"] {
+            let none = WorkspaceUpdateArgs {
+                allowed_auth_services: Some(empty.into()),
+                ..WorkspaceUpdateArgs::default()
+            };
+            let e = workspace_input(&none).err();
+            assert_eq!(
+                e.as_ref().map(|e| e.code),
+                Some(ErrorCode::Usage),
+                "{empty:?} is not `all`: {e:?}"
+            );
+            assert!(
+                e.is_some_and(|e| e.message == "--allowed-auth-services names no service"),
+                "{empty:?}"
+            );
+        }
         let long = WorkspaceUpdateArgs {
             name: Some("n".repeat(BODY_MAX_BYTES + 1)),
             ..WorkspaceUpdateArgs::default()
@@ -2887,14 +2990,18 @@ mod tests {
                 .get("autoClosePeriod"),
             Some(&json!(3.0))
         );
-        let bad = TeamUpdateArgs {
-            auto_close_period: Some("soon".into()),
-            ..TeamUpdateArgs::default()
-        };
-        assert_eq!(
-            team_update_input(&bad).err().map(|e| e.code),
-            Some(ErrorCode::Usage)
-        );
+        for period in ["soon", "nan", "inf", "-inf", "infinity", "-1"] {
+            let bad = TeamUpdateArgs {
+                auto_close_period: Some(period.into()),
+                ..TeamUpdateArgs::default()
+            };
+            assert_eq!(
+                team_update_input(&bad).err().map(|e| e.code),
+                Some(ErrorCode::Usage),
+                "--auto-close-period {period:?} is refused before any request, \
+                 never sent as `null` or as a negative number"
+            );
+        }
         let blank = TeamUpdateArgs {
             key: Some(" ".into()),
             ..TeamUpdateArgs::default()
@@ -2903,6 +3010,125 @@ mod tests {
             team_update_input(&blank).err().map(|e| e.code),
             Some(ErrorCode::Usage)
         );
+    }
+
+    #[test]
+    fn a_state_input_is_checked_before_any_request() {
+        use crate::cli::StateType;
+        let blocked = StateCreateArgs {
+            name: "Blocked".into(),
+            r#type: StateType::Started,
+            color: "#eb5757".into(),
+            ..StateCreateArgs::default()
+        };
+        let input = state_input(&blocked).unwrap_or_default();
+        assert_eq!(input.get("name"), Some(&json!("Blocked")));
+        assert_eq!(
+            input.get("type"),
+            Some(&json!("started")),
+            "as Linear spells it"
+        );
+        assert_eq!(input.get("color"), Some(&json!("#eb5757")));
+        assert_eq!(
+            input.get("description"),
+            None,
+            "a flag left out is not sent"
+        );
+        assert_eq!(
+            input.get("position"),
+            None,
+            "the default, the end, is Linear's to pick"
+        );
+        assert_eq!(
+            input.get("teamId"),
+            None,
+            "the team is resolved after the checks"
+        );
+        let len = |input: &Map<String, Value>, field: &str| {
+            input.get(field).and_then(Value::as_str).map(str::len)
+        };
+        let at_bound = StateCreateArgs {
+            name: "n".repeat(BODY_MAX_BYTES),
+            description: Some("d".repeat(BODY_MAX_BYTES)),
+            position: Some(2.5),
+            ..StateCreateArgs::default()
+        };
+        let full = state_input(&at_bound).unwrap_or_default();
+        assert_eq!(
+            len(&full, "name"),
+            Some(BODY_MAX_BYTES),
+            "at the bound is not over it"
+        );
+        assert_eq!(len(&full, "description"), Some(BODY_MAX_BYTES));
+        assert_eq!(full.get("position"), Some(&json!(2.5)));
+        for (name, description) in [
+            ("n".repeat(BODY_MAX_BYTES + 1), None),
+            ("n".into(), Some("d".repeat(BODY_MAX_BYTES + 1))),
+        ] {
+            let over = StateCreateArgs {
+                name,
+                description,
+                ..StateCreateArgs::default()
+            };
+            assert!(
+                state_input(&over)
+                    .err()
+                    .is_some_and(|e| e.code == ErrorCode::Refused)
+            );
+        }
+        // `f64::from_str`, which `clap` parses `--position` with, takes these spellings,
+        // and serde_json would write each as `null`.
+        let huge = "1e400".parse::<f64>().ok();
+        assert_eq!(
+            huge,
+            Some(f64::INFINITY),
+            "a number too large for an f64 parses as infinity, not as an error"
+        );
+        for position in [
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            huge.unwrap_or(f64::NAN),
+        ] {
+            let create = StateCreateArgs {
+                name: "Nowhere".into(),
+                position: Some(position),
+                ..StateCreateArgs::default()
+            };
+            assert_eq!(
+                state_input(&create).err().map(|e| e.code),
+                Some(ErrorCode::Usage),
+                "--position {position} is refused before any request, never sent as `null`"
+            );
+            let update = StateUpdateArgs {
+                state: "Blocked".into(),
+                position: Some(position),
+                ..StateUpdateArgs::default()
+            };
+            assert_eq!(
+                state_update_input(&update).err().map(|e| e.code),
+                Some(ErrorCode::Usage),
+                "--position {position} is refused before any request, never sent as `null`"
+            );
+        }
+        assert_eq!(
+            state_update_input(&StateUpdateArgs {
+                state: "Blocked".into(),
+                ..StateUpdateArgs::default()
+            })
+            .err()
+            .map(|e| e.code),
+            Some(ErrorCode::Usage),
+            "no flag is nothing to change"
+        );
+        let moved = StateUpdateArgs {
+            state: "Blocked".into(),
+            position: Some(2.5),
+            ..StateUpdateArgs::default()
+        };
+        let input = state_update_input(&moved).unwrap_or_default();
+        assert_eq!(input.get("position"), Some(&json!(2.5)));
+        assert_eq!(input.get("name"), None, "a flag left out is not sent");
     }
 
     #[test]
@@ -2962,6 +3188,7 @@ mod tests {
         let args = ProjectUpdateArgs {
             project: "Smoke tests".into(),
             name: Some("Smoke".into()),
+            content: Some("# The plan".into()),
             start_date: Some("none".into()),
             target_date: Some(" 2026-12-01 ".into()),
             priority: Some(2),
@@ -2969,6 +3196,11 @@ mod tests {
         };
         let input = project_update_input(&args).unwrap_or_default();
         assert_eq!(input.get("name"), Some(&json!("Smoke")));
+        assert_eq!(
+            input.get("content"),
+            Some(&json!("# The plan")),
+            "--content inline, as it is"
+        );
         assert_eq!(
             input.get("startDate"),
             Some(&Value::Null),
@@ -2990,16 +3222,25 @@ mod tests {
             None,
             "the status is resolved after the checks"
         );
-        let long = ProjectUpdateArgs {
-            project: "x".into(),
-            name: Some("n".repeat(BODY_MAX_BYTES + 1)),
-            ..ProjectUpdateArgs::default()
-        };
-        assert!(
-            project_update_input(&long)
-                .err()
-                .is_some_and(|e| e.code == ErrorCode::Refused)
-        );
+        for long in [
+            ProjectUpdateArgs {
+                project: "x".into(),
+                name: Some("n".repeat(BODY_MAX_BYTES + 1)),
+                ..ProjectUpdateArgs::default()
+            },
+            ProjectUpdateArgs {
+                project: "x".into(),
+                content: Some("c".repeat(BODY_MAX_BYTES + 1)),
+                ..ProjectUpdateArgs::default()
+            },
+        ] {
+            assert!(
+                project_update_input(&long)
+                    .err()
+                    .is_some_and(|e| e.code == ErrorCode::Refused),
+                "a name or a content over BODY_MAX_BYTES is refused before any request"
+            );
+        }
     }
 
     #[test]
