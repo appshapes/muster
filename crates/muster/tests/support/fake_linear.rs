@@ -52,6 +52,8 @@ struct Workspace {
     milestones: Vec<Value>,
     /// The status posts of every project, each with its `projectId`, oldest first.
     project_updates: Vec<Value>,
+    /// The cycles of every team, each with its `team` by id and key, newest first.
+    cycles: Vec<Value>,
 }
 
 struct State {
@@ -157,6 +159,34 @@ impl Fake {
             .collect();
         let project = st.ws.new_project(name, "", &team_values, &backlog);
         st.ws.projects.push(project);
+    }
+
+    /// Put `n` new issues of the team in its cycle `number`, for the bound test of
+    /// `cycle get`.
+    pub fn add_cycle_issues(&self, team_key: &str, number: f64, n: usize) {
+        let mut st = self.state.lock().unwrap();
+        let cycle = st
+            .ws
+            .cycles
+            .iter()
+            .find(|c| c["team"]["key"] == team_key && c["number"].as_f64() == Some(number))
+            .map(|c| json!({ "id": c["id"], "number": c["number"], "name": c["name"] }))
+            .expect("the cycle exists");
+        for k in 1..=n {
+            let mut issue = st.ws.new_issue(
+                team_key,
+                &format!("In the cycle {k}"),
+                None,
+                "Todo",
+                &[],
+                0,
+                None,
+                None,
+                None,
+            );
+            issue["cycle"] = cycle.clone();
+            st.ws.issues.push(issue);
+        }
     }
 
     /// Add `n` new users as members of a project, for the bound tests.
@@ -441,6 +471,9 @@ fn compare(value: &Value, comparator: &Value) -> bool {
 
 /// Whether an object passes a filter: each key is a field (with nested filters for
 /// objects), `and`/`or` combine, and a `nodes` list under a field matches if any node does.
+/// How many nodes a collection clause of a filter sees, Linear's largest page.
+const PAGE_CAP_FOR_FILTERS: usize = 250;
+
 fn passes(object: &Value, filter: &Value) -> bool {
     let Some(map) = filter.as_object() else {
         return true;
@@ -519,6 +552,7 @@ impl Workspace {
             project_statuses: Vec::new(),
             milestones: Vec::new(),
             project_updates: Vec::new(),
+            cycles: Vec::new(),
         };
         // Every field `Workspace` asks for, with the values a Free workspace shows; the
         // fixture holds this to the recorded shape (ADR 0010; ADR 0014, group 1).
@@ -549,7 +583,38 @@ impl Workspace {
             let label = ws.new_label(name, color, None, None, false);
             ws.labels.push(label);
         }
-        let team = ws.new_team("APP", "Fake Team");
+        let mut team = ws.new_team("APP", "Fake Team");
+        // The seeded team uses cycles: one past, one active, one to come, so that every
+        // cycle answer has a node and `--cycle active` and `next` resolve (ADR 0014,
+        // group 13).
+        team["cyclesEnabled"] = json!(true);
+        let past = ws.new_cycle(
+            &team,
+            1.0,
+            "2026-10-19T00:00:00.000Z",
+            "2026-10-26T00:00:00.000Z",
+            Some("2026-10-26T00:00:00.000Z"),
+            (false, false, true, false, true),
+        );
+        let active = ws.new_cycle(
+            &team,
+            2.0,
+            "2026-10-26T00:00:00.000Z",
+            "2026-11-02T00:00:00.000Z",
+            None,
+            (true, false, false, false, false),
+        );
+        let next = ws.new_cycle(
+            &team,
+            3.0,
+            "2026-11-02T00:00:00.000Z",
+            "2026-11-09T00:00:00.000Z",
+            None,
+            (false, true, false, true, false),
+        );
+        let _ = (&past, &next);
+        team["activeCycle"] =
+            json!({ "id": active["id"], "number": active["number"], "name": active["name"] });
         ws.teams.push(team.clone());
         // The seeded people are the team's members, the first its owner (ADR 0014,
         // group 3).
@@ -618,7 +683,7 @@ impl Workspace {
             "https://example.com/first",
         );
         let label_id = ws.labels[2]["id"].clone();
-        let b = ws.new_issue(
+        let mut b = ws.new_issue(
             "APP",
             "Connect your tools",
             Some("The second onboarding issue."),
@@ -629,6 +694,9 @@ impl Workspace {
             Some(&other),
             None,
         );
+        // In the active cycle, so that `cycle get` and the recorder find an issue node.
+        b["cycle"] =
+            json!({ "id": active["id"], "number": active["number"], "name": active["name"] });
         ws.issues.push(b);
         let c = ws.new_issue(
             "APP",
@@ -1008,6 +1076,61 @@ impl Workspace {
             json!({ "id": post["id"], "health": post["health"], "createdAt": post["createdAt"] });
         project["health"] = post["health"].clone();
         post
+    }
+
+    /// A cycle of a team with every `CycleFields` field (ADR 0014, group 13), newest
+    /// first in the store as Linear orders a connection; the flags are
+    /// `(isActive, isNext, isPrevious, isFuture, isPast)`.
+    fn new_cycle(
+        &mut self,
+        team: &Value,
+        number: f64,
+        starts_at: &str,
+        ends_at: &str,
+        completed_at: Option<&str>,
+        flags: (bool, bool, bool, bool, bool),
+    ) -> Value {
+        let (id, now) = (self.id(), self.now());
+        let cycle = json!({
+            "id": id, "number": number, "name": null, "description": null,
+            "startsAt": starts_at, "endsAt": ends_at, "completedAt": completed_at,
+            "isActive": flags.0, "isNext": flags.1, "isPrevious": flags.2, "isFuture": flags.3, "isPast": flags.4,
+            "progress": 0.0, "createdAt": now, "updatedAt": now, "archivedAt": null,
+            "team": { "id": team["id"], "key": team["key"] },
+        });
+        self.cycles.insert(0, cycle.clone());
+        cycle
+    }
+
+    /// A cycle as `CycleByNumber` answers it: with its issues paged at the bound.
+    fn cycle_detail(&self, cycle: &Value, issues: usize) -> Value {
+        let mut view = cycle.clone();
+        let in_cycle: Vec<Value> = self
+            .issues
+            .iter()
+            .filter(|i| i["cycle"]["id"] == cycle["id"] && i["archivedAt"].is_null())
+            .map(|i| json!({ "id": i["id"], "identifier": i["identifier"], "title": i["title"], "state": i["state"] }))
+            .collect();
+        view["issues"] = Workspace::page(in_cycle, issues);
+        view
+    }
+
+    /// The cycle `cycleId` names, as an issue carries it, for the issue's team; `None`
+    /// to clear; a cycle of another team is Linear's refusal.
+    fn cycle_for(&self, input: &Value, team_id: &Value) -> Result<Value, (u16, Value)> {
+        match input["cycleId"].as_str() {
+            Some(cid) => match self.cycles.iter().find(|c| c["id"] == cid) {
+                Some(c) if c["team"]["id"] == *team_id => {
+                    Ok(json!({ "id": c["id"], "number": c["number"], "name": c["name"] }))
+                }
+                Some(_) => Err((
+                    200,
+                    json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "The cycle belongs to another team." } } ], "data": null }),
+                )),
+                None => Err(not_found("Cycle")),
+            },
+            None => Ok(Value::Null),
+        }
     }
 
     fn milestone_view(stone: &Value) -> Value {
@@ -1712,6 +1835,66 @@ impl Workspace {
                     json!({ "data": { "projectUpdateCreate": { "success": true, "projectUpdate": Workspace::milestone_view(&post) } } }),
                 )
             }
+            "Cycles" => {
+                // The filter sees the cycle with its issues, so that a collection
+                // clause such as the recorder's `issues: { length: { gt: 0 } }` works.
+                let cycles: Vec<Value> = self
+                    .cycles
+                    .iter()
+                    .filter(|c| {
+                        c["archivedAt"].is_null()
+                            && passes(&self.cycle_detail(c, PAGE_CAP_FOR_FILTERS), filter)
+                    })
+                    .cloned()
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "cycles": Workspace::page(cycles, first) } }),
+                )
+            }
+            "CycleByNumber" => {
+                let Some(issues) = vars["issues"].as_u64().map(|n| n as usize) else {
+                    return missing_variable("issues", "Int!");
+                };
+                let key = vars["key"].as_str().unwrap_or("");
+                let number = vars["number"].as_f64();
+                let found: Vec<Value> = self
+                    .cycles
+                    .iter()
+                    .filter(|c| {
+                        c["archivedAt"].is_null()
+                            && c["team"]["key"] == key
+                            && c["number"].as_f64() == number
+                    })
+                    .map(|c| self.cycle_detail(c, issues))
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "cycles": Workspace::page(found, 1) } }),
+                )
+            }
+            "CycleUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "CycleUpdateInput!");
+                };
+                let Some(index) = self.cycles.iter().position(|c| c["id"] == id) else {
+                    return not_found("Cycle");
+                };
+                let now = self.now();
+                for (field, value) in input {
+                    if ["name", "description", "startsAt", "endsAt", "completedAt"]
+                        .contains(&field.as_str())
+                    {
+                        self.cycles[index][field] = value;
+                    }
+                }
+                self.cycles[index]["updatedAt"] = json!(now);
+                (
+                    200,
+                    json!({ "data": { "cycleUpdate": { "success": true, "cycle": self.cycles[index].clone() } } }),
+                )
+            }
             "ProjectStatusCreate" => {
                 let input = &vars["input"];
                 let (Some(name), Some(kind), Some(color), Some(position)) = (
@@ -2336,6 +2519,13 @@ impl Workspace {
                     },
                     None => Value::Null,
                 };
+                let cycle = match input.get("cycleId") {
+                    Some(_) => match self.cycle_for(input, &team["id"]) {
+                        Ok(c) => c,
+                        Err(answer) => return answer,
+                    },
+                    None => Value::Null,
+                };
                 let mut issue = self.new_issue(
                     &team_key,
                     title,
@@ -2348,6 +2538,7 @@ impl Workspace {
                     parent.as_ref(),
                 );
                 issue["projectMilestone"] = milestone;
+                issue["cycle"] = cycle;
                 self.issues.push(issue.clone());
                 (
                     200,
@@ -2460,6 +2651,12 @@ impl Workspace {
                             },
                             (None, Some(_)) => return not_found("ProjectMilestone"),
                         };
+                }
+                if input.get("cycleId").is_some() {
+                    issue["cycle"] = match self.cycle_for(&input, &issue["team"]["id"]) {
+                        Ok(c) => c,
+                        Err(answer) => return answer,
+                    };
                 }
                 if input.get("parentId").is_some() {
                     issue["parent"] = match input["parentId"].as_str() {

@@ -130,7 +130,14 @@ doing is a status post: `muster project-update create --project "Trying muster"
 --body "Shipping on Friday." --health onTrack` (one JSON line with the post's `body`,
 `health`, `user` and `url`), and `muster project-update list --project "Trying
 muster"` shows them newest first; the project's own `health` and `lastUpdate` follow
-the latest post.
+the latest post. A team that uses cycles (`team update --cycles-enabled true`) has
+them made by Linear: `muster cycle list` prints them newest first with their `number`
+and the `isActive` flag, `muster cycle list --active` the one running now, `muster
+cycle get 2` one with its `issues` (bounded by `ISSUES_PER_CYCLE`), and `muster cycle
+update 2 --name "Sprint 2"` names it; `--cycle active` on `issue create` or `issue
+update` puts an issue in the running cycle (`next` the one after it, a number any
+of them, `none` takes it out), and `muster issue list --cycle active` lists the
+cycle's issues.
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):

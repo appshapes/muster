@@ -5,18 +5,19 @@
 use serde_json::{Map, Value, json};
 
 use crate::bounds::{
-    ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, MEMBERS_PER_PROJECT,
-    MILESTONES_PER_PROJECT, PAGE_CAP, TEAMS_PER_PROJECT,
+    ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, ISSUES_PER_CYCLE,
+    MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, PAGE_CAP, TEAMS_PER_PROJECT,
 };
 use crate::cli::{
-    AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
-    IssueListArgs, LabelCommand, LabelCreateArgs, LabelRefArgs, LabelUpdateArgs, ListArgs,
-    MemberArgs, MemberCommand, MilestoneCommand, MilestoneCreateArgs, MilestoneListArgs,
-    MilestoneRefArgs, MilestoneUpdateArgs, ProjectCommand, ProjectCreateArgs, ProjectRefArgs,
-    ProjectStatusCommand, ProjectStatusCreateArgs, ProjectStatusRefArgs, ProjectStatusUpdateArgs,
-    ProjectUpdateArgs, ProjectUpdateCommand, ProjectUpdateCreateArgs, ProjectUpdateListArgs,
-    StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs,
-    TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs, UserRoleArgs,
+    AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, CycleCommand, CycleListArgs,
+    CycleRefArgs, CycleUpdateArgs, GetArgs, IssueCommand, IssueListArgs, LabelCommand,
+    LabelCreateArgs, LabelRefArgs, LabelUpdateArgs, ListArgs, MemberArgs, MemberCommand,
+    MilestoneCommand, MilestoneCreateArgs, MilestoneListArgs, MilestoneRefArgs,
+    MilestoneUpdateArgs, ProjectCommand, ProjectCreateArgs, ProjectRefArgs, ProjectStatusCommand,
+    ProjectStatusCreateArgs, ProjectStatusRefArgs, ProjectStatusUpdateArgs, ProjectUpdateArgs,
+    ProjectUpdateCommand, ProjectUpdateCreateArgs, ProjectUpdateListArgs, StateCommand,
+    StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs, TeamRefArgs,
+    TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs, UserRoleArgs,
     UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
@@ -103,6 +104,14 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 ProjectCommand::Update(args) => project_update(&session, args, out),
                 ProjectCommand::Delete(args) => project_delete(&session, args, out),
                 ProjectCommand::Unarchive(args) => project_unarchive(&session, args, out),
+            }
+        }
+        Command::Cycle { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                CycleCommand::List(args) => cycle_list(&session, args, out),
+                CycleCommand::Get(args) => cycle_get(&session, args, out),
+                CycleCommand::Update(args) => cycle_update(&session, args, out),
             }
         }
         Command::Milestone { command } => {
@@ -472,6 +481,77 @@ impl Session {
                     names(&stones, "name")
                 ),
                 "name one from `muster milestone list --project <NAME>`",
+            )),
+        }
+    }
+
+    /// The team's cycles that pass `filter`, newest first as Linear orders them, at
+    /// most `first` (ADR 0014, group 13).
+    fn cycles(
+        &self,
+        team_key: &str,
+        filter: Map<String, Value>,
+        first: usize,
+    ) -> Result<Value, Error> {
+        let mut filter = filter;
+        filter.insert("team".into(), json!({ "key": { "eq": team_key } }));
+        self.linear.run(
+            &ops::CYCLES,
+            json!({ "first": first, "filter": Value::Object(filter) }),
+        )
+    }
+
+    /// One cycle of the team from `--cycle`'s or a command's word: a number, `active`
+    /// or `next`; exit 2 for another word, exit 4 when the team has no such cycle.
+    fn cycle_ref(&self, team_key: &str, word: &str) -> Result<Value, Error> {
+        let (field, value, what) = match word.trim() {
+            "active" => (
+                "isActive",
+                json!({ "eq": true }),
+                "an active cycle".to_string(),
+            ),
+            "next" => ("isNext", json!({ "eq": true }), "a next cycle".to_string()),
+            text => match text.parse::<u64>() {
+                Ok(number) => (
+                    "number",
+                    json!({ "eq": number as f64 }),
+                    format!("a cycle {number}"),
+                ),
+                Err(_) => {
+                    return Err(Error::with_hint(
+                        ErrorCode::Usage,
+                        format!("a cycle is a number, `active` or `next`, not {word:?}"),
+                        "`muster cycle list` prints the team's cycles with their numbers",
+                    ));
+                }
+            },
+        };
+        let mut filter = Map::new();
+        filter.insert(field.into(), value);
+        let data = self.cycles(team_key, filter, 1)?;
+        match nodes(&data, "cycles").into_iter().next() {
+            Some(cycle) => Ok(cycle),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("team {team_key} has no {what}"),
+                "`muster cycle list` prints the team's cycles; `team update --cycles-enabled true` turns them on",
+            )),
+        }
+    }
+
+    /// One cycle with its issues, by number, in one request, the issues bounded by
+    /// `ISSUES_PER_CYCLE`.
+    fn cycle_full(&self, team_key: &str, number: u64) -> Result<Value, Error> {
+        let data = self.linear.run(
+            &ops::CYCLE_BY_NUMBER,
+            json!({ "key": team_key, "number": number as f64, "issues": ISSUES_PER_CYCLE }),
+        )?;
+        match nodes(&data, "cycles").into_iter().next() {
+            Some(cycle) => Ok(cycle),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("team {team_key} has no cycle {number}"),
+                "`muster cycle list` prints the team's cycles with their numbers",
             )),
         }
     }
@@ -1748,6 +1828,86 @@ fn project_create(session: &Session, args: &ProjectCreateArgs, out: &Output) -> 
     Ok(())
 }
 
+fn cycle_list(session: &Session, args: &CycleListArgs, out: &Output) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let team_key = session.team_key()?;
+    let mut filter = Map::new();
+    if args.active {
+        filter.insert("isActive".into(), json!({ "eq": true }));
+    } else if args.upcoming {
+        filter.insert("isFuture".into(), json!({ "eq": true }));
+    } else if args.past {
+        filter.insert("isPast".into(), json!({ "eq": true }));
+    }
+    let data = session.cycles(&team_key, filter, n)?;
+    emit_list(
+        out,
+        nodes(&data, "cycles"),
+        has_next_page(&data, "cycles"),
+        "cycles",
+        n,
+    );
+    Ok(())
+}
+
+fn cycle_get(session: &Session, args: &CycleRefArgs, out: &Output) -> Result<(), Error> {
+    let team_key = session.team_key()?;
+    let cycle = session.cycle_full(&team_key, args.number)?;
+    out.emit(&cycle);
+    if has_next_page(&cycle, "issues") {
+        out.notice(
+            "truncated",
+            &format!(
+                "issues: cycle {} has more than the {ISSUES_PER_CYCLE} printed",
+                args.number
+            ),
+            "ISSUES_PER_CYCLE is the bound (docs/reference/commands.md#bounds); `muster issue list --cycle <NUMBER>` pages them",
+        );
+    }
+    Ok(())
+}
+
+/// The input of `cycleUpdate` from the flags: only what was passed, the texts bounded;
+/// the times go to Linear as given, since Linear validates a `DateTime`.
+fn cycle_input(args: &CycleUpdateArgs) -> Result<Map<String, Value>, Error> {
+    let mut input = Map::new();
+    if let Some(name) = &args.name {
+        check_body(Text::Name, name)?;
+        input.insert("name".into(), json!(name));
+    }
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if let Some(time) = &args.starts_at {
+        input.insert("startsAt".into(), json!(time));
+    }
+    if let Some(time) = &args.ends_at {
+        input.insert("endsAt".into(), json!(time));
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --name, --description, --starts-at, --ends-at",
+        ));
+    }
+    Ok(input)
+}
+
+fn cycle_update(session: &Session, args: &CycleUpdateArgs, out: &Output) -> Result<(), Error> {
+    let input = cycle_input(args)?;
+    let team_key = session.team_key()?;
+    let cycle = session.cycle_ref(&team_key, &args.number.to_string())?;
+    let id = need_str(&cycle, "id", "Cycles")?;
+    let data = session.linear.run(
+        &ops::CYCLE_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "cycleUpdate", "cycle")?);
+    Ok(())
+}
+
 fn milestone_list(session: &Session, args: &MilestoneListArgs, out: &Output) -> Result<(), Error> {
     let n = limit(args.limit)?;
     let data = session.milestones(&args.project, n)?;
@@ -2366,6 +2526,15 @@ fn issue_list(session: &Session, args: &IssueListArgs, out: &Output) -> Result<(
         };
         filter = filter.with("projectMilestone", clause);
     }
+    if let Some(cycle) = &args.cycle {
+        let clause = if is_none(cycle) {
+            json!({ "null": true })
+        } else {
+            let cycle = session.cycle_ref(&team_key, cycle)?;
+            json!({ "id": { "eq": need_str(&cycle, "id", "Cycles")? } })
+        };
+        filter = filter.with("cycle", clause);
+    }
     let data = session.linear.run(
         &ops::ISSUES,
         json!({ "first": n, "filter": filter.build(), "orderBy": "updatedAt" }),
@@ -2480,6 +2649,10 @@ fn issue_create(session: &Session, args: &CreateArgs, out: &Output) -> Result<()
                 json!(need_str(&stone, "id", "Milestones")?),
             );
         }
+    }
+    if let Some(cycle) = &args.cycle {
+        let cycle = session.cycle_ref(&team_key, cycle)?;
+        input.insert("cycleId".into(), json!(need_str(&cycle, "id", "Cycles")?));
     }
     if let Some(who) = &args.assignee {
         input.insert("assigneeId".into(), json!(session.user_id(who)?));
@@ -2654,6 +2827,17 @@ fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<()
         };
         input.insert("projectMilestoneId".into(), value);
     }
+    if let Some(cycle) = &args.cycle {
+        let value = if is_none(cycle) {
+            Value::Null
+        } else {
+            // In the issue's own team: a cycle belongs to one team.
+            let team_key = need_str(&issue, "team.key", "IssueById")?;
+            let cycle = session.cycle_ref(&team_key, cycle)?;
+            json!(need_str(&cycle, "id", "Cycles")?)
+        };
+        input.insert("cycleId".into(), value);
+    }
     if let Some(parent) = &args.parent {
         let value = if is_none(parent) {
             Value::Null
@@ -2677,7 +2861,7 @@ fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<()
         return Err(Error::with_hint(
             ErrorCode::Usage,
             "nothing to change",
-            "pass at least one of --title, --state, --add-label, --remove-label, --priority, --assignee, --project, --milestone, --parent, --description, --description-file",
+            "pass at least one of --title, --state, --add-label, --remove-label, --priority, --assignee, --project, --milestone, --cycle, --parent, --description, --description-file",
         ));
     }
     let data = session.linear.run(

@@ -75,6 +75,12 @@ pub enum Command {
         #[command(subcommand)]
         command: ProjectCommand,
     },
+    /// A team's cycles, Linear's time-boxed sprints: list, get, update
+    Cycle {
+        /// The cycle command.
+        #[command(subcommand)]
+        command: CycleCommand,
+    },
     /// A project's milestones: list, create, update, delete
     Milestone {
         /// The milestone command.
@@ -997,6 +1003,64 @@ impl ProjectStatusType {
     }
 }
 
+/// The cycle commands (ADR 0014, group 13). Linear makes a team's cycles from its
+/// settings (`team update --cycles-enabled true`), so there is no create; `cycleArchive`
+/// unlinks every issue with no inverse and stays out.
+#[derive(Subcommand, Debug)]
+pub enum CycleCommand {
+    /// List the team's cycles, one JSON object per line, newest first
+    List(CycleListArgs),
+    /// One cycle with its issues, by number
+    Get(CycleRefArgs),
+    /// Change a cycle's name, description, start or end
+    Update(Box<CycleUpdateArgs>),
+}
+
+/// `cycle list`.
+#[derive(Args, Debug)]
+pub struct CycleListArgs {
+    /// Only the active cycle
+    #[arg(long, conflicts_with_all = ["upcoming", "past"])]
+    pub active: bool,
+    /// Only the cycles still to come
+    #[arg(long, conflicts_with_all = ["active", "past"])]
+    pub upcoming: bool,
+    /// Only the cycles that have ended
+    #[arg(long, conflicts_with_all = ["active", "upcoming"])]
+    pub past: bool,
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+}
+
+/// A cycle of the team, by number.
+#[derive(Args, Debug)]
+pub struct CycleRefArgs {
+    /// The cycle's number in its team
+    #[arg(value_name = "NUMBER")]
+    pub number: u64,
+}
+
+/// `cycle update`.
+#[derive(Args, Debug, Default)]
+pub struct CycleUpdateArgs {
+    /// The cycle's number in its team
+    #[arg(value_name = "NUMBER")]
+    pub number: u64,
+    /// A new name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new description
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// A new start, a time (2026-11-10T00:00:00Z)
+    #[arg(long, value_name = "TIME")]
+    pub starts_at: Option<String>,
+    /// A new end, a time (2026-11-24T00:00:00Z)
+    #[arg(long, value_name = "TIME")]
+    pub ends_at: Option<String>,
+}
+
 /// The milestone commands (ADR 0014, group 10): the steps inside a project.
 #[derive(Subcommand, Debug)]
 pub enum MilestoneCommand {
@@ -1207,6 +1271,9 @@ pub struct IssueListArgs {
     /// Only issues in this milestone, by name, or `none` for issues in no milestone
     #[arg(long, value_name = "NAME")]
     pub milestone: Option<String>,
+    /// Only issues in this cycle of the team: a number, `active`, `next`, or `none` for issues in no cycle
+    #[arg(long, value_name = "NUMBER|active|next|none")]
+    pub cycle: Option<String>,
     /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
     #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
     pub limit: usize,
@@ -1239,6 +1306,9 @@ pub struct CreateArgs {
     /// The milestone, by name, in the project --project names
     #[arg(long, value_name = "NAME", requires = "project")]
     pub milestone: Option<String>,
+    /// The cycle of the team to put it in: a number, `active` or `next`
+    #[arg(long, value_name = "NUMBER|active|next")]
+    pub cycle: Option<String>,
     /// The assignee: `me`, an email address or a name
     #[arg(long, value_name = "WHO")]
     pub assignee: Option<String>,
@@ -1336,6 +1406,9 @@ pub struct UpdateArgs {
     /// A new milestone, by name, in the issue's project (or the one --project names), or `none` to remove it
     #[arg(long, value_name = "NAME")]
     pub milestone: Option<String>,
+    /// A new cycle, in the issue's team: a number, `active`, `next`, or `none` to take it out of its cycle
+    #[arg(long, value_name = "NUMBER|active|next|none")]
+    pub cycle: Option<String>,
     /// A new parent, which makes this a sub-issue, or `none` to take it out from under its parent
     #[arg(long, value_name = "ISSUE")]
     pub parent: Option<String>,

@@ -153,6 +153,14 @@ pub const PROJECT_UPDATE_FIELDS: &str = "fragment ProjectUpdateFields on Project
   project { id name }
 }";
 
+/// The fields every cycle answer carries (ADR 0014, group 13).
+pub const CYCLE_FIELDS: &str = "fragment CycleFields on Cycle {
+  id number name description startsAt endsAt completedAt
+  isActive isNext isPrevious isFuture isPast progress
+  createdAt updatedAt archivedAt
+  team { id key }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -333,6 +341,31 @@ op!(
   }
 }",
     &[PROJECT_UPDATE_FIELDS]
+);
+
+op!(
+    CYCLES,
+    "Cycles",
+    Kind::Query,
+    "query Cycles($first: Int!, $filter: CycleFilter) {
+  cycles(first: $first, filter: $filter) { nodes { ...CycleFields } pageInfo { hasNextPage } }
+}",
+    &[CYCLE_FIELDS]
+);
+
+op!(
+    CYCLE_BY_NUMBER,
+    "CycleByNumber",
+    Kind::Query,
+    "query CycleByNumber($key: String!, $number: Float!, $issues: Int!) {
+  cycles(first: 1, filter: { team: { key: { eq: $key } }, number: { eq: $number } }) {
+    nodes {
+      ...CycleFields
+      issues(first: $issues) { nodes { id identifier title state { id name type } } pageInfo { hasNextPage } }
+    }
+  }
+}",
+    &[CYCLE_FIELDS]
 );
 
 op!(
@@ -698,6 +731,16 @@ op!(
     &[PROJECT_UPDATE_FIELDS]
 );
 
+op!(
+    CYCLE_UPDATE,
+    "CycleUpdate",
+    Kind::Mutation,
+    "mutation CycleUpdate($id: String!, $input: CycleUpdateInput!) {
+  cycleUpdate(id: $id, input: $input) { success cycle { ...CycleFields } }
+}",
+    &[CYCLE_FIELDS]
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -716,6 +759,8 @@ pub static READS: &[&Operation] = &[
     &PROJECT_STATUSES,
     &MILESTONES,
     &PROJECT_UPDATES,
+    &CYCLES,
+    &CYCLE_BY_NUMBER,
 ];
 
 /// Every write operation.
@@ -756,6 +801,7 @@ pub static WRITES: &[&Operation] = &[
     &MILESTONE_UPDATE,
     &MILESTONE_DELETE,
     &PROJECT_UPDATE_CREATE,
+    &CYCLE_UPDATE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -810,6 +856,7 @@ mod tests {
                 "ProjectStatusFields",
                 "MilestoneFields",
                 "ProjectUpdateFields",
+                "CycleFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));

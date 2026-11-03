@@ -9,7 +9,9 @@ use clap::{ArgAction, Command, CommandFactory};
 use serde_json::{Map, Value, json};
 
 use crate::bounds;
-use crate::bounds::{MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, TEAMS_PER_PROJECT};
+use crate::bounds::{
+    ISSUES_PER_CYCLE, MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, TEAMS_PER_PROJECT,
+};
 use crate::cli::{Cli, SchemaArgs, SchemaFormat};
 use crate::config::{ENVIRONMENT, LINEAR_ENDPOINT};
 use crate::error::{Error, ErrorCode};
@@ -351,6 +353,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
     let (sample, lack) = sample_issue(session)?;
     let team = sample_team(session)?;
     let project = sample_project(session)?;
+    let cycle = sample_cycle(session)?;
     match (&sample, lack) {
         (Some(id), Some(lack)) => out.notice(
             "partial",
@@ -371,6 +374,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
             sample.as_deref(),
             team.as_deref(),
             project.as_deref(),
+            cycle.as_ref().map(|(k, n)| (k.as_str(), *n)),
         ) else {
             if [
                 "IssueById",
@@ -379,6 +383,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
                 "ProjectByName",
                 "Milestones",
                 "ProjectUpdates",
+                "CycleByNumber",
             ]
             .contains(&op.name)
             {
@@ -496,6 +501,22 @@ fn project_lack(data: &Value) -> Option<&'static str> {
     }
 }
 
+/// The team key and number of the cycle `CycleByNumber` is recorded on: the first
+/// cycle with an issue in it that `Cycles` lists across the workspace, since the
+/// first team may have no cycles and a cycle without issues records no issue node;
+/// the smoke run leaves a canceled issue in the smoke team's cycle for this.
+fn sample_cycle(session: &Session) -> Result<Option<(String, f64)>, Error> {
+    let data = session.linear.run(
+        &ops::CYCLES,
+        json!({ "first": 1, "filter": { "issues": { "length": { "gt": 0 } } } }),
+    )?;
+    Ok(nodes(&data, "cycles").first().and_then(|c| {
+        let key = str_at(c, "team.key")?.to_string();
+        let number = c["number"].as_f64()?;
+        Some((key, number))
+    }))
+}
+
 /// The variables each read operation is recorded with, and the fixture test replays
 /// against the fake; `None` when `IssueById` has no issue, `TeamByKey` no team, or
 /// `ProjectByName` no project, to ask for.
@@ -504,6 +525,7 @@ pub fn fixture_variables(
     first_issue: Option<&str>,
     first_team: Option<&str>,
     first_project: Option<&str>,
+    first_cycle: Option<(&str, f64)>,
 ) -> Option<Value> {
     Some(match op {
         "Viewer" | "Workspace" => json!({}),
@@ -515,6 +537,11 @@ pub fn fixture_variables(
         "UserById" => json!({ "id": "me" }),
         "ProjectStatuses" => json!({ "first": 5, "includeArchived": false }),
         "Milestones" | "ProjectUpdates" => json!({ "project": first_project?, "first": 5 }),
+        "Cycles" => json!({ "first": 5, "filter": Value::Null }),
+        "CycleByNumber" => {
+            let (key, number) = first_cycle?;
+            json!({ "key": key, "number": number, "issues": ISSUES_PER_CYCLE })
+        }
         "ProjectByName" => {
             json!({ "name": first_project?, "includeArchived": false, "teams": TEAMS_PER_PROJECT, "members": MEMBERS_PER_PROJECT, "milestones": MILESTONES_PER_PROJECT })
         }
@@ -640,6 +667,9 @@ mod tests {
             "milestone delete",
             "project-update list",
             "project-update create",
+            "cycle list",
+            "cycle get",
+            "cycle update",
             "state list",
             "label list",
             "project list",

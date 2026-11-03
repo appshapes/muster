@@ -40,7 +40,7 @@ jq -e '.urlKey == "fake" and (.userCount | type) == "number" and .subscription =
 
 step "muster team get"
 "$bin" team get | tee "$tmp/team.json"
-jq -e '.key == "APP" and .cyclesEnabled == false and .defaultIssueState.name == "Backlog"' "$tmp/team.json" >/dev/null
+jq -e '.key == "APP" and .cyclesEnabled == true and .defaultIssueState.name == "Backlog"' "$tmp/team.json" >/dev/null
 
 step "muster user get me"
 "$bin" user get me | tee "$tmp/user.json"
@@ -83,6 +83,12 @@ step "muster project get and update"
 "$bin" project update "Trying muster" --status "In Progress" --lead me | jq -e '.status.name == "In Progress" and .lead.id' >/dev/null
 "$bin" project get "Trying muster" | tee "$tmp/project-get.json"
 jq -e '.name == "Trying muster" and .status.name == "In Progress" and (.members.nodes | type) == "array"' "$tmp/project-get.json" >/dev/null
+
+step "muster cycle list --active and the issue's --cycle"
+"$bin" cycle list --active | tee "$tmp/cycle.json"
+jq -e '.isActive == true and .number == 2 and .team.key == "APP"' "$tmp/cycle.json" >/dev/null
+"$bin" issue update "$id" --cycle active | jq -e '.cycle.number == 2' >/dev/null
+"$bin" cycle get 2 | jq -e --arg id "$id" '[.issues.nodes[].identifier] | index($id) != null' >/dev/null
 
 step "muster issue list --project"
 "$bin" issue update "$id" --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null

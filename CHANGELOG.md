@@ -84,6 +84,19 @@ user-visible change, added in the same commit as the change. The format follows
   A project update is Linear's name for a status post; `project update`, two words,
   changes the project itself (ADR 0014, group 11;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `cycle list [--active|--upcoming|--past]` prints the team's cycles, Linear's
+  time-boxed sprints, newest first, each with its `number`, `name`, `startsAt`,
+  `endsAt`, `completedAt`, the `isActive`, `isNext`, `isPrevious`, `isFuture` and
+  `isPast` flags, `progress` and `team`; `cycle get <NUMBER>` adds its `issues`,
+  bounded by the new `ISSUES_PER_CYCLE` with a `truncated` notice past it; `cycle
+  update <NUMBER> [--name] [--description] [--starts-at <TIME>] [--ends-at <TIME>]`
+  changes one. `--cycle <NUMBER|active|next|none>` on `issue list`, `issue create`
+  and `issue update` names a cycle of the team (`none` for issues in no cycle, or to
+  take an issue out); a word that is none of these is exit 2 and a cycle the team
+  does not have is exit 4, before any request. Linear makes cycles from a team's
+  settings, so there is no create, and `cycleArchive`, which unlinks every issue
+  with no inverse, stays out (ADR 0014, group 13;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.3.0 - 2026-11-03
 
