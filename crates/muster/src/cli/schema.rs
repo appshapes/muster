@@ -514,8 +514,8 @@ fn sample_initiative(session: &Session) -> Result<Option<String>, Error> {
 }
 
 /// The variables each read operation is recorded with, and the fixture test replays
-/// against the fake; `None` when `IssueById` has no issue, `TeamByKey` no team, or
-/// `ProjectByName` no project, to ask for.
+/// against the fake; `None` when `IssueById` has no issue, `TeamByKey` no team,
+/// `ProjectByName` no project, or `InitiativeByName` no initiative, to ask for.
 pub fn fixture_variables(
     op: &str,
     first_issue: Option<&str>,
