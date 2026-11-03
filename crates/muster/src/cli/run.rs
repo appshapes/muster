@@ -2,7 +2,7 @@
 //! answers (ADR 0007, ADR 0008). Every handler writes through [`Output`] as it goes and
 //! returns the first failure.
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::bounds::{ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, PAGE_CAP};
 use crate::cli::{
@@ -632,9 +632,30 @@ fn body_from(text: &Option<String>, file: &Option<String>) -> Result<Option<Stri
     }
 }
 
+/// The `title` and `description` of an `issueCreate` or `issueUpdate` input, from
+/// `--title`, `--description` and `--description-file`, each checked against
+/// `BODY_MAX_BYTES` before any request; a flag not passed leaves its field out. The
+/// unit test reaches the bound here, in process: on Linux a value on argv cannot, since
+/// the kernel refuses one argument over 128 KiB (`MAX_ARG_STRLEN`) before muster runs.
+fn title_and_description(
+    title: Option<&str>,
+    description: &Option<String>,
+    file: &Option<String>,
+) -> Result<Map<String, Value>, Error> {
+    let mut input = Map::new();
+    if let Some(title) = title {
+        check_body(Text::Title, title)?;
+        input.insert("title".into(), json!(title));
+    }
+    if let Some(description) = body_from(description, file)? {
+        input.insert("description".into(), json!(description));
+    }
+    Ok(input)
+}
+
 fn issue_create(session: &Session, args: &CreateArgs, out: &Output) -> Result<(), Error> {
-    check_body(Text::Title, &args.title)?;
-    let description = body_from(&args.description, &args.description_file)?;
+    let mut input =
+        title_and_description(Some(&args.title), &args.description, &args.description_file)?;
     let parent = match &args.parent {
         Some(reference) => Some(session.issue_brief(reference)?),
         None => None,
@@ -679,35 +700,29 @@ fn issue_create(session: &Session, args: &CreateArgs, out: &Output) -> Result<()
             ));
         }
     }
-    let mut input = json!({ "teamId": team_id, "title": args.title });
-    let map = input
-        .as_object_mut()
-        .ok_or_else(|| Error::new(ErrorCode::Failed, "input is not an object"))?;
-    if let Some(description) = description {
-        map.insert("description".into(), json!(description));
-    }
+    input.insert("teamId".into(), json!(team_id));
     if let Some(state) = &args.state {
-        map.insert("stateId".into(), json!(session.state_id(&team_key, state)?));
+        input.insert("stateId".into(), json!(session.state_id(&team_key, state)?));
     }
     let labels = session.label_ids(&team_key, &args.label)?;
     if !labels.is_empty() {
-        map.insert("labelIds".into(), json!(labels));
+        input.insert("labelIds".into(), json!(labels));
     }
     if let Some(priority) = args.priority {
-        map.insert("priority".into(), json!(priority));
+        input.insert("priority".into(), json!(priority));
     }
     if let Some(project) = &args.project {
-        map.insert("projectId".into(), json!(session.project_id(project)?));
+        input.insert("projectId".into(), json!(session.project_id(project)?));
     }
     if let Some(who) = &args.assignee {
-        map.insert("assigneeId".into(), json!(session.user_id(who)?));
+        input.insert("assigneeId".into(), json!(session.user_id(who)?));
     }
     if let Some(parent) = &parent {
-        map.insert("parentId".into(), json!(need_str(parent, "id", "Issues")?));
+        input.insert("parentId".into(), json!(need_str(parent, "id", "Issues")?));
     }
     let data = session
         .linear
-        .run(&ops::ISSUE_CREATE, json!({ "input": input }))?;
+        .run(&ops::ISSUE_CREATE, json!({ "input": Value::Object(input) }))?;
     out.emit(&payload(&data, "issueCreate", "issue")?);
     Ok(())
 }
@@ -742,7 +757,13 @@ fn issue_comment(session: &Session, args: &CommentArgs, out: &Output) -> Result<
     Ok(())
 }
 
-fn issue_attach(session: &Session, args: &AttachArgs, out: &Output) -> Result<(), Error> {
+/// The input of `attachmentCreate` but its `issueId`: `--url`, `--title` and
+/// `--subtitle`, checked before any request. An empty URL or title is a usage error,
+/// exit 2, since Linear requires both and muster invents neither; a value over
+/// `BODY_MAX_BYTES` is refused, exit 6. The unit test reaches the bound here, in
+/// process: on Linux a value on argv cannot, since the kernel refuses one argument over
+/// 128 KiB (`MAX_ARG_STRLEN`) before muster runs, and macOS allows it.
+fn attachment_input(args: &AttachArgs) -> Result<Map<String, Value>, Error> {
     for (flag, value) in [("--url", &args.url), ("--title", &args.title)] {
         if value.trim().is_empty() {
             return Err(Error::with_hint(
@@ -754,18 +775,24 @@ fn issue_attach(session: &Session, args: &AttachArgs, out: &Output) -> Result<()
     }
     check_body(Text::Link, &args.url)?;
     check_body(Text::Title, &args.title)?;
+    let mut input = Map::new();
+    input.insert("url".into(), json!(args.url));
+    input.insert("title".into(), json!(args.title));
     if let Some(subtitle) = &args.subtitle {
         check_body(Text::Subtitle, subtitle)?;
+        input.insert("subtitle".into(), json!(subtitle));
     }
+    Ok(input)
+}
+
+fn issue_attach(session: &Session, args: &AttachArgs, out: &Output) -> Result<(), Error> {
+    let mut input = attachment_input(args)?;
     let issue = session.issue_brief(&args.issue)?;
-    let issue_id = need_str(&issue, "id", "Issues")?;
-    let mut input = json!({ "issueId": issue_id, "url": args.url, "title": args.title });
-    if let (Some(subtitle), Some(map)) = (&args.subtitle, input.as_object_mut()) {
-        map.insert("subtitle".into(), json!(subtitle));
-    }
-    let data = session
-        .linear
-        .run(&ops::ATTACHMENT_CREATE, json!({ "input": input }))?;
+    input.insert("issueId".into(), json!(need_str(&issue, "id", "Issues")?));
+    let data = session.linear.run(
+        &ops::ATTACHMENT_CREATE,
+        json!({ "input": Value::Object(input) }),
+    )?;
     out.emit(&payload(&data, "attachmentCreate", "attachment")?);
     Ok(())
 }
@@ -796,36 +823,27 @@ fn issue_close(session: &Session, args: &CloseArgs, out: &Output) -> Result<(), 
 }
 
 fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<(), Error> {
-    if let Some(title) = &args.title {
-        check_body(Text::Title, title)?;
-    }
-    let description = body_from(&args.description, &args.description_file)?;
+    let mut input = title_and_description(
+        args.title.as_deref(),
+        &args.description,
+        &args.description_file,
+    )?;
     let issue = session.issue(&args.issue, 1, 1, 1)?;
     let issue_id = need_str(&issue, "id", "IssueById")?;
     let team_key = need_str(&issue, "team.key", "IssueById")?;
-    let mut input = json!({});
-    let map = input
-        .as_object_mut()
-        .ok_or_else(|| Error::new(ErrorCode::Failed, "input is not an object"))?;
-    if let Some(title) = &args.title {
-        map.insert("title".into(), json!(title));
-    }
-    if let Some(description) = description {
-        map.insert("description".into(), json!(description));
-    }
     if let Some(state) = &args.state {
-        map.insert("stateId".into(), json!(session.state_id(&team_key, state)?));
+        input.insert("stateId".into(), json!(session.state_id(&team_key, state)?));
     }
     let added = session.label_ids(&team_key, &args.add_label)?;
     if !added.is_empty() {
-        map.insert("addedLabelIds".into(), json!(added));
+        input.insert("addedLabelIds".into(), json!(added));
     }
     let removed = session.label_ids(&team_key, &args.remove_label)?;
     if !removed.is_empty() {
-        map.insert("removedLabelIds".into(), json!(removed));
+        input.insert("removedLabelIds".into(), json!(removed));
     }
     if let Some(priority) = args.priority {
-        map.insert("priority".into(), json!(priority));
+        input.insert("priority".into(), json!(priority));
     }
     if let Some(who) = &args.assignee {
         let value = if is_none(who) {
@@ -833,7 +851,7 @@ fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<()
         } else {
             json!(session.user_id(who)?)
         };
-        map.insert("assigneeId".into(), value);
+        input.insert("assigneeId".into(), value);
     }
     if let Some(project) = &args.project {
         let value = if is_none(project) {
@@ -841,7 +859,7 @@ fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<()
         } else {
             json!(session.project_id(project)?)
         };
-        map.insert("projectId".into(), value);
+        input.insert("projectId".into(), value);
     }
     if let Some(parent) = &args.parent {
         let value = if is_none(parent) {
@@ -860,9 +878,9 @@ fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<()
             }
             json!(parent_id)
         };
-        map.insert("parentId".into(), value);
+        input.insert("parentId".into(), value);
     }
-    if map.is_empty() {
+    if input.is_empty() {
         return Err(Error::with_hint(
             ErrorCode::Usage,
             "nothing to change",
@@ -871,7 +889,7 @@ fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<()
     }
     let data = session.linear.run(
         &ops::ISSUE_UPDATE,
-        json!({ "id": issue_id, "input": input }),
+        json!({ "id": issue_id, "input": Value::Object(input) }),
     )?;
     out.emit(&payload(&data, "issueUpdate", "issue")?);
     Ok(())
@@ -880,6 +898,127 @@ fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bounds::BODY_MAX_BYTES;
+
+    /// The bound on a flag's value is held here, in process, on every OS. The tests
+    /// through the binary cannot reach it from argv on Linux: the kernel refuses one
+    /// argument over 128 KiB (`MAX_ARG_STRLEN`) before muster runs, and
+    /// `BODY_MAX_BYTES` is 256 KiB; macOS allows the argument, so a test that sent it
+    /// passed there and failed on Linux.
+    #[test]
+    fn an_attachment_input_is_checked_before_any_request() {
+        let attach = |url: &str, title: &str, subtitle: Option<&str>| AttachArgs {
+            issue: "APP-1".to_string(),
+            url: url.to_string(),
+            title: title.to_string(),
+            subtitle: subtitle.map(str::to_string),
+        };
+        let at_bound = "x".repeat(BODY_MAX_BYTES);
+        let over = "x".repeat(BODY_MAX_BYTES + 1);
+        let len = |input: &Map<String, Value>, field: &str| {
+            input.get(field).and_then(Value::as_str).map(str::len)
+        };
+        let full =
+            attachment_input(&attach(&at_bound, &at_bound, Some(&at_bound))).unwrap_or_default();
+        assert_eq!(
+            len(&full, "url"),
+            Some(BODY_MAX_BYTES),
+            "at the bound is not over it"
+        );
+        assert_eq!(len(&full, "title"), Some(BODY_MAX_BYTES));
+        assert_eq!(len(&full, "subtitle"), Some(BODY_MAX_BYTES));
+        let plain = attachment_input(&attach("https://example.com", "x", None)).unwrap_or_default();
+        assert_eq!(
+            plain.get("subtitle"),
+            None,
+            "a subtitle not passed is left out, never invented"
+        );
+        assert_eq!(
+            plain.get("issueId"),
+            None,
+            "the issue is resolved after the checks, so no request precedes a refusal"
+        );
+        for (args, what) in [
+            (attach(&over, "x", None), "the link"),
+            (attach("https://example.com", &over, None), "the title"),
+            (
+                attach("https://example.com", "x", Some(&over)),
+                "the subtitle",
+            ),
+        ] {
+            let e = attachment_input(&args).err();
+            assert_eq!(
+                e.as_ref().map(|e| e.code),
+                Some(ErrorCode::Refused),
+                "{what}"
+            );
+            assert!(
+                e.as_ref()
+                    .is_some_and(|e| e.message.starts_with(what) && e.hint.contains(what)),
+                "{what}: {e:?}"
+            );
+        }
+        for args in [
+            attach("", "x", None),
+            attach("https://example.com", " ", None),
+        ] {
+            let e = attachment_input(&args).err();
+            assert_eq!(e.as_ref().map(|e| e.code), Some(ErrorCode::Usage), "{e:?}");
+            assert!(
+                e.as_ref()
+                    .is_some_and(|e| e.message.contains("must not be empty")),
+                "{e:?}"
+            );
+        }
+    }
+
+    /// The same bound on `issue create --title`, `issue update --title` and their
+    /// `--description`, for the same reason.
+    #[test]
+    fn a_title_and_a_description_are_checked_before_any_request() {
+        let at_bound = "x".repeat(BODY_MAX_BYTES);
+        let over = "x".repeat(BODY_MAX_BYTES + 1);
+        let len = |input: &Map<String, Value>, field: &str| {
+            input.get(field).and_then(Value::as_str).map(str::len)
+        };
+        // `issue create`: the title is required.
+        let full = title_and_description(Some(&at_bound), &Some(at_bound.clone()), &None)
+            .unwrap_or_default();
+        assert_eq!(
+            len(&full, "title"),
+            Some(BODY_MAX_BYTES),
+            "at the bound is not over it"
+        );
+        assert_eq!(len(&full, "description"), Some(BODY_MAX_BYTES));
+        let e = title_and_description(Some(&over), &None, &None).err();
+        assert_eq!(
+            e.as_ref().map(|e| e.code),
+            Some(ErrorCode::Refused),
+            "{e:?}"
+        );
+        assert!(
+            e.as_ref()
+                .is_some_and(|e| e.message.starts_with("the title")),
+            "{e:?}"
+        );
+        // `issue update`: the title is optional, and a flag not passed leaves its
+        // field out.
+        assert_eq!(
+            title_and_description(None, &None, &None).ok(),
+            Some(Map::new())
+        );
+        let only_title = title_and_description(Some("x"), &None, &None).unwrap_or_default();
+        assert_eq!(only_title.get("description"), None);
+        let e = title_and_description(None, &Some(over), &None).err();
+        assert!(
+            e.as_ref()
+                .is_some_and(|e| e.code == ErrorCode::Refused && e.message.starts_with("the body")),
+            "{e:?}"
+        );
+        let e =
+            title_and_description(Some("x"), &None, &Some("/nonexistent/notes.md".into())).err();
+        assert_eq!(e.as_ref().map(|e| e.code), Some(ErrorCode::Usage), "{e:?}");
+    }
 
     #[test]
     fn limits_are_bounded() {

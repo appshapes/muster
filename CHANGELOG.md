@@ -27,7 +27,9 @@ user-visible change, added in the same commit as the change. The format follows
 - `BODY_MAX_BYTES` now bounds a title, a link and a subtitle as it bounds a description
   and a comment: a larger one is refused, exit 6, before any request, and the message
   names which one was too long with a hint that fits it; only a body is told it can be
-  split over several comments.
+  split over several comments. Linux refuses one argv string over 128 KiB before
+  muster runs, so from a flag's value the bound is reached only where the OS allows
+  the argument, as macOS does; from a file or stdin it is reached everywhere.
 - `muster fixtures` records `IssueById` on an issue that has comments, attachments and
   sub-issues when the workspace has one, and writes a `partial` notice saying what the
   recording lacks; `skipped` and `partial` join the notices table of the reference.
