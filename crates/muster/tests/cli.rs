@@ -1875,6 +1875,12 @@ fn project_status_list_create_update_archive_and_unarchive() {
     assert_eq!(statuses[0]["name"], "Backlog", "by position");
     assert_eq!(statuses[2]["type"], "started");
     assert!(statuses[0]["indefinite"].is_boolean() && statuses[0]["color"].is_string());
+    // The list at its bound: what fits, and a `truncated` notice, never silence.
+    let cut = muster(&fake, &["project-status", "list", "--limit", "1"]);
+    assert_eq!(cut.code, 0, "{}", cut.stderr);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(cut.lines()[0]["name"], "Backlog");
+    assert_eq!(cut.notices()[0]["code"], "truncated", "{}", cut.stderr);
     let created = muster(
         &fake,
         &[

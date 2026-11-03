@@ -426,19 +426,10 @@ impl Session {
         }
     }
 
+    /// The id of one live project status by name, what `project update --status`
+    /// sends: [`Session::project_status`] and its `id`.
     fn project_status_id(&self, name: &str) -> Result<String, Error> {
-        let statuses = self.project_statuses(false)?;
-        match find_by(&statuses, "name", name) {
-            Some(status) => need_str(status, "id", "ProjectStatuses"),
-            None => Err(Error::with_hint(
-                ErrorCode::NotFound,
-                format!(
-                    "the workspace has no project status named {name:?} (statuses: {})",
-                    names(&statuses, "name")
-                ),
-                "name one of the workspace's project statuses",
-            )),
-        }
+        need_str(&self.project_status(name, false)?, "id", "ProjectStatuses")
     }
 
     fn project_id(&self, name: &str) -> Result<String, Error> {
