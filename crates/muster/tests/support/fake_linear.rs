@@ -451,6 +451,12 @@ impl Workspace {
         ws.issues.push(a.clone());
         ws.new_comment(&a_id, "The first comment.", &me);
         ws.new_comment(&a_id, "The second comment, with `code`.", &other);
+        ws.new_attachment(
+            &a_id,
+            "The first link",
+            Some("seeded"),
+            "https://example.com/first",
+        );
         let label_id = ws.labels[2]["id"].clone();
         let b = ws.new_issue(
             "APP",
@@ -1033,19 +1039,20 @@ impl Workspace {
                     .attachments
                     .iter()
                     .position(|a| a["issueId"] == issue_id && a["url"] == url);
+                // Only what is sent changes: a subtitle left out stays (read on
+                // APP-16, 2026-11-03).
                 let mut attachment = match existing {
                     Some(index) => {
-                        let now = self.now();
                         let a = &mut self.attachments[index];
                         a["title"] = json!(title);
-                        a["subtitle"] = json!(input["subtitle"].as_str());
-                        a["updatedAt"] = json!(now);
+                        if let Some(subtitle) = input["subtitle"].as_str() {
+                            a["subtitle"] = json!(subtitle);
+                        }
                         a.clone()
                     }
                     None => self.new_attachment(&issue_id, title, input["subtitle"].as_str(), url),
                 };
                 attachment.as_object_mut().unwrap().remove("issueId");
-                attachment.as_object_mut().unwrap().remove("updatedAt");
                 (
                     200,
                     json!({ "data": { "attachmentCreate": { "success": true, "attachment": attachment } } }),
