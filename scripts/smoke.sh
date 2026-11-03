@@ -23,6 +23,11 @@ echo "smoke: muster workspace get"
 "$bin" workspace get | jq -c '{name, urlKey, userCount, createdIssueCount, subscription}' | tee "$tmp/workspace.json"
 jq -e --slurpfile who "$tmp/whoami.json" '.urlKey == $who[0].organization.urlKey and (.userCount | type) == "number"' "$tmp/workspace.json" >/dev/null
 echo
+echo "smoke: muster workspace update --project-update-reminders-hour <the hour it has> (a change to the same value: the path is proven and nothing moves)"
+hour=$("$bin" workspace get | jq -r .projectUpdateRemindersHour)
+"$bin" workspace update --project-update-reminders-hour "$hour" | jq -c '{urlKey, projectUpdateRemindersHour, updatedAt}' | tee "$tmp/workspace-update.json"
+jq -e --argjson hour "$hour" '.projectUpdateRemindersHour == $hour' "$tmp/workspace-update.json" >/dev/null
+echo
 echo "smoke: muster project create --name 'Smoke tests' (exit 6 after the first run: the duplicate guard)"
 set +e
 "$bin" project create --name "Smoke tests" --description "Where the smoke test's issues go; each is canceled by the run that made it." > "$tmp/project.json" 2> "$tmp/project.err"

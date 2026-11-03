@@ -59,6 +59,23 @@ pub const PROJECT_FIELDS: &str = "fragment ProjectFields on Project {
   teams(first: $teams) { nodes { id key } pageInfo { hasNextPage } }
 }";
 
+/// The fields every workspace answer carries (ADR 0014, group 1): the settings
+/// `workspace update` can change, the security and auth settings as Linear's JSON
+/// objects, the counts and the subscription.
+pub const ORGANIZATION_FIELDS: &str = "fragment OrganizationFields on Organization {
+  id name urlKey logoUrl createdAt updatedAt
+  gitBranchFormat gitLinkbackMessagesEnabled gitPublicLinkbackMessagesEnabled gitLinkbackDescriptionsEnabled suggestedBranchNameEnabled
+  roadmapEnabled feedEnabled pullRequestTourEnabled pullRequestIssueMode aiThreadSummariesEnabled aiDiscussionSummariesEnabled
+  projectUpdateReminderFrequencyInWeeks projectUpdateRemindersDay projectUpdateRemindersHour
+  initiativeUpdateReminderFrequencyInWeeks initiativeUpdateRemindersDay initiativeUpdateRemindersHour
+  fiscalYearStartMonth defaultHomeView
+  samlEnabled scimEnabled hipaaComplianceEnabled releaseChannel
+  securitySettings authSettings allowedFileUploadContentTypes
+  previousUrlKeys deletionRequestedAt trialStartsAt trialEndsAt
+  userCount createdIssueCount
+  subscription { id type seats seatsMinimum seatsMaximum collectionMethod nextBillingAt canceledAt cancelAt pendingChangeType }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -172,20 +189,9 @@ op!(
     "Workspace",
     Kind::Query,
     "query Workspace {
-  organization {
-    id name urlKey logoUrl createdAt updatedAt
-    gitBranchFormat gitLinkbackMessagesEnabled gitPublicLinkbackMessagesEnabled gitLinkbackDescriptionsEnabled suggestedBranchNameEnabled
-    roadmapEnabled feedEnabled pullRequestTourEnabled pullRequestIssueMode aiThreadSummariesEnabled aiDiscussionSummariesEnabled
-    projectUpdateReminderFrequencyInWeeks projectUpdateRemindersDay projectUpdateRemindersHour
-    initiativeUpdateReminderFrequencyInWeeks initiativeUpdateRemindersDay initiativeUpdateRemindersHour
-    fiscalYearStartMonth defaultHomeView
-    samlEnabled scimEnabled hipaaComplianceEnabled releaseChannel
-    securitySettings authSettings allowedFileUploadContentTypes
-    previousUrlKeys deletionRequestedAt trialStartsAt trialEndsAt
-    userCount createdIssueCount
-    subscription { id type seats seatsMinimum seatsMaximum collectionMethod nextBillingAt canceledAt cancelAt pendingChangeType }
-  }
-}"
+  organization { ...OrganizationFields }
+}",
+    &[ORGANIZATION_FIELDS]
 );
 
 // ---- writes --------------------------------------------------------------------------
@@ -239,6 +245,16 @@ op!(
 }"
 );
 
+op!(
+    WORKSPACE_UPDATE,
+    "WorkspaceUpdate",
+    Kind::Mutation,
+    "mutation WorkspaceUpdate($input: OrganizationUpdateInput!) {
+  organizationUpdate(input: $input) { success organization { ...OrganizationFields } }
+}",
+    &[ORGANIZATION_FIELDS]
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -259,6 +275,7 @@ pub static WRITES: &[&Operation] = &[
     &COMMENT_CREATE,
     &ATTACHMENT_CREATE,
     &PROJECT_CREATE,
+    &WORKSPACE_UPDATE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -299,7 +316,12 @@ mod tests {
     #[test]
     fn every_fragment_used_is_defined() {
         for op in READS.iter().chain(WRITES.iter()) {
-            for frag in ["IssueFields", "CommentFields", "ProjectFields"] {
+            for frag in [
+                "IssueFields",
+                "CommentFields",
+                "ProjectFields",
+                "OrganizationFields",
+            ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));
                 let defined = document.contains(&format!("fragment {frag} on"));

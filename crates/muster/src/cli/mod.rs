@@ -92,6 +92,197 @@ pub enum Command {
 pub enum WorkspaceCommand {
     /// The workspace's settings, its security and auth settings, its counts and its subscription, as Linear returns them
     Get,
+    /// Change the workspace's settings; a flag left out leaves its setting alone, a boolean takes true or false, and most need a workspace admin
+    Update(Box<WorkspaceUpdateArgs>),
+}
+
+/// `workspace update`: every setting of `OrganizationUpdateInput` that is public, not
+/// deprecated and readable back with `workspace get` (ADR 0014, group 1).
+#[derive(Args, Debug, Default)]
+pub struct WorkspaceUpdateArgs {
+    /// A new name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new URL key, the `appshapes` of linear.app/appshapes; Linear keeps the last three previous keys redirecting
+    #[arg(long, value_name = "KEY")]
+    pub url_key: Option<String>,
+    /// A new logo, by URL
+    #[arg(long, value_name = "URL")]
+    pub logo_url: Option<String>,
+    /// The template for the branch name Linear suggests for an issue, or `none` for Linear's default
+    #[arg(long, value_name = "TEXT")]
+    pub git_branch_format: Option<String>,
+    /// Whether the git integration posts a linkback comment on a private repository's pull request
+    #[arg(long, value_name = "true|false")]
+    pub git_linkback_messages: Option<bool>,
+    /// Whether the git integration posts a linkback comment on a public repository's pull request
+    #[arg(long, value_name = "true|false")]
+    pub git_public_linkback_messages: Option<bool>,
+    /// Whether a linkback comment carries the issue's description
+    #[arg(long, value_name = "true|false")]
+    pub git_linkback_descriptions: Option<bool>,
+    /// Whether copying an issue, or opening it in a coding tool, suggests a branch name
+    #[arg(long, value_name = "true|false")]
+    pub suggested_branch_name: Option<bool>,
+    /// Whether the roadmap is on
+    #[arg(long, value_name = "true|false")]
+    pub roadmap: Option<bool>,
+    /// How many weeks apart Linear asks for project updates
+    #[arg(long, value_name = "N")]
+    pub project_update_reminder_weeks: Option<u32>,
+    /// The weekday project update reminders go out
+    #[arg(long, value_name = "DAY", value_enum)]
+    pub project_update_reminders_day: Option<Day>,
+    /// The hour project update reminders go out, 0 to 23
+    #[arg(long, value_name = "0-23", value_parser = clap::value_parser!(u8).range(0..=23))]
+    pub project_update_reminders_hour: Option<u8>,
+    /// The month the fiscal year starts, 0 for January to 11 for December
+    #[arg(long, value_name = "0-11", value_parser = clap::value_parser!(u8).range(0..=11))]
+    pub fiscal_year_start_month: Option<u8>,
+    /// Whether the activity feed is on
+    #[arg(long, value_name = "true|false")]
+    pub feed: Option<bool>,
+    /// Whether Linear writes an AI guide for a new pull request
+    #[arg(long, value_name = "true|false")]
+    pub pull_request_tour: Option<bool>,
+    /// How Linear links an issue to a pull request that names none
+    #[arg(long, value_name = "MODE", value_enum)]
+    pub pull_request_issue_mode: Option<PullRequestIssueMode>,
+    /// Whether a resolved comment thread gets an AI summary
+    #[arg(long, value_name = "true|false")]
+    pub ai_thread_summaries: Option<bool>,
+    /// Whether an issue's discussion gets an AI summary
+    #[arg(long, value_name = "true|false")]
+    pub ai_discussion_summaries: Option<bool>,
+    /// The content types an upload may have, comma-separated (image/png,application/pdf)
+    #[arg(long, value_name = "TYPE,...", value_delimiter = ',')]
+    pub allowed_file_upload_content_types: Option<Vec<String>>,
+    /// The least role that may invite users
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub invitations_role: Option<Role>,
+    /// The least role that may create a team
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub team_creation_role: Option<Role>,
+    /// The least role that may manage workspace labels
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub label_management_role: Option<Role>,
+    /// The least role that may create a personal API key
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub personal_api_keys_role: Option<Role>,
+    /// The least role that may grant or revoke the admin role
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub admin_management_role: Option<Role>,
+    /// The least role that may manage workspace templates
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub template_management_role: Option<Role>,
+    /// The least role that may install an integration
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub integration_creation_role: Option<Role>,
+    /// The least role that may import data
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub import_role: Option<Role>,
+    /// The least role that may manage API settings
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub api_settings_role: Option<Role>,
+    /// The least role that may create a workspace-wide initiative
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub workspace_initiatives_role: Option<Role>,
+    /// The sign-in services allowed, comma-separated (google,saml), or `all`
+    #[arg(long, value_name = "SERVICE,...|all")]
+    pub allowed_auth_services: Option<String>,
+    /// Whether a new user whose email domain this workspace claims is shown no other workspace at sign-up
+    #[arg(long, value_name = "true|false")]
+    pub hide_non_primary_organizations: Option<bool>,
+}
+
+/// A weekday, as Linear's `Day` enum names it.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Day {
+    /// Sunday.
+    #[value(name = "Sunday")]
+    Sunday,
+    /// Monday.
+    #[value(name = "Monday")]
+    Monday,
+    /// Tuesday.
+    #[value(name = "Tuesday")]
+    Tuesday,
+    /// Wednesday.
+    #[value(name = "Wednesday")]
+    Wednesday,
+    /// Thursday.
+    #[value(name = "Thursday")]
+    Thursday,
+    /// Friday.
+    #[value(name = "Friday")]
+    Friday,
+    /// Saturday.
+    #[value(name = "Saturday")]
+    Saturday,
+}
+
+impl Day {
+    /// The value Linear takes.
+    pub fn linear(self) -> &'static str {
+        match self {
+            Day::Sunday => "Sunday",
+            Day::Monday => "Monday",
+            Day::Tuesday => "Tuesday",
+            Day::Wednesday => "Wednesday",
+            Day::Thursday => "Thursday",
+            Day::Friday => "Friday",
+            Day::Saturday => "Saturday",
+        }
+    }
+}
+
+/// A workspace role a person holds, as Linear's `UserRoleType` names it; `app` is not
+/// a role a person takes.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    /// The highest role; the owner of the workspace.
+    Owner,
+    /// A workspace administrator.
+    Admin,
+    /// A member.
+    User,
+    /// A guest, limited to the teams they are in.
+    Guest,
+}
+
+impl Role {
+    /// The value Linear takes.
+    pub fn linear(self) -> &'static str {
+        match self {
+            Role::Owner => "owner",
+            Role::Admin => "admin",
+            Role::User => "user",
+            Role::Guest => "guest",
+        }
+    }
+}
+
+/// How Linear links an issue to a pull request that names none.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PullRequestIssueMode {
+    /// Never.
+    Off,
+    /// Suggest one.
+    Suggest,
+    /// Link one when the pull request merges.
+    #[value(name = "autoOnMerge")]
+    AutoOnMerge,
+}
+
+impl PullRequestIssueMode {
+    /// The value Linear takes.
+    pub fn linear(self) -> &'static str {
+        match self {
+            PullRequestIssueMode::Off => "off",
+            PullRequestIssueMode::Suggest => "suggest",
+            PullRequestIssueMode::AutoOnMerge => "autoOnMerge",
+        }
+    }
 }
 
 /// `list` under `team`, `state`, `label`, `project` and `user`.
