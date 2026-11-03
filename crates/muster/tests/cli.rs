@@ -1944,6 +1944,15 @@ fn milestone_list_create_update_delete_and_the_issue_flag() {
     assert_eq!(nowhere.code, 4, "{}", nowhere.stderr);
     let listed = muster(&fake, &["milestone", "list", "--project", "Muster"]);
     assert_eq!(listed.lines().len(), 2);
+    // The list at its bound: what fits, and a `truncated` notice, never silence.
+    let cut = muster(
+        &fake,
+        &["milestone", "list", "--project", "Muster", "--limit", "1"],
+    );
+    assert_eq!(cut.code, 0, "{}", cut.stderr);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(cut.lines()[0]["name"], "First cut");
+    assert_eq!(cut.notices()[0]["code"], "truncated", "{}", cut.stderr);
     let detail = muster(&fake, &["project", "get", "Muster"]).one();
     assert!(
         detail["projectMilestones"]["nodes"]
