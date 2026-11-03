@@ -2445,6 +2445,9 @@ impl Workspace {
                 (200, json!({ "data": { "templateSearch": templates } }))
             }
             "TemplateByName" => {
+                // The name in the team's scope, its own and the workspace's, two at
+                // most, as the operation's filter and `first` ask (ADR 0014, group 15).
+                let key = vars["key"].as_str().unwrap_or("");
                 let name = vars["name"].as_str().unwrap_or("");
                 let include_archived = vars["includeArchived"].as_bool().unwrap_or(false);
                 let found: Vec<Value> = self
@@ -2455,8 +2458,9 @@ impl Workspace {
                             && t["name"]
                                 .as_str()
                                 .is_some_and(|n| n.eq_ignore_ascii_case(name))
+                            && (t["team"].is_null() || t["team"]["key"] == key)
                     })
-                    .take(1)
+                    .take(2)
                     .cloned()
                     .collect();
                 (200, json!({ "data": { "templateSearch": found } }))

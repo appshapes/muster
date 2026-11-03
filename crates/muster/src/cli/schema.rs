@@ -357,7 +357,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
     let initiative = sample_initiative(session)?;
     let cycle = sample_cycle(session)?;
     let document = sample_document(session)?;
-    let template = sample_template(session)?;
+    let template = sample_template(session, team.as_deref())?;
     match (&sample, lack) {
         (Some(id), Some(lack)) => out.notice(
             "partial",
@@ -554,12 +554,18 @@ fn sample_document(session: &Session) -> Result<Option<String>, Error> {
 }
 
 /// The name of the template `TemplateByName` is recorded on: the first one
-/// `Templates` lists.
-fn sample_template(session: &Session) -> Result<Option<String>, Error> {
-    let data = session.linear.run(
-        &ops::TEMPLATES,
-        json!({ "first": 1, "filter": Value::Null }),
-    )?;
+/// `Templates` lists in the first team's scope, its own and the workspace's, since
+/// `TemplateByName` looks there.
+fn sample_template(session: &Session, team: Option<&str>) -> Result<Option<String>, Error> {
+    let filter = match team {
+        Some(key) => {
+            json!({ "or": [ { "team": { "key": { "eq": key } } }, { "team": { "null": true } } ] })
+        }
+        None => Value::Null,
+    };
+    let data = session
+        .linear
+        .run(&ops::TEMPLATES, json!({ "first": 1, "filter": filter }))?;
     Ok(data["templateSearch"]
         .as_array()
         .and_then(|list| list.first())
@@ -583,7 +589,8 @@ pub struct Samples<'a> {
     pub cycle: Option<(&'a str, f64)>,
     /// The first document's title, for `DocumentByTitle`.
     pub document: Option<&'a str>,
-    /// The first template's name, for `TemplateByName`.
+    /// The first template's name among the first team's and the workspace's, for
+    /// `TemplateByName`, which looks in that scope.
     pub template: Option<&'a str>,
 }
 
@@ -602,7 +609,9 @@ pub fn fixture_variables(op: &str, s: &Samples<'_>) -> Option<Value> {
         "ProjectStatuses" => json!({ "first": 5, "includeArchived": false }),
         "Milestones" | "ProjectUpdates" => json!({ "project": s.project?, "first": 5 }),
         "Templates" => json!({ "first": 6, "filter": Value::Null }),
-        "TemplateByName" => json!({ "name": s.template?, "includeArchived": false }),
+        "TemplateByName" => {
+            json!({ "key": s.team?, "name": s.template?, "includeArchived": false })
+        }
         "Documents" => json!({ "first": 5, "filter": Value::Null }),
         "DocumentByTitle" => json!({ "title": s.document?, "includeArchived": false }),
         "Cycles" => json!({ "first": 5, "filter": Value::Null }),

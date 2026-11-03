@@ -664,21 +664,42 @@ impl Session {
         need_str(&issue, "id", "IssueById")
     }
 
-    /// One template by name, in one request; an archived one only when asked
-    /// (ADR 0014, group 15).
-    fn template_named(&self, name: &str, include_archived: bool) -> Result<Value, Error> {
+    /// The templates named so in the team's scope, its own and the workspace's, in one
+    /// request; an archived one only when asked (ADR 0014, group 15). Two are asked
+    /// for, one for each scope the filter admits; a scope that `--allow-duplicate` gave
+    /// several of one name is read as Linear lists them, the first two.
+    fn templates_named(
+        &self,
+        team_key: &str,
+        name: &str,
+        include_archived: bool,
+    ) -> Result<Vec<Value>, Error> {
         let data = self.linear.run(
             &ops::TEMPLATE_BY_NAME,
-            json!({ "name": name, "includeArchived": include_archived }),
+            json!({ "key": team_key, "name": name, "includeArchived": include_archived }),
         )?;
-        match data["templateSearch"]
+        Ok(data["templateSearch"]
             .as_array()
-            .and_then(|list| list.first().cloned())
-        {
-            Some(template) => Ok(template),
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    /// One template by name among the team's and the workspace's, as `--label`
+    /// resolves a label: the team's own first, then the workspace's (ADR 0014,
+    /// group 15). Another team's template is not in the scope and is not found.
+    fn template_named(
+        &self,
+        team_key: &str,
+        name: &str,
+        include_archived: bool,
+    ) -> Result<Value, Error> {
+        let found = self.templates_named(team_key, name, include_archived)?;
+        let own = found.iter().find(|t| !at(t, "team").is_null());
+        match own.or_else(|| found.first()) {
+            Some(template) => Ok(template.clone()),
             None => Err(Error::with_hint(
                 ErrorCode::NotFound,
-                format!("no template named {name:?}"),
+                format!("no template named {name:?} for team {team_key} or the workspace"),
                 "name one from `muster template list`",
             )),
         }
@@ -2488,7 +2509,8 @@ fn template_list(session: &Session, args: &TemplateListArgs, out: &Output) -> Re
 }
 
 fn template_get(session: &Session, args: &TemplateRefArgs, out: &Output) -> Result<(), Error> {
-    out.emit(&session.template_named(&args.name, false)?);
+    let team_key = session.team_key()?;
+    out.emit(&session.template_named(&team_key, &args.name, false)?);
     Ok(())
 }
 
@@ -2515,27 +2537,32 @@ fn template_create(
         check_body(Text::Body, description)?;
     }
     let data = template_data(&args.data_file)?;
-    // The guard: `template get <NAME>` resolves a name to one template. Only a
-    // missing template lets the create go on; any other failure of the read is itself.
+    let (team, _) = session.team()?;
+    let team_key = need_str(&team, "key", "Teams")?;
+    // The guard is on the name in the template's own scope, the team's templates or
+    // the workspace's, as `label create` guards a label: `template get <NAME>`
+    // resolves a name to the team's own first, then the workspace's. A failed read is
+    // itself; only a scope without the name lets the create go on.
     if !args.allow_duplicate {
-        match session.template_named(&args.name, false) {
-            Ok(existing) => {
-                return Err(Error::with_hint(
-                    ErrorCode::Refused,
-                    format!(
-                        "a template named {:?} exists ({})",
-                        str_at(&existing, "name").unwrap_or(&args.name),
-                        match str_at(&existing, "team.key") {
-                            Some(key) => format!("team {key}"),
-                            None => "the workspace".to_string(),
-                        }
-                    ),
-                    "use that template, or pass --allow-duplicate if a second one is wanted",
-                )
-                .at("muster-template-create"));
-            }
-            Err(error) if error.code == ErrorCode::NotFound => {}
-            Err(error) => return Err(error),
+        let found = session.templates_named(&team_key, &args.name, false)?;
+        let same_scope = found
+            .iter()
+            .find(|t| at(t, "team").is_null() == args.workspace);
+        if let Some(existing) = same_scope {
+            let scope = if args.workspace {
+                "the workspace".to_string()
+            } else {
+                format!("team {team_key}")
+            };
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "a template named {:?} exists for {scope}",
+                    str_at(existing, "name").unwrap_or(&args.name)
+                ),
+                "use that template, or pass --allow-duplicate if a second one is wanted",
+            )
+            .at("muster-template-create"));
         }
     }
     let mut input = Map::new();
@@ -2546,7 +2573,6 @@ fn template_create(
         input.insert("description".into(), json!(description));
     }
     if !args.workspace {
-        let (team, _) = session.team()?;
         input.insert("teamId".into(), json!(need_str(&team, "id", "Teams")?));
     }
     let answer = session.linear.run(
@@ -2581,7 +2607,8 @@ fn template_update(
             "pass at least one of --name, --description, --data-file",
         ));
     }
-    let template = session.template_named(&args.template, false)?;
+    let team_key = session.team_key()?;
+    let template = session.template_named(&team_key, &args.template, false)?;
     let id = need_str(&template, "id", "TemplateByName")?;
     let answer = session.linear.run(
         &ops::TEMPLATE_UPDATE,
@@ -2592,7 +2619,8 @@ fn template_update(
 }
 
 fn template_delete(session: &Session, args: &TemplateRefArgs, out: &Output) -> Result<(), Error> {
-    let template = session.template_named(&args.name, false)?;
+    let team_key = session.team_key()?;
+    let template = session.template_named(&team_key, &args.name, false)?;
     let id = need_str(&template, "id", "TemplateByName")?;
     let answer = session
         .linear

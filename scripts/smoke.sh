@@ -250,9 +250,9 @@ jq -s -e 'map(.name) | index("Smoke template") != null' "$tmp/templates.jsonl" >
 "$bin" template create --name "Smoke template $stamp" --type issue --team SMK --data-file "$tmp/template-data.json" | jq -c '{name, team: .team.key}' | tee "$tmp/template-throwaway.json"
 jq -e --arg n "Smoke template $stamp" '.name == $n and .team == "SMK"' "$tmp/template-throwaway.json" >/dev/null
 printf '{"title": "Renamed at %s"}\n' "$stamp" > "$tmp/template-data-2.json"
-"$bin" template update "Smoke template $stamp" --name "Smoky template $stamp" --data-file "$tmp/template-data-2.json" | jq -c '{name, title: (.templateData | fromjson).title}' | tee "$tmp/template-update.json"
+"$bin" template update "Smoke template $stamp" --team SMK --name "Smoky template $stamp" --data-file "$tmp/template-data-2.json" | jq -c '{name, title: (.templateData | fromjson).title}' | tee "$tmp/template-update.json"
 jq -e --arg n "Smoky template $stamp" '.name == $n' "$tmp/template-update.json" >/dev/null
-"$bin" template delete "Smoky template $stamp" | jq -c '{success}' | tee "$tmp/template-delete.json"
+"$bin" template delete "Smoky template $stamp" --team SMK | jq -c '{success}' | tee "$tmp/template-delete.json"
 jq -e '.success == true' "$tmp/template-delete.json" >/dev/null
 echo
 echo "smoke: muster project get 'Smoke tests', then a throwaway project updated, deleted, unarchived and deleted again (ADR 0014)"

@@ -475,8 +475,8 @@ op!(
     TEMPLATE_BY_NAME,
     "TemplateByName",
     Kind::Query,
-    "query TemplateByName($name: String!, $includeArchived: Boolean) {
-  templateSearch(first: 1, filter: { name: { eqIgnoreCase: $name } }, includeArchived: $includeArchived) { ...TemplateFields }
+    "query TemplateByName($key: String!, $name: String!, $includeArchived: Boolean) {
+  templateSearch(first: 2, filter: { name: { eqIgnoreCase: $name }, or: [ { team: { key: { eq: $key } } }, { team: { null: true } } ] }, includeArchived: $includeArchived) { ...TemplateFields }
 }",
     &[TEMPLATE_FIELDS]
 );

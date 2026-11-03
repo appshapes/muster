@@ -1323,9 +1323,9 @@ pub struct DocumentUpdateArgs {
 pub enum TemplateCommand {
     /// List the team's and the workspace's templates, one JSON object per line
     List(TemplateListArgs),
-    /// One template with its data, by name; `templateData` is a string of JSON, as Linear returns it
+    /// One template with its data, by name, the team's own before the workspace's; `templateData` is a string of JSON, as Linear returns it
     Get(TemplateRefArgs),
-    /// Create a template from a JSON data file; a name a template already has is refused unless --allow-duplicate
+    /// Create a template for the team, or for the workspace with --workspace, from a JSON data file; a name a template of the same scope has is refused unless --allow-duplicate
     Create(Box<TemplateCreateArgs>),
     /// Change a template's name, description or data
     Update(Box<TemplateUpdateArgs>),
@@ -1347,7 +1347,7 @@ pub struct TemplateListArgs {
 /// A template, by name.
 #[derive(Args, Debug)]
 pub struct TemplateRefArgs {
-    /// The template, by name
+    /// The template, by name, among the team's own and the workspace's
     #[arg(value_name = "NAME")]
     pub name: String,
 }
@@ -1370,7 +1370,7 @@ pub struct TemplateCreateArgs {
     /// The description
     #[arg(long, value_name = "TEXT")]
     pub description: Option<String>,
-    /// Create it even when a template has the name
+    /// Create it even when a template of the same scope has the name
     #[arg(long)]
     pub allow_duplicate: bool,
 }
@@ -1378,7 +1378,7 @@ pub struct TemplateCreateArgs {
 /// `template update`.
 #[derive(Args, Debug, Default)]
 pub struct TemplateUpdateArgs {
-    /// The template, by name
+    /// The template, by name, among the team's own and the workspace's
     #[arg(value_name = "NAME")]
     pub template: String,
     /// A new name

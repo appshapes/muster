@@ -547,15 +547,15 @@ List the team's and the workspace's templates, one JSON object per line.
 
 ### muster template get
 
-One template with its data, by name; `templateData` is a string of JSON, as Linear returns it.
+One template with its data, by name, the team's own before the workspace's; `templateData` is a string of JSON, as Linear returns it.
 
 | Argument or flag | Value | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `<NAME>` | `<NAME>` | yes |  | The template, by name |
+| `<NAME>` | `<NAME>` | yes |  | The template, by name, among the team's own and the workspace's |
 
 ### muster template create
 
-Create a template from a JSON data file; a name a template already has is refused unless --allow-duplicate.
+Create a template for the team, or for the workspace with --workspace, from a JSON data file; a name a template of the same scope has is refused unless --allow-duplicate.
 
 | Argument or flag | Value | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
@@ -564,7 +564,7 @@ Create a template from a JSON data file; a name a template already has is refuse
 | `--data-file` | `<PATH>` | yes |  | The template's data, JSON as Linear's `templateData`, from a file, or from stdin when PATH is `-` |
 | `--workspace` |  | no |  | A template every team shares, rather than the team's own |
 | `--description` | `<TEXT>` | no |  | The description |
-| `--allow-duplicate` |  | no |  | Create it even when a template has the name |
+| `--allow-duplicate` |  | no |  | Create it even when a template of the same scope has the name |
 
 ### muster template update
 
@@ -572,7 +572,7 @@ Change a template's name, description or data.
 
 | Argument or flag | Value | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `<NAME>` | `<NAME>` | yes |  | The template, by name |
+| `<NAME>` | `<NAME>` | yes |  | The template, by name, among the team's own and the workspace's |
 | `--name` | `<TEXT>` | no |  | A new name |
 | `--description` | `<TEXT>` | no |  | A new description |
 | `--data-file` | `<PATH>` | no |  | New data, JSON as Linear's `templateData`, from a file, or from stdin when PATH is `-` |
@@ -583,7 +583,7 @@ Delete a template; there is no undo.
 
 | Argument or flag | Value | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `<NAME>` | `<NAME>` | yes |  | The template, by name |
+| `<NAME>` | `<NAME>` | yes |  | The template, by name, among the team's own and the workspace's |
 
 ### muster milestone list
 

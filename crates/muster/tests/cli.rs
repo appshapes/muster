@@ -2868,16 +2868,139 @@ fn template_list_get_create_update_and_delete() {
     let other = muster(&fake, &["template", "list", "--team", "SMK"]);
     assert_eq!(other.lines().len(), 2, "the workspace's two, not APP's own");
 
-    let got = muster(&fake, &["template", "get", "feature"]);
+    // A name resolves in the team's scope, its own and the workspace's, as a label
+    // does (ADR 0014): APP's "Feature" is not SMK's to read, change or delete, and the
+    // workspace's "Bug report" is every team's.
+    let elsewhere = muster(&fake, &["template", "get", "Feature", "--team", "SMK"]);
+    assert_eq!(elsewhere.code, 4, "{}", elsewhere.stderr);
+    let not_mine = muster(&fake, &["template", "delete", "Feature", "--team", "SMK"]);
+    assert_eq!(not_mine.code, 4, "{}", not_mine.stderr);
+    let not_changed = muster(
+        &fake,
+        &[
+            "template", "update", "Feature", "--team", "SMK", "--name", "x",
+        ],
+    );
+    assert_eq!(not_changed.code, 4, "{}", not_changed.stderr);
+    assert!(
+        !fake
+            .operations()
+            .iter()
+            .any(|o| o == "TemplateDelete" || o == "TemplateUpdate"),
+        "another team's template was neither deleted nor changed"
+    );
+    let shared_too = muster(&fake, &["template", "get", "Bug report", "--team", "SMK"]);
+    assert_eq!(shared_too.code, 0, "{}", shared_too.stderr);
+    assert!(shared_too.one()["team"].is_null(), "the workspace's");
+    // The guard is on the same scope: SMK may have its own "Feature" while APP has
+    // one, APP may not have a second, a team may have the name the workspace has and
+    // the workspace not a second; the team's own then comes first for the team, and
+    // a delete in the team takes the team's own, not the workspace's.
+    let smk_feature = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Feature",
+            "--type",
+            "issue",
+            "--team",
+            "SMK",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(smk_feature.code, 0, "{}", smk_feature.stderr);
+    assert_eq!(smk_feature.one()["team"]["key"], "SMK");
+    let app_again = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Feature",
+            "--type",
+            "issue",
+            "--team",
+            "APP",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(app_again.code, 6, "{}", app_again.stderr);
+    let shared_again = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "bug report",
+            "--type",
+            "issue",
+            "--team",
+            "APP",
+            "--workspace",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(shared_again.code, 6, "{}", shared_again.stderr);
+    let team_bug = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Bug report",
+            "--type",
+            "issue",
+            "--team",
+            "APP",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(team_bug.code, 0, "{}", team_bug.stderr);
+    assert_eq!(team_bug.one()["team"]["key"], "APP");
+    let own_first = muster(&fake, &["template", "get", "Bug report", "--team", "APP"]);
+    assert_eq!(own_first.code, 0, "{}", own_first.stderr);
+    assert_eq!(
+        own_first.one()["team"]["key"],
+        "APP",
+        "the team's own first"
+    );
+    let still_shared = muster(&fake, &["template", "get", "Bug report", "--team", "SMK"]);
+    assert!(
+        still_shared.one()["team"].is_null(),
+        "the workspace's for SMK"
+    );
+    let own_gone = muster(
+        &fake,
+        &["template", "delete", "Bug report", "--team", "APP"],
+    );
+    assert_eq!(own_gone.code, 0, "{}", own_gone.stderr);
+    assert_eq!(own_gone.one()["entityId"], team_bug.one()["id"]);
+    let shared_left = muster(&fake, &["template", "get", "Bug report", "--team", "APP"]);
+    assert!(
+        shared_left.one()["team"].is_null(),
+        "the workspace's is left"
+    );
+
+    let got = muster(&fake, &["template", "get", "feature", "--team", "APP"]);
     assert_eq!(got.code, 0, "{}", got.stderr);
     assert_eq!(got.one()["name"], "Feature");
+    assert_eq!(got.one()["team"]["key"], "APP", "APP's own, not SMK's");
     assert_eq!(data_of(&got.one())["title"], "Feature: ");
     assert_eq!(
         fake.operations().last().map(String::as_str),
         Some("TemplateByName"),
-        "one request"
+        "the template in one request"
     );
-    assert_eq!(muster(&fake, &["template", "get", "Nope"]).code, 4);
+    assert_eq!(
+        muster(&fake, &["template", "get", "Nope", "--team", "APP"]).code,
+        4
+    );
 
     let new_data = write(&dir, "feature2.json", "{\"title\": \"Feature request: \"}");
     let updated = muster(
@@ -2886,6 +3009,8 @@ fn template_list_get_create_update_and_delete() {
             "template",
             "update",
             "Feature",
+            "--team",
+            "APP",
             "--name",
             "Feature request",
             "--description",
@@ -2896,15 +3021,25 @@ fn template_list_get_create_update_and_delete() {
     );
     assert_eq!(updated.code, 0, "{}", updated.stderr);
     assert_eq!(updated.one()["name"], "Feature request");
+    assert_eq!(updated.one()["team"]["key"], "APP", "APP's own, not SMK's");
     assert_eq!(updated.one()["description"], "Renamed.");
     assert_eq!(data_of(&updated.one())["title"], "Feature request: ");
     assert_eq!(updated.one()["type"], "issue", "the type never changes");
-    let nothing = muster(&fake, &["template", "update", "Feature request"]);
+    let nothing = muster(
+        &fake,
+        &["template", "update", "Feature request", "--team", "APP"],
+    );
     assert_eq!(nothing.code, 2, "{}", nothing.stderr);
-    let nope = muster(&fake, &["template", "update", "Nope", "--name", "x"]);
+    let nope = muster(
+        &fake,
+        &["template", "update", "Nope", "--team", "APP", "--name", "x"],
+    );
     assert_eq!(nope.code, 4, "{}", nope.stderr);
 
-    let deleted = muster(&fake, &["template", "delete", "Launch plan"]);
+    let deleted = muster(
+        &fake,
+        &["template", "delete", "Launch plan", "--team", "APP"],
+    );
     assert_eq!(deleted.code, 0, "{}", deleted.stderr);
     assert_eq!(deleted.one()["success"], true);
     assert!(deleted.one()["entityId"].is_string());
@@ -2913,10 +3048,14 @@ fn template_list_get_create_update_and_delete() {
             .lines()
             .len(),
         2,
-        "two teams now, so the team is named"
+        "APP's own and the workspace's, not SMK's; two teams now, so the team is named"
     );
     assert_eq!(
-        muster(&fake, &["template", "delete", "Launch plan"]).code,
+        muster(
+            &fake,
+            &["template", "delete", "Launch plan", "--team", "APP"]
+        )
+        .code,
         4
     );
 
@@ -2938,11 +3077,19 @@ fn template_list_get_create_update_and_delete() {
         ),
         (
             "TemplateUpdate",
-            vec!["template", "update", "Feature request", "--name", "Dropped"],
+            vec![
+                "template",
+                "update",
+                "Feature request",
+                "--team",
+                "APP",
+                "--name",
+                "Dropped",
+            ],
         ),
         (
             "TemplateDelete",
-            vec!["template", "delete", "Feature request"],
+            vec!["template", "delete", "Feature request", "--team", "APP"],
         ),
     ] {
         fake.fail_next(op, Failure::Drop);
@@ -2953,7 +3100,7 @@ fn template_list_get_create_update_and_delete() {
     let run = muster(&fake, &["template", "list", "--team", "APP"]);
     assert_eq!(run.code, 7, "{}", run.stderr);
     fake.fail_next("TemplateByName", Failure::Drop);
-    let run = muster(&fake, &["template", "get", "Bug report"]);
+    let run = muster(&fake, &["template", "get", "Bug report", "--team", "APP"]);
     assert_eq!(run.code, 7, "{}", run.stderr);
 }
 
