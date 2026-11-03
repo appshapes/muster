@@ -112,6 +112,11 @@ with a `truncated` notice past the bound. `muster project update "Trying muster"
 field, `none` clearing a lead or a date; `muster project delete "Trying muster"`
 trashes it for thirty days and `muster project unarchive "Trying muster"` brings it
 back ([ADR 0014](../decisions/0014-build-the-third-slice-administrative-commands.md)).
+The statuses a project moves through are the workspace's: `muster project-status
+list` shows them by position, `muster project-status create --name "On hold" --type
+paused --color "#f2c94c" --position 2.5` adds one, `muster project-status update "On
+hold" --name "Paused"` changes it, and `muster project-status archive Paused` takes
+it out once no project is in it (`unarchive` brings it back).
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):

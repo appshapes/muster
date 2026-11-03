@@ -290,8 +290,8 @@ op!(
     PROJECT_STATUSES,
     "ProjectStatuses",
     Kind::Query,
-    "query ProjectStatuses($first: Int!) {
-  projectStatuses(first: $first) { nodes { ...ProjectStatusFields } pageInfo { hasNextPage } }
+    "query ProjectStatuses($first: Int!, $includeArchived: Boolean) {
+  projectStatuses(first: $first, includeArchived: $includeArchived) { nodes { ...ProjectStatusFields } pageInfo { hasNextPage } }
 }",
     &[PROJECT_STATUS_FIELDS]
 );
@@ -580,6 +580,46 @@ op!(
     &[PROJECT_FIELDS]
 );
 
+op!(
+    PROJECT_STATUS_CREATE,
+    "ProjectStatusCreate",
+    Kind::Mutation,
+    "mutation ProjectStatusCreate($input: ProjectStatusCreateInput!) {
+  projectStatusCreate(input: $input) { success status { ...ProjectStatusFields } }
+}",
+    &[PROJECT_STATUS_FIELDS]
+);
+
+op!(
+    PROJECT_STATUS_UPDATE,
+    "ProjectStatusUpdate",
+    Kind::Mutation,
+    "mutation ProjectStatusUpdate($id: String!, $input: ProjectStatusUpdateInput!) {
+  projectStatusUpdate(id: $id, input: $input) { success status { ...ProjectStatusFields } }
+}",
+    &[PROJECT_STATUS_FIELDS]
+);
+
+op!(
+    PROJECT_STATUS_ARCHIVE,
+    "ProjectStatusArchive",
+    Kind::Mutation,
+    "mutation ProjectStatusArchive($id: String!) {
+  projectStatusArchive(id: $id) { success entity { ...ProjectStatusFields } }
+}",
+    &[PROJECT_STATUS_FIELDS]
+);
+
+op!(
+    PROJECT_STATUS_UNARCHIVE,
+    "ProjectStatusUnarchive",
+    Kind::Mutation,
+    "mutation ProjectStatusUnarchive($id: String!) {
+  projectStatusUnarchive(id: $id) { success entity { ...ProjectStatusFields } }
+}",
+    &[PROJECT_STATUS_FIELDS]
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -628,6 +668,10 @@ pub static WRITES: &[&Operation] = &[
     &PROJECT_UPDATE,
     &PROJECT_DELETE,
     &PROJECT_UNARCHIVE,
+    &PROJECT_STATUS_CREATE,
+    &PROJECT_STATUS_UPDATE,
+    &PROJECT_STATUS_ARCHIVE,
+    &PROJECT_STATUS_UNARCHIVE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.

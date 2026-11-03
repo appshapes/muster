@@ -102,6 +102,24 @@ user-visible change, added in the same commit as the change. The format follows
   `--icon`. `project delete <NAME>` trashes a project, which Linear keeps for thirty
   days, and `project unarchive <NAME>` brings it back; both print Linear's entity
   (ADR 0014, group 8; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `project-status list` prints the workspace's project statuses by position, each
+  with its `type`, `color`, `position` and `indefinite`; `project-status create
+  --name <TEXT> --type <backlog|planned|started|paused|completed|canceled> --color
+  <HEX> --position <N> [--description] [--indefinite <true|false>]` adds one through
+  Linear's `projectStatusCreate` (a name a status has is refused, exit 6, unless
+  `--allow-duplicate`); `project-status update <NAME>` changes it; `project-status
+  archive <NAME>` takes it out, which Linear refuses, exit 6, for a status with
+  active projects or the last of its type, and `project-status unarchive <NAME>`
+  brings it back (ADR 0014, group 9;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+
+### Changed
+
+- When Linear answers "Argument Validation Error", the reason it puts in
+  `userPresentableMessage`, such as "name must be shorter than or equal to 25
+  characters", now rides on the error object's `linear.message` after the message,
+  so that the output says what to fix (invariant 4); every other message stays as
+  Linear sent it.
 
 ## 0.2.0 - 2026-11-03
 

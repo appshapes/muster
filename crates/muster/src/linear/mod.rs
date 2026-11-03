@@ -117,11 +117,23 @@ impl Linear {
             .and_then(|a| a.first())
             .cloned();
         if let Some(err) = first_error {
+            // A validation failure's `message` is the bare "Argument Validation
+            // Error" and the reason sits in `extensions.userPresentableMessage`
+            // ("name must be shorter than or equal to 25 characters", read on
+            // 2026-11-03); both are Linear's words, and the second is the one that
+            // says what to fix (invariant 4). Every other message stays as it is.
+            let message = select::str_at(&err, "message")
+                .unwrap_or("no message")
+                .to_string();
+            let message = match select::str_at(&err, "extensions.userPresentableMessage") {
+                Some(detail) if message == "Argument Validation Error" && !detail.is_empty() => {
+                    format!("{message}: {detail}")
+                }
+                _ => message,
+            };
             let linear = LinearError {
                 code: select::str_at(&err, "extensions.code").map(str::to_string),
-                message: select::str_at(&err, "message")
-                    .unwrap_or("no message")
-                    .to_string(),
+                message,
                 request_id: request_id.clone(),
             };
             return Err(classify_linear(status, linear, reset, retry_after, op));

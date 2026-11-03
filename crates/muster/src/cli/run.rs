@@ -12,6 +12,7 @@ use crate::cli::{
     AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
     IssueListArgs, LabelCommand, LabelCreateArgs, LabelRefArgs, LabelUpdateArgs, ListArgs,
     MemberArgs, MemberCommand, ProjectCommand, ProjectCreateArgs, ProjectRefArgs,
+    ProjectStatusCommand, ProjectStatusCreateArgs, ProjectStatusRefArgs, ProjectStatusUpdateArgs,
     ProjectUpdateArgs, StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand,
     TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs,
     UserRefArgs, UserRoleArgs, UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
@@ -100,6 +101,30 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 ProjectCommand::Update(args) => project_update(&session, args, out),
                 ProjectCommand::Delete(args) => project_delete(&session, args, out),
                 ProjectCommand::Unarchive(args) => project_unarchive(&session, args, out),
+            }
+        }
+        Command::ProjectStatus { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                ProjectStatusCommand::List(args) => project_status_list(&session, args, out),
+                ProjectStatusCommand::Create(args) => project_status_create(&session, args, out),
+                ProjectStatusCommand::Update(args) => project_status_update(&session, args, out),
+                ProjectStatusCommand::Archive(args) => project_status_lifecycle(
+                    &session,
+                    args,
+                    &ops::PROJECT_STATUS_ARCHIVE,
+                    "projectStatusArchive",
+                    false,
+                    out,
+                ),
+                ProjectStatusCommand::Unarchive(args) => project_status_lifecycle(
+                    &session,
+                    args,
+                    &ops::PROJECT_STATUS_UNARCHIVE,
+                    "projectStatusUnarchive",
+                    true,
+                    out,
+                ),
             }
         }
         Command::User { command } => {
@@ -368,16 +393,41 @@ impl Session {
         }
     }
 
-    /// The workspace's project statuses, up to `PAGE_CAP`.
-    fn project_statuses(&self) -> Result<Vec<Value>, Error> {
-        let data = self
-            .linear
-            .run(&ops::PROJECT_STATUSES, json!({ "first": PAGE_CAP }))?;
-        Ok(nodes(&data, "projectStatuses"))
+    /// The workspace's project statuses, up to `PAGE_CAP`, by position; the archived
+    /// ones only when asked.
+    fn project_statuses(&self, include_archived: bool) -> Result<Vec<Value>, Error> {
+        let data = self.linear.run(
+            &ops::PROJECT_STATUSES,
+            json!({ "first": PAGE_CAP, "includeArchived": include_archived }),
+        )?;
+        let mut statuses = nodes(&data, "projectStatuses");
+        statuses.sort_by(|a, b| {
+            at(a, "position")
+                .as_f64()
+                .unwrap_or(0.0)
+                .total_cmp(&at(b, "position").as_f64().unwrap_or(0.0))
+        });
+        Ok(statuses)
+    }
+
+    /// One project status by name, the archived ones included when asked.
+    fn project_status(&self, name: &str, include_archived: bool) -> Result<Value, Error> {
+        let statuses = self.project_statuses(include_archived)?;
+        match find_by(&statuses, "name", name) {
+            Some(status) => Ok(status.clone()),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!(
+                    "the workspace has no project status named {name:?} (statuses: {})",
+                    names(&statuses, "name")
+                ),
+                "name one from `muster project-status list`",
+            )),
+        }
     }
 
     fn project_status_id(&self, name: &str) -> Result<String, Error> {
-        let statuses = self.project_statuses()?;
+        let statuses = self.project_statuses(false)?;
         match find_by(&statuses, "name", name) {
             Some(status) => need_str(status, "id", "ProjectStatuses"),
             None => Err(Error::with_hint(
@@ -1567,6 +1617,122 @@ fn project_create(session: &Session, args: &ProjectCreateArgs, out: &Output) -> 
     // A project muster makes has the one team, so its `teams` page is never cut; the
     // `truncated` notice is `project list`'s, where a project may span many.
     out.emit(&payload(&data, "projectCreate", "project")?);
+    Ok(())
+}
+
+fn project_status_list(session: &Session, args: &ListArgs, out: &Output) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let mut statuses = session.project_statuses(false)?;
+    let cut = statuses.len() > n;
+    statuses.truncate(n);
+    emit_list(out, statuses, cut, "project statuses", n);
+    Ok(())
+}
+
+/// The input of `projectStatusCreate`: the flags, checked before any request.
+fn project_status_input(args: &ProjectStatusCreateArgs) -> Result<Map<String, Value>, Error> {
+    check_body(Text::Name, &args.name)?;
+    let mut input = Map::new();
+    input.insert("name".into(), json!(args.name));
+    input.insert("type".into(), json!(args.r#type.linear()));
+    input.insert("color".into(), json!(args.color));
+    input.insert("position".into(), json!(args.position));
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if let Some(indefinite) = args.indefinite {
+        input.insert("indefinite".into(), json!(indefinite));
+    }
+    Ok(input)
+}
+
+fn project_status_create(
+    session: &Session,
+    args: &ProjectStatusCreateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let input = project_status_input(args)?;
+    // The guard: `--status <NAME>` on `project update` resolves a name to one status.
+    if !args.allow_duplicate
+        && let Some(existing) = find_by(&session.project_statuses(false)?, "name", &args.name)
+    {
+        return Err(Error::with_hint(
+            ErrorCode::Refused,
+            format!(
+                "the workspace has a project status named {:?} already, of type {}",
+                str_at(existing, "name").unwrap_or(&args.name),
+                str_at(existing, "type").unwrap_or("?")
+            ),
+            "use that status, or pass --allow-duplicate if a second one is wanted",
+        )
+        .at("muster-project-status-create"));
+    }
+    let data = session.linear.run(
+        &ops::PROJECT_STATUS_CREATE,
+        json!({ "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "projectStatusCreate", "status")?);
+    Ok(())
+}
+
+fn project_status_update(
+    session: &Session,
+    args: &ProjectStatusUpdateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let mut input = Map::new();
+    if let Some(name) = &args.name {
+        check_body(Text::Name, name)?;
+        input.insert("name".into(), json!(name));
+    }
+    if let Some(color) = &args.color {
+        input.insert("color".into(), json!(color));
+    }
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if let Some(position) = args.position {
+        input.insert("position".into(), json!(position));
+    }
+    if let Some(kind) = args.r#type {
+        input.insert("type".into(), json!(kind.linear()));
+    }
+    if let Some(indefinite) = args.indefinite {
+        input.insert("indefinite".into(), json!(indefinite));
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --name, --color, --description, --position, --type, --indefinite",
+        ));
+    }
+    let status = session.project_status(&args.status, false)?;
+    let id = need_str(&status, "id", "ProjectStatuses")?;
+    let data = session.linear.run(
+        &ops::PROJECT_STATUS_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "projectStatusUpdate", "status")?);
+    Ok(())
+}
+
+/// `project-status archive` and `unarchive`: one mutation with the status's id, and
+/// Linear's entity.
+fn project_status_lifecycle(
+    session: &Session,
+    args: &ProjectStatusRefArgs,
+    op: &ops::Operation,
+    field: &str,
+    include_archived: bool,
+    out: &Output,
+) -> Result<(), Error> {
+    let status = session.project_status(&args.name, include_archived)?;
+    let id = need_str(&status, "id", "ProjectStatuses")?;
+    let data = session.linear.run(op, json!({ "id": id }))?;
+    out.emit(&payload(&data, field, "entity")?);
     Ok(())
 }
 

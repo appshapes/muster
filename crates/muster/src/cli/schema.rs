@@ -448,7 +448,7 @@ pub fn fixture_variables(
         "WorkflowStates" | "IssueLabels" => json!({ "first": 5, "filter": Value::Null }),
         "Users" => json!({ "first": 5, "filter": Value::Null, "includeDisabled": true }),
         "UserById" => json!({ "id": "me" }),
-        "ProjectStatuses" => json!({ "first": 5 }),
+        "ProjectStatuses" => json!({ "first": 5, "includeArchived": false }),
         "ProjectByName" => {
             json!({ "name": first_project?, "includeArchived": false, "teams": TEAMS_PER_PROJECT, "members": MEMBERS_PER_PROJECT, "milestones": MILESTONES_PER_PROJECT })
         }
@@ -563,6 +563,11 @@ mod tests {
             "project update",
             "project delete",
             "project unarchive",
+            "project-status list",
+            "project-status create",
+            "project-status update",
+            "project-status archive",
+            "project-status unarchive",
             "state list",
             "label list",
             "project list",

@@ -1414,7 +1414,14 @@ fn team_create_makes_a_team_with_its_states_and_refuses_a_duplicate_name() {
         "Linear keeps the key unique: {}",
         same_key.stderr
     );
-    assert!(same_key.error()["linear"]["message"].is_string());
+    assert!(
+        same_key.error()["linear"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("already in use"),
+        "Linear's presentable reason rides on its message: {}",
+        same_key.stderr
+    );
 
     let child = muster(
         &fake,
@@ -1739,6 +1746,177 @@ fn user_get_update_role_suspension_and_sessions() {
     }
     fake.fail_next("UserById", Failure::Drop);
     let run = muster(&fake, &["user", "get", "me"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+}
+
+// ---- project statuses (ADR 0014, group 9) ------------------------------------------------
+
+#[test]
+fn project_status_list_create_update_archive_and_unarchive() {
+    let fake = Fake::start().unwrap();
+    let listed = muster(&fake, &["project-status", "list"]);
+    assert_eq!(listed.code, 0, "{}", listed.stderr);
+    let statuses = listed.lines();
+    assert_eq!(statuses.len(), 5, "Linear's five defaults");
+    assert_eq!(statuses[0]["name"], "Backlog", "by position");
+    assert_eq!(statuses[2]["type"], "started");
+    assert!(statuses[0]["indefinite"].is_boolean() && statuses[0]["color"].is_string());
+    let created = muster(
+        &fake,
+        &[
+            "project-status",
+            "create",
+            "--name",
+            "Paused",
+            "--type",
+            "planned",
+            "--color",
+            "#f2c94c",
+            "--position",
+            "2.5",
+            "--indefinite",
+            "true",
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let v = created.one();
+    assert_eq!(v["name"], "Paused");
+    assert_eq!(
+        v["type"], "planned",
+        "a second planned status, so that archiving it leaves one of the type"
+    );
+    assert_eq!(v["position"], 2.5);
+    assert_eq!(v["indefinite"], true);
+    let listed = muster(&fake, &["project-status", "list"]).lines();
+    assert_eq!(listed.len(), 6);
+    assert_eq!(
+        listed[3]["name"], "Paused",
+        "between In Progress and Completed"
+    );
+    let again = muster(
+        &fake,
+        &[
+            "project-status",
+            "create",
+            "--name",
+            "paused",
+            "--type",
+            "paused",
+            "--color",
+            "#000000",
+            "--position",
+            "9",
+        ],
+    );
+    assert_eq!(again.code, 6, "{}", again.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "ProjectStatusCreate")
+            .count(),
+        1,
+        "refused before any mutation"
+    );
+    let moved = muster(
+        &fake,
+        &["project", "update", "Muster", "--status", "Paused"],
+    );
+    assert_eq!(
+        moved.code, 0,
+        "the new status takes projects: {}",
+        moved.stderr
+    );
+
+    let renamed = muster(
+        &fake,
+        &[
+            "project-status",
+            "update",
+            "Paused",
+            "--name",
+            "On hold",
+            "--indefinite",
+            "false",
+        ],
+    );
+    assert_eq!(renamed.code, 0, "{}", renamed.stderr);
+    assert_eq!(renamed.one()["name"], "On hold");
+    assert_eq!(renamed.one()["indefinite"], false);
+    assert_eq!(
+        muster(&fake, &["project", "get", "Muster"]).one()["status"]["name"],
+        "On hold",
+        "the project shows the new name"
+    );
+    let nothing = muster(&fake, &["project-status", "update", "On hold"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    let nope = muster(
+        &fake,
+        &["project-status", "update", "Nope", "--color", "#000000"],
+    );
+    assert_eq!(nope.code, 4, "{}", nope.stderr);
+
+    let held = muster(&fake, &["project-status", "archive", "On hold"]);
+    assert_eq!(
+        held.code, 6,
+        "a status with a project in it: {}",
+        held.stderr
+    );
+    let away = muster(
+        &fake,
+        &["project", "update", "Muster", "--status", "Planned"],
+    );
+    assert_eq!(away.code, 0, "{}", away.stderr);
+    let archived = muster(&fake, &["project-status", "archive", "On hold"]);
+    assert_eq!(archived.code, 0, "{}", archived.stderr);
+    assert_eq!(archived.one()["name"], "On hold", "Linear's entity");
+    assert_eq!(muster(&fake, &["project-status", "list"]).lines().len(), 5);
+    let last = muster(&fake, &["project-status", "archive", "Backlog"]);
+    assert_eq!(last.code, 6, "the last of its type: {}", last.stderr);
+    let back = muster(&fake, &["project-status", "unarchive", "On hold"]);
+    assert_eq!(
+        back.code, 0,
+        "an archived status is still found: {}",
+        back.stderr
+    );
+    assert_eq!(back.one()["name"], "On hold");
+    assert_eq!(muster(&fake, &["project-status", "list"]).lines().len(), 6);
+
+    for (op, args) in [
+        (
+            "ProjectStatusCreate",
+            vec![
+                "project-status",
+                "create",
+                "--name",
+                "Dropped",
+                "--type",
+                "backlog",
+                "--color",
+                "#000000",
+                "--position",
+                "9",
+            ],
+        ),
+        (
+            "ProjectStatusUpdate",
+            vec!["project-status", "update", "On hold", "--color", "#000000"],
+        ),
+        (
+            "ProjectStatusArchive",
+            vec!["project-status", "archive", "On hold"],
+        ),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+    let archived = muster(&fake, &["project-status", "archive", "On hold"]);
+    assert_eq!(archived.code, 0, "{}", archived.stderr);
+    fake.fail_next("ProjectStatusUnarchive", Failure::Drop);
+    let run = muster(&fake, &["project-status", "unarchive", "On hold"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("ProjectStatuses", Failure::Drop);
+    let run = muster(&fake, &["project-status", "list"]);
     assert_eq!(run.code, 7, "{}", run.stderr);
 }
 
