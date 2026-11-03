@@ -32,6 +32,13 @@ user-visible change, added in the same commit as the change. The format follows
   exit 6 (ADR 0014, group 1;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
+### Changed
+
+- `muster schema` and the reference it generates spell out the values an enumerated
+  flag takes, `<owner|admin|user|guest>` and `<Sunday|Monday|...|Saturday>` rather than
+  `<ROLE>` and `<DAY>`, for every flag whose values `clap` knows, so a flag added later
+  cannot leave them out ([the reference](docs/reference/commands.md)).
+
 ## 0.2.0 - 2026-11-03
 
 The second slice ([ADR 0013](docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md)),

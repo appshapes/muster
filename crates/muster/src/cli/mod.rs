@@ -110,7 +110,7 @@ pub struct WorkspaceUpdateArgs {
     #[arg(long, value_name = "URL")]
     pub logo_url: Option<String>,
     /// The template for the branch name Linear suggests for an issue, or `none` for Linear's default
-    #[arg(long, value_name = "TEXT")]
+    #[arg(long, value_name = "TEXT|none")]
     pub git_branch_format: Option<String>,
     /// Whether the git integration posts a linkback comment on a private repository's pull request
     #[arg(long, value_name = "true|false")]
