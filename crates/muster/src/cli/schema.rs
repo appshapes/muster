@@ -10,7 +10,8 @@ use serde_json::{Map, Value, json};
 
 use crate::bounds;
 use crate::bounds::{
-    ISSUES_PER_CYCLE, MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, TEAMS_PER_PROJECT,
+    ISSUES_PER_CYCLE, MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, PROJECTS_PER_INITIATIVE,
+    TEAMS_PER_PROJECT,
 };
 use crate::cli::{Cli, SchemaArgs, SchemaFormat};
 use crate::config::{ENVIRONMENT, LINEAR_ENDPOINT};
@@ -353,6 +354,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
     let (sample, lack) = sample_issue(session)?;
     let team = sample_team(session)?;
     let project = sample_project(session)?;
+    let initiative = sample_initiative(session)?;
     let cycle = sample_cycle(session)?;
     match (&sample, lack) {
         (Some(id), Some(lack)) => out.notice(
@@ -374,6 +376,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
             sample.as_deref(),
             team.as_deref(),
             project.as_deref(),
+            initiative.as_deref(),
             cycle.as_ref().map(|(k, n)| (k.as_str(), *n)),
         ) else {
             if [
@@ -383,6 +386,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
                 "ProjectByName",
                 "Milestones",
                 "ProjectUpdates",
+                "InitiativeByName",
                 "CycleByNumber",
             ]
             .contains(&op.name)
@@ -501,6 +505,18 @@ fn project_lack(data: &Value) -> Option<&'static str> {
     }
 }
 
+/// The name of the initiative `InitiativeByName` is recorded on: the first one
+/// `Initiatives` lists.
+fn sample_initiative(session: &Session) -> Result<Option<String>, Error> {
+    let data = session.linear.run(
+        &ops::INITIATIVES,
+        json!({ "first": 1, "filter": Value::Null }),
+    )?;
+    Ok(nodes(&data, "initiatives")
+        .first()
+        .and_then(|i| str_at(i, "name").map(str::to_string)))
+}
+
 /// The team key and number of the cycle `CycleByNumber` is recorded on: the first
 /// cycle with an issue in it that `Cycles` lists across the workspace, since the
 /// first team may have no cycles and a cycle without issues records no issue node;
@@ -518,13 +534,14 @@ fn sample_cycle(session: &Session) -> Result<Option<(String, f64)>, Error> {
 }
 
 /// The variables each read operation is recorded with, and the fixture test replays
-/// against the fake; `None` when `IssueById` has no issue, `TeamByKey` no team, or
-/// `ProjectByName` no project, to ask for.
+/// against the fake; `None` when `IssueById` has no issue, `TeamByKey` no team,
+/// `ProjectByName` no project, or `InitiativeByName` no initiative, to ask for.
 pub fn fixture_variables(
     op: &str,
     first_issue: Option<&str>,
     first_team: Option<&str>,
     first_project: Option<&str>,
+    first_initiative: Option<&str>,
     first_cycle: Option<(&str, f64)>,
 ) -> Option<Value> {
     Some(match op {
@@ -542,6 +559,11 @@ pub fn fixture_variables(
             let (key, number) = first_cycle?;
             json!({ "key": key, "number": number, "issues": ISSUES_PER_CYCLE })
         }
+        "Initiatives" => json!({ "first": 5, "filter": Value::Null }),
+        "InitiativeByName" => {
+            json!({ "name": first_initiative?, "includeArchived": false, "projects": PROJECTS_PER_INITIATIVE })
+        }
+        "InitiativeLinks" => json!({ "first": 5 }),
         "ProjectByName" => {
             json!({ "name": first_project?, "includeArchived": false, "teams": TEAMS_PER_PROJECT, "members": MEMBERS_PER_PROJECT, "milestones": MILESTONES_PER_PROJECT })
         }
@@ -670,6 +692,14 @@ mod tests {
             "cycle list",
             "cycle get",
             "cycle update",
+            "initiative list",
+            "initiative get",
+            "initiative create",
+            "initiative update",
+            "initiative archive",
+            "initiative unarchive",
+            "initiative add-project",
+            "initiative remove-project",
             "state list",
             "label list",
             "project list",

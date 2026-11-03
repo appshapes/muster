@@ -18,7 +18,7 @@ cargo install muster-linear
 The crate is `muster-linear` and the binary is `muster`
 ([ADR 0012](../decisions/0012-publish-as-muster-linear.md)); from a checkout,
 `cargo install --path crates/muster` builds the same binary. You will see
-`Installed package muster-linear v0.3.0` and `muster --version` prints `muster 0.3.0`.
+`Installed package muster-linear v0.4.0` and `muster --version` prints `muster 0.4.0`.
 
 ## 2. Put the key where muster reads it (one minute)
 
@@ -130,6 +130,16 @@ doing is a status post: `muster project-update create --project "Trying muster"
 --body "Shipping on Friday." --health onTrack` (one JSON line with the post's `body`,
 `health`, `user` and `url`), and `muster project-update list --project "Trying
 muster"` shows them newest first; the project's own `health` and `lastUpdate` follow
+the latest post. Above projects sit initiatives, which a workspace switches on once
+with `muster workspace update --roadmap true` (Linear refuses `initiative create`,
+exit 6, while they are off): `muster initiative create --name "Growth" --owner me
+--status Active` makes one (one JSON line with its `status`, `owner`, `leadTeam` and
+`targetDate`; `--lead-team <KEY>` names the team that leads it, which Linear sells on
+its Business plan and refuses below it), `muster initiative add-project Growth
+--project "Trying muster"` puts the project in it, `muster initiative get Growth`
+prints it with its `projects` (bounded by `PROJECTS_PER_INITIATIVE`), and `muster
+initiative archive Growth` puts it away (`unarchive` brings it back).
+
 the latest post. A team that uses cycles (`team update --cycles-enabled true`) has
 them made by Linear: `muster cycle list` prints them newest first with their `number`
 and the `isActive` flag, `muster cycle list --active` the one running now, `muster

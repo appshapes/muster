@@ -1,0 +1,30 @@
+{
+  "initiatives": {
+    "nodes": [
+      {
+        "archivedAt": null,
+        "createdAt": "<string>",
+        "description": "<string>",
+        "health": null,
+        "id": "<string>",
+        "leadTeam": null,
+        "name": "<string>",
+        "owner": {
+          "displayName": "<string>",
+          "id": "<string>",
+          "name": "<string>"
+        },
+        "priority": 0,
+        "slugId": "<string>",
+        "status": "<string>",
+        "targetDate": null,
+        "trashed": null,
+        "updatedAt": "<string>",
+        "url": "<string>"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": true
+    }
+  }
+}

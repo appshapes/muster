@@ -1,0 +1,39 @@
+{
+  "initiatives": {
+    "nodes": [
+      {
+        "archivedAt": null,
+        "content": null,
+        "createdAt": "<string>",
+        "description": "<string>",
+        "health": null,
+        "id": "<string>",
+        "leadTeam": null,
+        "name": "<string>",
+        "owner": {
+          "displayName": "<string>",
+          "id": "<string>",
+          "name": "<string>"
+        },
+        "priority": 0,
+        "projects": {
+          "nodes": [
+            {
+              "id": "<string>",
+              "name": "<string>"
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": true
+          }
+        },
+        "slugId": "<string>",
+        "status": "<string>",
+        "targetDate": null,
+        "trashed": null,
+        "updatedAt": "<string>",
+        "url": "<string>"
+      }
+    ]
+  }
+}
