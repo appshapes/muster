@@ -18,7 +18,7 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 | label | A named tag on an issue; an issue can carry several. | `issueLabel`, `labels` | label | `docs/reference/commands.md#muster-label-list` |
 | project | A named group of issues across teams, with a state of its own. | `project` | none | `docs/reference/commands.md#muster-project-list` |
 | comment | A markdown note on an issue, by a user; `issue get` prints them newest first, as Linear orders them. | `comment` | comment | `docs/reference/commands.md#muster-issue-comment` |
-| attachment | A link on an issue, with a title and a URL. | `attachment` | attachment | `docs/reference/commands.md#muster-issue-get` |
+| attachment | A link on an issue, with a title and a URL; `issue attach` adds one and `issue get` prints them, newest first. | `attachment` | attachment | `docs/reference/commands.md#muster-issue-attach` |
 | sub-issue | An issue whose `parent` is another issue; the parent prints its `children`, and `--parent` on `issue create`, `issue update` and `issue list` names one. | `parent`, `children`, `parentId` | checklist item (the nearest) | `docs/reference/commands.md#muster-issue-get` |
 | assignee | The user responsible for an issue; `me` is the key's owner. | `assignee` | member | `docs/reference/commands.md#muster-issue-create` |
 | priority | An integer from 0 (none) to 4 (low); 1 is urgent. | `priority`, `priorityLabel` | none | `docs/reference/commands.md#muster-issue-create` |

@@ -1,6 +1,30 @@
 {
   "projects": {
-    "nodes": [],
+    "nodes": [
+      {
+        "description": "<string>",
+        "id": "<string>",
+        "lead": null,
+        "name": "<string>",
+        "priority": 0,
+        "startDate": null,
+        "status": {
+          "id": "<string>",
+          "name": "<string>",
+          "type": "<string>"
+        },
+        "targetDate": null,
+        "teams": {
+          "nodes": [
+            {
+              "id": "<string>",
+              "key": "<string>"
+            }
+          ]
+        },
+        "url": "<string>"
+      }
+    ],
     "pageInfo": {
       "hasNextPage": true
     }

@@ -412,7 +412,10 @@ pub fn fixture_variables(op: &str, first_issue: Option<&str>) -> Option<Value> {
         "WorkflowStates" | "IssueLabels" | "Projects" | "Users" => {
             json!({ "first": 5, "filter": Value::Null })
         }
-        "Issues" => json!({ "first": 2, "filter": Value::Null, "orderBy": "createdAt" }),
+        // Issues that carry a label, so that the label node shape is recorded too.
+        "Issues" => {
+            json!({ "first": 2, "filter": { "labels": { "length": { "gt": 0 } } }, "orderBy": "createdAt" })
+        }
         "IssueById" => {
             json!({ "id": first_issue?, "comments": 5, "attachments": 5, "children": 5 })
         }
@@ -497,6 +500,7 @@ mod tests {
             "issue list",
             "issue create",
             "issue comment",
+            "issue attach",
             "issue close",
             "issue update",
             "schema",

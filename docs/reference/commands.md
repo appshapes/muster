@@ -110,6 +110,17 @@ Add a comment to an issue.
 | `--body` | `<TEXT>` | no |  | The comment, markdown |
 | `--body-file` | `<PATH>` | no |  | The comment from a file, or from stdin when PATH is `-` |
 
+### muster issue attach
+
+Add a link to an issue: a URL with a title, which Linear shows as an attachment.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<ISSUE>` | `<ISSUE>` | yes |  | The identifier (APP-12), the number alone (12, in the team) or the id |
+| `--url` | `<URL>` | yes |  | The link; a URL the issue already has is updated in place, with the same id, not added again |
+| `--title` | `<TEXT>` | yes |  | The title Linear shows for the link; required, because Linear requires one and muster invents none |
+| `--subtitle` | `<TEXT>` | no |  | A line under the title |
+
 ### muster issue close
 
 Move an issue to the team's completed state, or to --state, or with --cancel to its canceled state, after an optional comment; prints the comment, then the issue.
@@ -191,10 +202,10 @@ Every limit muster has, from `crates/muster/src/bounds.rs` (CLAUDE.md, invariant
 | `PAGE_SIZE` | 50 | items | the default --limit of every list command |
 | `PAGE_CAP` | 250 | items | the largest --limit a list accepts, which is Linear's largest page; a larger value is a usage error, exit 2; a list cut at its limit writes a `truncated` notice to stderr and exits 0 |
 | `COMMENTS_PER_ISSUE` | 100 | items | the comments `issue get` fetches with an issue, newest first, as Linear orders them; a longer thread writes a `truncated` notice to stderr and the oldest are the ones left out |
-| `ATTACHMENTS_PER_ISSUE` | 50 | items | the attachments `issue get` fetches with an issue |
+| `ATTACHMENTS_PER_ISSUE` | 50 | items | the attachments `issue get` fetches with an issue, newest first, as Linear orders them; an issue with more writes a `truncated` notice to stderr and the oldest are the ones left out |
 | `CHILDREN_PER_ISSUE` | 50 | items | the sub-issues `issue get` fetches with an issue, newest first, as Linear orders them; a parent with more writes a `truncated` notice to stderr and the oldest are the ones left out |
 | `REQUEST_TIMEOUT_SECS` | 30 | seconds | one request, connect to last byte; past it a query exits 7 and a mutation exits 8 |
-| `BODY_MAX_BYTES` | 262144 | bytes | the largest description or comment body sent; a larger one is refused, exit 6, before any request |
+| `BODY_MAX_BYTES` | 262144 | bytes | the largest description, comment, title, link or subtitle sent; a larger one is refused, exit 6, before any request, and the message names which one it was; Linux refuses one argv string over 128 KiB before muster runs, so from a flag's value the bound is reached only where the OS allows the argument, from a file or stdin everywhere |
 | `RESPONSE_MAX_BYTES` | 16777216 | bytes | the largest answer read; a larger one is muster's failure, exit 1 |
 | `RETRIES` | 0 | attempts | how many times a failed request is sent again: never; the exit code tells the caller what happened and the caller decides |
 
@@ -237,3 +248,4 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
+| `AttachmentCreate` | mutation |
