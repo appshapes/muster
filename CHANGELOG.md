@@ -26,7 +26,9 @@ user-visible change, added in the same commit as the change. The format follows
   afterwards. `state update <NAME>` changes the name, colour, description or
   position; `state archive <NAME>` takes a state out of the workflow, which Linear
   refuses, exit 6, while the state holds an issue that is not archived, and nothing
-  brings an archived state back (ADR 0014, group 7;
+  brings an archived state back. `--position` takes a finite number; `nan`, `inf`
+  and a number too large for one, such as `1e400`, are usage errors, exit 2, before
+  any request (ADR 0014, group 7;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.3.0 - 2026-11-03

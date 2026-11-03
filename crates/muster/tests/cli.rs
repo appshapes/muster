@@ -1841,12 +1841,35 @@ fn state_create_update_and_archive() {
         "triage is Linear's own type: {}",
         triage.stderr
     );
+    // `f64::from_str`, which `clap` parses `--position` with, takes `nan`, `inf` and
+    // `1e400` (which overflows to infinity), and serde_json would write each as `null`:
+    // a position the caller never typed. Each is muster's usage error, before any
+    // request. The `=` form, since `clap` reads a bare `-inf` as flags.
+    for position in ["nan", "inf", "-inf", "1e400"] {
+        let flag = format!("--position={position}");
+        let create = muster(
+            &fake,
+            &[
+                "state", "create", "--name", "Nowhere", "--type", "backlog", "--color", "#000000",
+                &flag,
+            ],
+        );
+        assert_eq!(create.code, 2, "{flag}: {}", create.stderr);
+        assert_eq!(create.error()["code"], "usage", "{flag}: {}", create.stderr);
+        let update = muster(&fake, &["state", "update", "Blocked", &flag]);
+        assert_eq!(update.code, 2, "{flag}: {}", update.stderr);
+        assert_eq!(update.error()["code"], "usage", "{flag}: {}", update.stderr);
+    }
     assert_eq!(
         fake.operations()
             .iter()
             .filter(|o| *o == "WorkflowStateCreate")
             .count(),
         1,
+        "refused before any mutation"
+    );
+    assert!(
+        !fake.operations().iter().any(|o| o == "WorkflowStateUpdate"),
         "refused before any mutation"
     );
     let moved = muster(&fake, &["issue", "update", "APP-1", "--state", "Blocked"]);

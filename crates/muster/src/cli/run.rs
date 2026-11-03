@@ -707,6 +707,22 @@ fn workspace_update(
     Ok(())
 }
 
+/// Refuse a `--position` that is not finite, before any request. `clap` parses the
+/// flag with `f64::from_str`, which accepts `nan`, `inf`, `-inf` and `1e400` (which
+/// overflows to infinity), and `serde_json` writes a number that is not finite as
+/// `null`: a value the caller never typed, which Linear would read as its own default.
+/// Exit 2 rather than guess (CLAUDE.md, When in doubt).
+fn check_position(position: f64) -> Result<(), Error> {
+    if position.is_finite() {
+        return Ok(());
+    }
+    Err(Error::with_hint(
+        ErrorCode::Usage,
+        format!("--position {position} is not a finite number"),
+        "pass a finite number, such as 2.5; `muster state list` shows each state's position",
+    ))
+}
+
 /// The input of `workflowStateCreate` but its `teamId`: the flags, checked before any
 /// request.
 fn state_input(args: &StateCreateArgs) -> Result<Map<String, Value>, Error> {
@@ -720,6 +736,7 @@ fn state_input(args: &StateCreateArgs) -> Result<Map<String, Value>, Error> {
         input.insert("description".into(), json!(description));
     }
     if let Some(position) = args.position {
+        check_position(position)?;
         input.insert("position".into(), json!(position));
     }
     Ok(input)
@@ -752,7 +769,11 @@ fn state_create(session: &Session, args: &StateCreateArgs, out: &Output) -> Resu
     Ok(())
 }
 
-fn state_update(session: &Session, args: &StateUpdateArgs, out: &Output) -> Result<(), Error> {
+/// The input of `workflowStateUpdate`: the flags, checked before any request; no flag
+/// is a usage error, since Linear's input has no field for the type and nothing else
+/// would change. The state is resolved by the handler, after these checks, so that a
+/// refusal here sends nothing.
+fn state_update_input(args: &StateUpdateArgs) -> Result<Map<String, Value>, Error> {
     let mut input = Map::new();
     if let Some(name) = &args.name {
         check_body(Text::Name, name)?;
@@ -766,6 +787,7 @@ fn state_update(session: &Session, args: &StateUpdateArgs, out: &Output) -> Resu
         input.insert("description".into(), json!(description));
     }
     if let Some(position) = args.position {
+        check_position(position)?;
         input.insert("position".into(), json!(position));
     }
     if input.is_empty() {
@@ -775,6 +797,11 @@ fn state_update(session: &Session, args: &StateUpdateArgs, out: &Output) -> Resu
             "pass at least one of --name, --color, --description, --position; a state's type cannot change",
         ));
     }
+    Ok(input)
+}
+
+fn state_update(session: &Session, args: &StateUpdateArgs, out: &Output) -> Result<(), Error> {
+    let input = state_update_input(args)?;
     let team_key = session.team_key()?;
     let id = session.state_id(&team_key, &args.state)?;
     let data = session.linear.run(
@@ -2415,6 +2442,125 @@ mod tests {
             team_update_input(&blank).err().map(|e| e.code),
             Some(ErrorCode::Usage)
         );
+    }
+
+    #[test]
+    fn a_state_input_is_checked_before_any_request() {
+        use crate::cli::StateType;
+        let blocked = StateCreateArgs {
+            name: "Blocked".into(),
+            r#type: StateType::Started,
+            color: "#eb5757".into(),
+            ..StateCreateArgs::default()
+        };
+        let input = state_input(&blocked).unwrap_or_default();
+        assert_eq!(input.get("name"), Some(&json!("Blocked")));
+        assert_eq!(
+            input.get("type"),
+            Some(&json!("started")),
+            "as Linear spells it"
+        );
+        assert_eq!(input.get("color"), Some(&json!("#eb5757")));
+        assert_eq!(
+            input.get("description"),
+            None,
+            "a flag left out is not sent"
+        );
+        assert_eq!(
+            input.get("position"),
+            None,
+            "the default, the end, is Linear's to pick"
+        );
+        assert_eq!(
+            input.get("teamId"),
+            None,
+            "the team is resolved after the checks"
+        );
+        let len = |input: &Map<String, Value>, field: &str| {
+            input.get(field).and_then(Value::as_str).map(str::len)
+        };
+        let at_bound = StateCreateArgs {
+            name: "n".repeat(BODY_MAX_BYTES),
+            description: Some("d".repeat(BODY_MAX_BYTES)),
+            position: Some(2.5),
+            ..StateCreateArgs::default()
+        };
+        let full = state_input(&at_bound).unwrap_or_default();
+        assert_eq!(
+            len(&full, "name"),
+            Some(BODY_MAX_BYTES),
+            "at the bound is not over it"
+        );
+        assert_eq!(len(&full, "description"), Some(BODY_MAX_BYTES));
+        assert_eq!(full.get("position"), Some(&json!(2.5)));
+        for (name, description) in [
+            ("n".repeat(BODY_MAX_BYTES + 1), None),
+            ("n".into(), Some("d".repeat(BODY_MAX_BYTES + 1))),
+        ] {
+            let over = StateCreateArgs {
+                name,
+                description,
+                ..StateCreateArgs::default()
+            };
+            assert!(
+                state_input(&over)
+                    .err()
+                    .is_some_and(|e| e.code == ErrorCode::Refused)
+            );
+        }
+        // `f64::from_str`, which `clap` parses `--position` with, takes these spellings,
+        // and serde_json would write each as `null`.
+        let huge = "1e400".parse::<f64>().ok();
+        assert_eq!(
+            huge,
+            Some(f64::INFINITY),
+            "a number too large for an f64 parses as infinity, not as an error"
+        );
+        for position in [
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            huge.unwrap_or(f64::NAN),
+        ] {
+            let create = StateCreateArgs {
+                name: "Nowhere".into(),
+                position: Some(position),
+                ..StateCreateArgs::default()
+            };
+            assert_eq!(
+                state_input(&create).err().map(|e| e.code),
+                Some(ErrorCode::Usage),
+                "--position {position} is refused before any request, never sent as `null`"
+            );
+            let update = StateUpdateArgs {
+                state: "Blocked".into(),
+                position: Some(position),
+                ..StateUpdateArgs::default()
+            };
+            assert_eq!(
+                state_update_input(&update).err().map(|e| e.code),
+                Some(ErrorCode::Usage),
+                "--position {position} is refused before any request, never sent as `null`"
+            );
+        }
+        assert_eq!(
+            state_update_input(&StateUpdateArgs {
+                state: "Blocked".into(),
+                ..StateUpdateArgs::default()
+            })
+            .err()
+            .map(|e| e.code),
+            Some(ErrorCode::Usage),
+            "no flag is nothing to change"
+        );
+        let moved = StateUpdateArgs {
+            state: "Blocked".into(),
+            position: Some(2.5),
+            ..StateUpdateArgs::default()
+        };
+        let input = state_update_input(&moved).unwrap_or_default();
+        assert_eq!(input.get("position"), Some(&json!(2.5)));
+        assert_eq!(input.get("name"), None, "a flag left out is not sent");
     }
 
     #[test]

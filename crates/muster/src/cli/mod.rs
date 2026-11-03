@@ -731,7 +731,7 @@ pub struct StateCreateArgs {
     /// The description, plain text
     #[arg(long, value_name = "TEXT")]
     pub description: Option<String>,
-    /// Where the state sits among the team's, a number; Linear's default is the end
+    /// Where the state sits among the team's, a finite number; Linear's default is the end
     #[arg(long, value_name = "N")]
     pub position: Option<f64>,
     /// Create it even when a state of the team has the name
@@ -754,7 +754,7 @@ pub struct StateUpdateArgs {
     /// A new description, plain text
     #[arg(long, value_name = "TEXT")]
     pub description: Option<String>,
-    /// A new position among the team's states
+    /// A new position among the team's states, a finite number
     #[arg(long, value_name = "N")]
     pub position: Option<f64>,
 }

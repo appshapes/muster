@@ -215,7 +215,7 @@ Add a state to the team's workflow; its type cannot change afterwards; a name a 
 | `--type` | `<backlog\|unstarted\|started\|completed\|canceled>` | yes |  | The type, which says how Linear treats the state; `triage` is Linear's own |
 | `--color` | `<HEX>` | yes |  | The colour, a hex string (#bec2c8) |
 | `--description` | `<TEXT>` | no |  | The description, plain text |
-| `--position` | `<N>` | no |  | Where the state sits among the team's, a number; Linear's default is the end |
+| `--position` | `<N>` | no |  | Where the state sits among the team's, a finite number; Linear's default is the end |
 | `--allow-duplicate` |  | no |  | Create it even when a state of the team has the name |
 
 ### muster state update
@@ -228,7 +228,7 @@ Change a state's name, colour, description or position.
 | `--name` | `<TEXT>` | no |  | A new name |
 | `--color` | `<HEX>` | no |  | A new colour, a hex string (#bec2c8) |
 | `--description` | `<TEXT>` | no |  | A new description, plain text |
-| `--position` | `<N>` | no |  | A new position among the team's states |
+| `--position` | `<N>` | no |  | A new position among the team's states, a finite number |
 
 ### muster state archive
 
