@@ -25,10 +25,10 @@
           "name": "<string>",
           "type": "<string>"
         },
-        "description": null,
+        "description": "<string>",
         "displayName": "<string>",
         "groupIssueHistory": true,
-        "icon": null,
+        "icon": "<string>",
         "id": "<string>",
         "inheritIssueEstimation": true,
         "initiativesEnabled": true,

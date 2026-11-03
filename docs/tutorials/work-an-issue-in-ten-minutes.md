@@ -68,6 +68,10 @@ deletion after Linear's grace period (one JSON line, Linear's `success` and
 `--cycles-enabled true --cycle-enabled-start-date 2026-11-10T00:00:00Z` turns
 cycles on from a date, `--default-issue-state Todo` names a state of the team, and
 a flag left out leaves its setting alone.
+Who is in the team is `muster member list`: one JSON line per membership, with its
+`user` and whether they are an `owner`; `muster member add --user <email>` and
+`muster member remove --user <email>` change it, for the team of `--team`,
+`MUSTER_TEAM` or the only one, and a user who is not a member is exit 4.
 
 If you see `"code":"authentication"` on stderr and exit 3, the key was not found or
 was refused; the `hint` says where to put it. If the `team` is `null` with a `warn`

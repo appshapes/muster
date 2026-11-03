@@ -51,6 +51,12 @@ pub enum Command {
         #[command(subcommand)]
         command: TeamCommand,
     },
+    /// Members of the team: list, add, remove
+    Member {
+        /// The member command.
+        #[command(subcommand)]
+        command: MemberCommand,
+    },
     /// Workflow states of the team
     State {
         /// `list`.
@@ -513,6 +519,25 @@ impl EstimationType {
             EstimationType::TShirt => "tShirt",
         }
     }
+}
+
+/// The member commands (ADR 0014, group 3): the team's memberships.
+#[derive(Subcommand, Debug)]
+pub enum MemberCommand {
+    /// List the team's members, one JSON object per line, each a membership with its user
+    List(ListArgs),
+    /// Add a user to the team
+    Add(MemberArgs),
+    /// Remove a user from the team; a user may remove themselves, a team owner or a workspace admin anyone. The membership is found in the team's first PAGE_CAP members: a user who is not among them is exit 4 when the team has no more, and exit 6, refused before any mutation, when it has
+    Remove(MemberArgs),
+}
+
+/// `member add` and `member remove`.
+#[derive(Args, Debug)]
+pub struct MemberArgs {
+    /// The user: `me`, an email address or a name
+    #[arg(long, value_name = "WHO")]
+    pub user: String,
 }
 
 /// `list` under `state`, `label` and `user`.

@@ -1,0 +1,35 @@
+{
+  "teams": {
+    "nodes": [
+      {
+        "id": "<string>",
+        "key": "<string>",
+        "memberships": {
+          "nodes": [
+            {
+              "createdAt": "<string>",
+              "id": "<string>",
+              "owner": true,
+              "sortOrder": 0,
+              "team": {
+                "id": "<string>",
+                "key": "<string>"
+              },
+              "user": {
+                "active": true,
+                "admin": true,
+                "displayName": "<string>",
+                "email": "<string>",
+                "id": "<string>",
+                "name": "<string>"
+              }
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": true
+          }
+        }
+      }
+    ]
+  }
+}

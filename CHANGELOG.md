@@ -55,6 +55,16 @@ user-visible change, added in the same commit as the change. The format follows
   resolved in the team before any request, and no flag at all is exit 2; most settings
   need a team owner or a workspace admin, and Linear's refusal is exit 6 (ADR 0014,
   group 2; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `member list` prints the team's memberships, one per line, each with its `user`,
+  `owner` and `sortOrder`, bounded by `--limit` with a `truncated` notice past it;
+  `member add --user <WHO>` adds a user to the team through Linear's
+  `teamMembershipCreate` (a second membership is Linear's refusal, exit 6), and
+  `member remove --user <WHO>` removes one, the membership found in the team's first
+  `PAGE_CAP` members first, so that a user who is not a member is exit 4 before any
+  mutation, and a user who is not among them in a team with more is refused, exit 6,
+  a muster guard, rather than called a non-member; the team is the usual rule,
+  `--team`, `MUSTER_TEAM` or the only one (ADR 0014, group 3;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ### Changed
 

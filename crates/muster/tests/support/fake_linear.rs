@@ -45,6 +45,7 @@ struct Workspace {
     issues: Vec<Value>,
     comments: Vec<Value>,
     attachments: Vec<Value>,
+    memberships: Vec<Value>,
 }
 
 struct State {
@@ -196,6 +197,23 @@ impl Fake {
                 Some(&parent),
             );
             st.ws.issues.push(child);
+        }
+    }
+
+    /// Add `n` members to a team, each a new user `Member k` with the email
+    /// `member-k@example.com`, for the bound test (ADR 0014, group 3).
+    pub fn add_members(&self, team_key: &str, n: usize) {
+        let mut st = self.state.lock().unwrap();
+        let team_id = st
+            .ws
+            .team_by_key(team_key)
+            .map(|t| t["id"].clone())
+            .expect("the team exists");
+        for k in 1..=n {
+            let id = st.ws.id();
+            let user = json!({ "id": id, "name": format!("Member {k}"), "displayName": format!("member-{k}"), "email": format!("member-{k}@example.com"), "active": true, "admin": false, "isMe": false });
+            st.ws.users.push(user.clone());
+            st.ws.new_membership(&team_id, &user["id"], false);
         }
     }
 
@@ -445,6 +463,7 @@ impl Workspace {
             issues: Vec::new(),
             comments: Vec::new(),
             attachments: Vec::new(),
+            memberships: Vec::new(),
         };
         // Every field `Workspace` asks for, with the values a Free workspace shows; the
         // fixture holds this to the recorded shape (ADR 0010; ADR 0014, group 1).
@@ -476,6 +495,10 @@ impl Workspace {
         }
         let team = ws.new_team("APP", "Fake Team");
         ws.teams.push(team.clone());
+        // The seeded people are the team's members, the first its owner (ADR 0014,
+        // group 3).
+        ws.new_membership(&team["id"], &me["id"], true);
+        ws.new_membership(&team["id"], &other["id"], false);
         let team_label = json!({ "id": ws.id(), "name": "Release", "color": "#26b5ce", "description": "a team label", "isGroup": false, "team": { "id": team["id"], "key": "APP" }, "parent": null });
         ws.labels.push(team_label);
         let project = json!({ "id": ws.id(), "name": "Muster", "url": "https://linear.app/fake/project/muster", "description": "the fake project", "priority": 0, "startDate": null, "targetDate": null, "status": { "id": ws.id(), "name": "Planned", "type": "planned" }, "lead": { "id": me["id"], "name": me["name"], "displayName": me["displayName"] }, "teams": { "nodes": [ { "id": team["id"], "key": "APP" } ] } });
@@ -606,6 +629,30 @@ impl Workspace {
             }),
         );
         team
+    }
+
+    fn new_membership(&mut self, team_id: &Value, user_id: &Value, owner: bool) -> Value {
+        let (id, now) = (self.id(), self.now());
+        let membership = json!({ "id": id, "teamId": team_id, "userId": user_id, "owner": owner, "sortOrder": self.memberships.len() as f64, "createdAt": now });
+        self.memberships.push(membership.clone());
+        membership
+    }
+
+    /// A membership as `MembershipFields` answers it: with its user and its team.
+    fn membership_view(&self, membership: &Value) -> Value {
+        let user = self
+            .users
+            .iter()
+            .find(|u| u["id"] == membership["userId"])
+            .map(|u| json!({ "id": u["id"], "name": u["name"], "displayName": u["displayName"], "email": u["email"], "active": u["active"], "admin": u["admin"] }))
+            .unwrap_or(Value::Null);
+        let team = self
+            .teams
+            .iter()
+            .find(|t| t["id"] == membership["teamId"])
+            .map(|t| json!({ "id": t["id"], "key": t["key"] }))
+            .unwrap_or(Value::Null);
+        json!({ "id": membership["id"], "owner": membership["owner"], "sortOrder": membership["sortOrder"], "createdAt": membership["createdAt"], "user": user, "team": team })
     }
 
     /// A team as `TeamFields` answers it: with its `issueCount`, and without the
@@ -912,6 +959,72 @@ impl Workspace {
                     json!({ "data": { "teams": Workspace::page(found, 1) } }),
                 )
             }
+            "TeamMembers" => {
+                let key = vars["key"].as_str().unwrap_or("");
+                let found: Vec<Value> = self
+                    .live_teams(false)
+                    .into_iter()
+                    .filter(|t| t["key"].as_str().is_some_and(|k| k.eq_ignore_ascii_case(key)))
+                    .map(|t| {
+                        let members: Vec<Value> = self
+                            .memberships
+                            .iter()
+                            .filter(|m| m["teamId"] == t["id"])
+                            .map(|m| self.membership_view(m))
+                            .collect();
+                        json!({ "id": t["id"], "key": t["key"], "memberships": Workspace::page(members, first) })
+                    })
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "teams": Workspace::page(found, 1) } }),
+                )
+            }
+            "TeamMembershipCreate" => {
+                let input = &vars["input"];
+                let (team_id, user_id) = (input["teamId"].clone(), input["userId"].clone());
+                let Some(team) = self.teams.iter().find(|t| t["id"] == team_id) else {
+                    return not_found("Team");
+                };
+                if !self.users.iter().any(|u| u["id"] == user_id) {
+                    return not_found("User");
+                }
+                // Linear refuses a second membership, and a team that is archived or
+                // retired (the mutation's own description).
+                let refusal = if self
+                    .memberships
+                    .iter()
+                    .any(|m| m["teamId"] == team_id && m["userId"] == user_id)
+                {
+                    Some("User is already a member of the team.")
+                } else if !team["archivedAt"].is_null() || !team["retiredAt"].is_null() {
+                    Some("Cannot add a member to an archived or retired team.")
+                } else {
+                    None
+                };
+                if let Some(message) = refusal {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": message } } ], "data": null }),
+                    );
+                }
+                let membership = self.new_membership(&team_id, &user_id, false);
+                (
+                    200,
+                    json!({ "data": { "teamMembershipCreate": { "success": true, "teamMembership": self.membership_view(&membership) } } }),
+                )
+            }
+            "TeamMembershipDelete" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.memberships.iter().position(|m| m["id"] == id) else {
+                    return not_found("TeamMembership");
+                };
+                self.memberships.remove(index);
+                (
+                    200,
+                    json!({ "data": { "teamMembershipDelete": { "success": true, "entityId": id } } }),
+                )
+            }
             "TeamCreate" => {
                 let input = vars["input"].clone();
                 let Some(name) = input["name"].as_str().filter(|n| !n.trim().is_empty()) else {
@@ -952,6 +1065,11 @@ impl Workspace {
                     return not_found("Team");
                 }
                 let mut team = self.new_team(&key, name);
+                // The creator is a member of the new team; `owner` came back false on
+                // the appshapes workspace (2026-11-03), whatever the mutation's
+                // description says, so the fake answers what Linear answered.
+                let me = self.users[0]["id"].clone();
+                self.new_membership(&team["id"], &me, false);
                 team["parent"] = parent;
                 for field in ["description", "timezone", "cyclesEnabled"] {
                     if let Some(value) = input.get(field) {

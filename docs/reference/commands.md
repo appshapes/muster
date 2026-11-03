@@ -173,6 +173,30 @@ Cancel a team's deletion within Linear's grace period and bring it back.
 | --- | --- | --- | --- | --- |
 | `<KEY>` | `<KEY>` | no |  | The team key (APP); when absent, --team, MUSTER_TEAM or the workspace's only team |
 
+### muster member list
+
+List the team's members, one JSON object per line, each a membership with its user.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
+### muster member add
+
+Add a user to the team.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--user` | `<WHO>` | yes |  | The user: `me`, an email address or a name |
+
+### muster member remove
+
+Remove a user from the team; a user may remove themselves, a team owner or a workspace admin anyone. The membership is found in the team's first PAGE_CAP members: a user who is not among them is exit 4 when the team has no more, and exit 6, refused before any mutation, when it has.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--user` | `<WHO>` | yes |  | The user: `me`, an email address or a name |
+
 ### muster state list
 
 List them, one JSON object per line.
@@ -404,6 +428,7 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `Issues` | query |
 | `Workspace` | query |
 | `TeamByKey` | query |
+| `TeamMembers` | query |
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
@@ -414,3 +439,5 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `TeamUpdate` | mutation |
 | `TeamDelete` | mutation |
 | `TeamUnarchive` | mutation |
+| `TeamMembershipCreate` | mutation |
+| `TeamMembershipDelete` | mutation |

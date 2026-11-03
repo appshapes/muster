@@ -366,7 +366,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
     for op in ops::READS {
         // The same variables the fixture test replays against the fake, from one place.
         let Some(variables) = fixture_variables(op.name, sample.as_deref(), team.as_deref()) else {
-            if op.name == "IssueById" || op.name == "TeamByKey" {
+            if ["IssueById", "TeamByKey", "TeamMembers"].contains(&op.name) {
                 continue;
             }
             return Err(Error::new(
@@ -439,6 +439,7 @@ pub fn fixture_variables(
     Some(match op {
         "Viewer" | "Workspace" => json!({}),
         "TeamByKey" => json!({ "key": first_team?, "includeArchived": false }),
+        "TeamMembers" => json!({ "key": first_team?, "first": 5 }),
         "Teams" => json!({ "first": 5 }),
         "WorkflowStates" | "IssueLabels" | "Users" => {
             json!({ "first": 5, "filter": Value::Null })
@@ -533,6 +534,9 @@ mod tests {
             "team unretire",
             "team delete",
             "team unarchive",
+            "member list",
+            "member add",
+            "member remove",
             "state list",
             "label list",
             "project list",
