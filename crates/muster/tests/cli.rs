@@ -3675,6 +3675,10 @@ fn issue_archive_unarchive_delete_and_batch_update() {
     assert_eq!(trashed.code, 0, "{}", trashed.stderr);
     assert!(trashed.one()["archivedAt"].is_string());
     assert!(
+        trashed.one().get("trashed").is_none(),
+        "an issue has no `trashed` field in Linear's answer; archivedAt is the signal"
+    );
+    assert!(
         !fake
             .operations()
             .iter()
@@ -3686,6 +3690,11 @@ fn issue_archive_unarchive_delete_and_batch_update() {
         restored.code, 0,
         "the fake restores a trashed issue, as the smoke run found: {}",
         restored.stderr
+    );
+    assert!(restored.one()["archivedAt"].is_null());
+    assert!(
+        restored.one().get("trashed").is_none(),
+        "an issue has no `trashed` field in Linear's answer"
     );
     assert_eq!(muster(&fake, &["issue", "archive", "APP-999"]).code, 4);
 

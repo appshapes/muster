@@ -3397,9 +3397,11 @@ impl Workspace {
                         "issueArchive"
                     }
                     "IssueDelete" => {
-                        // The trash: archived and marked, with the sub-issues, as Linear does.
+                        // The trash: archived, with the sub-issues, as Linear does.
+                        // `archivedAt` is the whole signal `IssueFields` carries; an
+                        // issue has no `trashed` field in Linear's answer (the
+                        // IssueById and Issues fixtures), so the fake writes none.
                         self.issues[index]["archivedAt"] = json!(now);
-                        self.issues[index]["trashed"] = json!(true);
                         let parent_id = self.issues[index]["id"].clone();
                         for child in self
                             .issues
@@ -3407,13 +3409,11 @@ impl Workspace {
                             .filter(|i| i["parent"]["id"] == parent_id)
                         {
                             child["archivedAt"] = json!(now);
-                            child["trashed"] = json!(true);
                         }
                         "issueDelete"
                     }
                     _ => {
                         self.issues[index]["archivedAt"] = Value::Null;
-                        self.issues[index]["trashed"] = Value::Null;
                         "issueUnarchive"
                     }
                 };
