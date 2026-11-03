@@ -313,7 +313,8 @@ fn issue_get_by_identifier_number_and_id_with_comments() {
         "newest first, as Linear orders a connection"
     );
     assert_eq!(v["comments"]["nodes"][1]["body"], "The first comment.");
-    assert_eq!(v["attachments"]["nodes"].as_array().unwrap().len(), 0);
+    assert_eq!(v["attachments"]["nodes"].as_array().unwrap().len(), 1);
+    assert_eq!(v["attachments"]["nodes"][0]["title"], "The first link");
     assert_eq!(v["children"]["nodes"].as_array().unwrap().len(), 1);
     assert_eq!(v["children"]["nodes"][0]["identifier"], "APP-4");
     let id = v["id"].as_str().unwrap().to_string();
@@ -829,32 +830,36 @@ fn issue_update_moves_an_issue_under_a_parent_and_out_again() {
 }
 
 #[test]
-fn fixtures_records_the_newest_issue_with_a_sub_issue_and_says_what_it_lacks() {
+fn fixtures_records_the_newest_issue_that_has_comments_attachments_and_sub_issues() {
     let fake = Fake::start().unwrap();
     let dir = temp_dir();
     let run = muster(&fake, &["fixtures", dir.to_str().unwrap()]);
     assert_eq!(run.code, 0, "{}", run.stderr);
     assert_eq!(run.lines().len(), 8, "one line per read operation");
-    let notices = run.notices();
-    assert_eq!(notices.len(), 1, "{}", run.stderr);
-    assert_eq!(notices[0]["code"], "partial");
     assert!(
-        notices[0]["message"]
-            .as_str()
-            .unwrap()
-            .contains("recorded on APP-1, which has a sub-issue but lacks"),
-        "APP-1 has a sub-issue and comments and no attachment: {}",
+        run.notices().is_empty(),
+        "APP-1 has comments, a link and a sub-issue, so the recording lacks nothing: {}",
         run.stderr
     );
     let fixture: Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("IssueById.json")).unwrap())
             .unwrap();
+    assert_eq!(fixture["issue"]["identifier"], "<string>");
     assert_eq!(
         fixture["issue"]["children"]["nodes"][0]["identifier"],
         "<string>"
     );
     assert_eq!(fixture["issue"]["comments"]["nodes"][0]["body"], "<string>");
-    assert_eq!(fixture["issue"]["attachments"]["nodes"], json!([]));
+    assert_eq!(
+        fixture["issue"]["attachments"]["nodes"][0]["url"],
+        "<string>"
+    );
+    let issues: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("Issues.json")).unwrap()).unwrap();
+    assert_eq!(
+        issues["issues"]["nodes"][0]["labels"]["nodes"][0]["name"], "<string>",
+        "the Issues fixture is recorded on labelled issues"
+    );
 }
 
 #[test]
@@ -992,7 +997,7 @@ fn issue_attach_adds_a_link_that_issue_get_prints_newest_first() {
         .as_array()
         .unwrap()
         .clone();
-    assert_eq!(links.len(), 2);
+    assert_eq!(links.len(), 3, "the seeded link and the two added");
     assert_eq!(
         links[0]["title"], "Second",
         "newest first, as Linear orders them"
@@ -1001,6 +1006,7 @@ fn issue_attach_adds_a_link_that_issue_get_prints_newest_first() {
         links[1]["url"],
         "https://github.com/appshapes/muster/pull/3"
     );
+    assert_eq!(links[2]["title"], "The first link");
 
     let unknown = muster(
         &fake,
@@ -1028,9 +1034,59 @@ fn issue_attach_adds_a_link_that_issue_get_prints_newest_first() {
         &["issue", "attach", "APP-1", "--url", "https://example.com"],
     );
     assert_eq!(untitled.code, 2, "clap refuses a link without a title");
+    for args in [
+        &["issue", "attach", "APP-1", "--url", "", "--title", "x"][..],
+        &[
+            "issue",
+            "attach",
+            "APP-1",
+            "--url",
+            "https://example.com",
+            "--title",
+            " ",
+        ],
+    ] {
+        let empty = muster(&fake, args);
+        assert_eq!(empty.code, 2, "{args:?}: {}", empty.stderr);
+        assert!(
+            empty.error()["message"]
+                .as_str()
+                .unwrap()
+                .contains("must not be empty")
+        );
+    }
+    let big = "x".repeat(256 * 1024 + 1);
+    let huge = muster(
+        &fake,
+        &[
+            "issue",
+            "attach",
+            "APP-1",
+            "--url",
+            "https://example.com/big",
+            "--title",
+            &big,
+        ],
+    );
+    assert_eq!(huge.code, 6, "{}", huge.stderr);
+    assert!(
+        huge.error()["message"]
+            .as_str()
+            .unwrap()
+            .contains("BODY_MAX_BYTES")
+    );
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "AttachmentCreate")
+            .count(),
+        2,
+        "an empty or oversized value is refused before any request"
+    );
 
     // A URL the issue already has is updated in place, not added again (Linear's own
-    // behaviour, read on 2026-11-03): the same id comes back with the new title.
+    // behaviour, read on 2026-11-03): the same id comes back with the new title, and
+    // a subtitle left out stays as it was.
     let again = muster(
         &fake,
         &[
@@ -1038,21 +1094,26 @@ fn issue_attach_adds_a_link_that_issue_get_prints_newest_first() {
             "attach",
             "APP-1",
             "--url",
-            "https://example.com/second",
+            "https://github.com/appshapes/muster/pull/3",
             "--title",
             "Renamed",
         ],
     );
     assert_eq!(again.code, 0, "{}", again.stderr);
-    assert_eq!(again.one()["id"], links[0]["id"]);
+    assert_eq!(again.one()["id"], links[1]["id"]);
     assert_eq!(again.one()["title"], "Renamed");
+    assert_eq!(
+        again.one()["subtitle"],
+        "sub-issues",
+        "kept, as Linear keeps it"
+    );
     let get = muster(&fake, &["issue", "get", "APP-1"]);
     let links = get.one()["attachments"]["nodes"]
         .as_array()
         .unwrap()
         .clone();
-    assert_eq!(links.len(), 2, "still two");
-    assert_eq!(links[0]["title"], "Renamed");
+    assert_eq!(links.len(), 3, "still three");
+    assert_eq!(links[1]["title"], "Renamed");
 }
 
 #[test]

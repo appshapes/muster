@@ -633,6 +633,7 @@ fn body_from(text: &Option<String>, file: &Option<String>) -> Result<Option<Stri
 }
 
 fn issue_create(session: &Session, args: &CreateArgs, out: &Output) -> Result<(), Error> {
+    check_body(&args.title)?;
     let description = body_from(&args.description, &args.description_file)?;
     let parent = match &args.parent {
         Some(reference) => Some(session.issue_brief(reference)?),
@@ -742,6 +743,20 @@ fn issue_comment(session: &Session, args: &CommentArgs, out: &Output) -> Result<
 }
 
 fn issue_attach(session: &Session, args: &AttachArgs, out: &Output) -> Result<(), Error> {
+    for (flag, value) in [("--url", &args.url), ("--title", &args.title)] {
+        if value.trim().is_empty() {
+            return Err(Error::with_hint(
+                ErrorCode::Usage,
+                format!("{flag} must not be empty"),
+                "Linear requires a URL and a title for a link; muster invents neither",
+            ));
+        }
+    }
+    check_body(&args.url)?;
+    check_body(&args.title)?;
+    if let Some(subtitle) = &args.subtitle {
+        check_body(subtitle)?;
+    }
     let issue = session.issue_brief(&args.issue)?;
     let issue_id = need_str(&issue, "id", "Issues")?;
     let mut input = json!({ "issueId": issue_id, "url": args.url, "title": args.title });
@@ -781,6 +796,9 @@ fn issue_close(session: &Session, args: &CloseArgs, out: &Output) -> Result<(), 
 }
 
 fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<(), Error> {
+    if let Some(title) = &args.title {
+        check_body(title)?;
+    }
     let description = body_from(&args.description, &args.description_file)?;
     let issue = session.issue(&args.issue, 1, 1, 1)?;
     let issue_id = need_str(&issue, "id", "IssueById")?;

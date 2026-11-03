@@ -10,7 +10,7 @@
           "name": "<string>"
         },
         "branchName": "<string>",
-        "canceledAt": "<string>",
+        "canceledAt": null,
         "completedAt": null,
         "createdAt": "<string>",
         "creator": {
@@ -25,14 +25,19 @@
         "id": "<string>",
         "identifier": "<string>",
         "labels": {
-          "nodes": []
+          "nodes": [
+            {
+              "id": "<string>",
+              "name": "<string>"
+            }
+          ]
         },
         "number": 0,
         "parent": null,
         "priority": 0,
         "priorityLabel": "<string>",
         "project": null,
-        "startedAt": null,
+        "startedAt": "<string>",
         "state": {
           "id": "<string>",
           "name": "<string>",
