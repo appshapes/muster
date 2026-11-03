@@ -377,7 +377,7 @@ Add a project status to the workspace; a name a status already has is refused un
 | `--name` | `<TEXT>` | yes |  | The name |
 | `--type` | `<backlog\|planned\|started\|paused\|completed\|canceled>` | yes |  | The type, which says how Linear treats projects in the status |
 | `--color` | `<HEX>` | yes |  | The colour, a hex string (#4ea7fc) |
-| `--position` | `<N>` | yes |  | Where the status sits among those of its type, a number |
+| `--position` | `<N>` | yes |  | Where the status sits in the workspace's project flow: one finite number Linear orders every status by, across types, so 2.5 goes between the defaults at 2 and 3 |
 | `--description` | `<TEXT>` | no |  | The description, plain text |
 | `--indefinite` | `<true\|false>` | no |  | Whether a project may stay in the status indefinitely |
 | `--allow-duplicate` |  | no |  | Create it even when a status has the name |
@@ -392,7 +392,7 @@ Change a project status's name, colour, description, position, type or whether a
 | `--name` | `<TEXT>` | no |  | A new name |
 | `--color` | `<HEX>` | no |  | A new colour, a hex string (#4ea7fc) |
 | `--description` | `<TEXT>` | no |  | A new description, plain text |
-| `--position` | `<N>` | no |  | A new position among the statuses of its type |
+| `--position` | `<N>` | no |  | A new position in the workspace's project flow, one finite number Linear orders every status by, across types |
 | `--type` | `<backlog\|planned\|started\|paused\|completed\|canceled>` | no |  | A new type |
 | `--indefinite` | `<true\|false>` | no |  | Whether a project may stay in the status indefinitely |
 

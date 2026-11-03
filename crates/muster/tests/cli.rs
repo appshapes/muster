@@ -1884,12 +1884,18 @@ fn project_status_list_create_update_archive_and_unarchive() {
     );
     assert_eq!(v["position"], 2.5);
     assert_eq!(v["indefinite"], true);
+    // One order across the workspace, not one per type: Linear's `position` is "the
+    // position of the status in the workspace's project flow", and the defaults sit
+    // at 0 to 4, so a planned status at 2.5 lists between In Progress (2, started)
+    // and Completed (3, completed), the two types either side of it.
     let listed = muster(&fake, &["project-status", "list"]).lines();
     assert_eq!(listed.len(), 6);
+    assert_eq!(listed[2]["name"], "In Progress");
     assert_eq!(
         listed[3]["name"], "Paused",
-        "between In Progress and Completed"
+        "between In Progress and Completed, across types"
     );
+    assert_eq!(listed[4]["name"], "Completed");
     let again = muster(
         &fake,
         &[

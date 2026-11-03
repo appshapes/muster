@@ -913,7 +913,7 @@ pub struct ProjectStatusCreateArgs {
     /// The colour, a hex string (#4ea7fc)
     #[arg(long, value_name = "HEX")]
     pub color: String,
-    /// Where the status sits among those of its type, a number
+    /// Where the status sits in the workspace's project flow: one finite number Linear orders every status by, across types, so 2.5 goes between the defaults at 2 and 3
     #[arg(long, value_name = "N")]
     pub position: f64,
     /// The description, plain text
@@ -942,7 +942,7 @@ pub struct ProjectStatusUpdateArgs {
     /// A new description, plain text
     #[arg(long, value_name = "TEXT")]
     pub description: Option<String>,
-    /// A new position among the statuses of its type
+    /// A new position in the workspace's project flow, one finite number Linear orders every status by, across types
     #[arg(long, value_name = "N")]
     pub position: Option<f64>,
     /// A new type
