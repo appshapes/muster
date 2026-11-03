@@ -84,6 +84,12 @@ step "muster project get and update"
 "$bin" project get "Trying muster" | tee "$tmp/project-get.json"
 jq -e '.name == "Trying muster" and .status.name == "In Progress" and (.members.nodes | type) == "array"' "$tmp/project-get.json" >/dev/null
 
+step "muster issue list --project"
+"$bin" issue update "$id" --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
+"$bin" issue list --project "Trying muster" | tee "$tmp/in-project.jsonl"
+jq -s -e --arg id "$id" 'map(.identifier) == [$id]' "$tmp/in-project.jsonl" >/dev/null
+
+# After the issue is in the project: `--milestone` resolves in the issue's own project.
 step "muster milestone create and the issue's --milestone"
 "$bin" milestone create --project "Trying muster" --name "Alpha" --target-date 2026-12-01 | tee "$tmp/milestone.json"
 jq -e '.name == "Alpha" and .project.name == "Trying muster" and .targetDate == "2026-12-01"' "$tmp/milestone.json" >/dev/null
@@ -101,11 +107,6 @@ jq -e '.name == "Launch" and .status == "Active" and .leadTeam == null' "$tmp/in
 "$bin" initiative update Launch --lead-team APP | jq -e '.leadTeam.key == "APP"' >/dev/null
 "$bin" initiative add-project Launch --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
 "$bin" initiative get Launch | jq -e '.projects.nodes[0].name == "Trying muster"' >/dev/null
-
-step "muster issue list --project"
-"$bin" issue update "$id" --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
-"$bin" issue list --project "Trying muster" | tee "$tmp/in-project.jsonl"
-jq -s -e --arg id "$id" 'map(.identifier) == [$id]' "$tmp/in-project.jsonl" >/dev/null
 
 step "muster issue close $id"
 "$bin" issue close "$id" --comment "Done from the README." | tee "$tmp/close.jsonl"
