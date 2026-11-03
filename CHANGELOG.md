@@ -8,6 +8,12 @@ user-visible change, added in the same commit as the change. The format follows
 
 ### Added
 
+- ADR 0014 decides the third slice: Linear's administrative operations as eighty-one
+  `muster` commands in twenty groups, landed one group per pull request in three
+  release blocks (0.3.0 the workspace and its people, 0.4.0 the things a project is
+  made of, 0.5.0 the rest), with the fixtures of the empty kinds recorded from a smoke
+  team and an invite to the house's own address
+  ([ADR 0014](docs/decisions/0014-build-the-third-slice-administrative-commands.md)).
 - `workspace get` prints the workspace as Linear returns it, one JSON line and no team
   needed: its `name` and `urlKey`, its settings, `securitySettings` and
   `authSettings`, `userCount`, `createdIssueCount`, `previousUrlKeys` and
