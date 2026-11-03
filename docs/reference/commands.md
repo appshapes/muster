@@ -82,7 +82,7 @@ One team with every setting, by key; without a key, the team muster would use.
 
 ### muster team create
 
-Create a team: its creator becomes a member and owner and Linear makes its default states and labels; a name a team already has is refused unless --allow-duplicate.
+Create a team: its creator becomes a member and Linear makes its default states and labels; a name a team already has is refused unless --allow-duplicate.
 
 | Argument or flag | Value | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
