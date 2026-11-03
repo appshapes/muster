@@ -127,7 +127,15 @@ doing is a status post: `muster project-update create --project "Trying muster"
 --body "Shipping on Friday." --health onTrack` (one JSON line with the post's `body`,
 `health`, `user` and `url`), and `muster project-update list --project "Trying
 muster"` shows them newest first; the project's own `health` and `lastUpdate` follow
-the latest post.
+the latest post. Above projects sit initiatives, which a workspace switches on once
+with `muster workspace update --roadmap true` (Linear refuses `initiative create`,
+exit 6, while they are off): `muster initiative create --name "Launch" --owner me
+--status Active` makes one (one JSON line with its `status`, `owner`, `leadTeam` and
+`targetDate`; `--lead-team <KEY>` names the team that leads it, which Linear sells on
+its Business plan and refuses below it), `muster initiative add-project Launch
+--project "Trying muster"` puts the project in it, `muster initiative get Launch`
+prints it with its `projects` (bounded by `PROJECTS_PER_INITIATIVE`), and `muster
+initiative archive Launch` puts it away (`unarchive` brings it back).
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):

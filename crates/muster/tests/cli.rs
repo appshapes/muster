@@ -1749,6 +1749,250 @@ fn user_get_update_role_suspension_and_sessions() {
     assert_eq!(run.code, 7, "{}", run.stderr);
 }
 
+// ---- initiatives (ADR 0014, group 12) ----------------------------------------------------
+
+#[test]
+fn initiative_list_get_create_update_archive_and_projects() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds one initiative, "Launch", with the project "Muster" in it.
+    let seeded = muster(&fake, &["initiative", "list"]);
+    assert_eq!(seeded.lines().len(), 1);
+    assert_eq!(seeded.lines()[0]["name"], "Launch");
+    assert_eq!(
+        seeded.lines()[0].get("content"),
+        None,
+        "the list shape has no content"
+    );
+    let created = muster(
+        &fake,
+        &[
+            "initiative",
+            "create",
+            "--name",
+            "Growth",
+            "--description",
+            "Reach the second thousand.",
+            "--owner",
+            "me",
+            "--lead-team",
+            "APP",
+            "--status",
+            "Active",
+            "--target-date",
+            "2026-12-01",
+            "--priority",
+            "2",
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let v = created.one();
+    assert_eq!(v["name"], "Growth");
+    assert_eq!(v["status"], "Active");
+    assert_eq!(v["owner"]["displayName"], "fake");
+    assert_eq!(v["leadTeam"]["key"], "APP");
+    assert_eq!(v["targetDate"], "2026-12-01");
+    assert_eq!(v["priority"], 2);
+    assert!(v["url"].is_string() && v["health"].is_null() && v["archivedAt"].is_null());
+    let again = muster(&fake, &["initiative", "create", "--name", "growth"]);
+    assert_eq!(again.code, 6, "{}", again.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "InitiativeCreate")
+            .count(),
+        1,
+        "refused before any mutation"
+    );
+    let planned = muster(&fake, &["initiative", "create", "--name", "Later"]);
+    assert_eq!(planned.one()["status"], "Planned", "Linear's default");
+    assert_eq!(muster(&fake, &["initiative", "list"]).lines().len(), 3);
+    let active = muster(&fake, &["initiative", "list", "--status", "Active"]);
+    assert_eq!(active.lines().len(), 2);
+    let planned = muster(&fake, &["initiative", "list", "--status", "Planned"]);
+    assert_eq!(planned.lines().len(), 1);
+    assert_eq!(planned.lines()[0]["name"], "Later");
+    let bad = muster(&fake, &["initiative", "list", "--status", "active"]);
+    assert_eq!(bad.code, 2, "Linear's spelling: {}", bad.stderr);
+
+    let got = muster(&fake, &["initiative", "get", "launch"]);
+    assert_eq!(got.code, 0, "{}", got.stderr);
+    assert_eq!(got.one()["name"], "Launch");
+    assert_eq!(got.one()["projects"]["nodes"][0]["name"], "Muster");
+    assert!(got.one()["content"].is_null());
+    assert_eq!(
+        fake.operations().last().map(String::as_str),
+        Some("InitiativeByName"),
+        "one request"
+    );
+    let added = muster(
+        &fake,
+        &["initiative", "add-project", "Growth", "--project", "Muster"],
+    );
+    assert_eq!(added.code, 0, "{}", added.stderr);
+    assert_eq!(added.one()["project"]["name"], "Muster");
+    assert_eq!(added.one()["initiative"]["name"], "Growth");
+    assert!(added.one()["id"].is_string() && added.one()["createdAt"].is_string());
+    let twice = muster(
+        &fake,
+        &["initiative", "add-project", "Growth", "--project", "Muster"],
+    );
+    assert_eq!(
+        twice.code, 6,
+        "a project once per initiative: {}",
+        twice.stderr
+    );
+    assert_eq!(
+        muster(&fake, &["initiative", "get", "Growth"]).one()["projects"]["nodes"][0]["name"],
+        "Muster"
+    );
+    let removed = muster(
+        &fake,
+        &[
+            "initiative",
+            "remove-project",
+            "Growth",
+            "--project",
+            "Muster",
+        ],
+    );
+    assert_eq!(removed.code, 0, "{}", removed.stderr);
+    assert_eq!(removed.one()["success"], true);
+    assert!(removed.one()["entityId"].is_string());
+    assert_eq!(
+        muster(&fake, &["initiative", "get", "Growth"]).one()["projects"]["nodes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(
+        muster(&fake, &["initiative", "get", "Launch"]).one()["projects"]["nodes"][0]["name"],
+        "Muster",
+        "the other initiative keeps its project"
+    );
+    let not_in = muster(
+        &fake,
+        &[
+            "initiative",
+            "remove-project",
+            "Growth",
+            "--project",
+            "Muster",
+        ],
+    );
+    assert_eq!(not_in.code, 4, "{}", not_in.stderr);
+    let no_project = muster(
+        &fake,
+        &["initiative", "add-project", "Growth", "--project", "Nope"],
+    );
+    assert_eq!(no_project.code, 4, "{}", no_project.stderr);
+
+    let dir = temp_dir();
+    let content = write(&dir, "content.md", "# Growth\n\nWhy and how.\n");
+    let updated = muster(
+        &fake,
+        &[
+            "initiative",
+            "update",
+            "Growth",
+            "--owner",
+            "none",
+            "--lead-team",
+            "none",
+            "--status",
+            "Completed",
+            "--target-date",
+            "none",
+            "--content-file",
+            &content,
+        ],
+    );
+    assert_eq!(updated.code, 0, "{}", updated.stderr);
+    let u = updated.one();
+    assert!(u["owner"].is_null() && u["leadTeam"].is_null() && u["targetDate"].is_null());
+    assert_eq!(u["status"], "Completed");
+    assert_eq!(u["priority"], 2, "a flag left out leaves its field alone");
+    assert_eq!(
+        muster(&fake, &["initiative", "get", "Growth"]).one()["content"],
+        "# Growth\n\nWhy and how.\n"
+    );
+    let renamed = muster(
+        &fake,
+        &[
+            "initiative",
+            "update",
+            "Growth",
+            "--name",
+            "Scale",
+            "--lead-team",
+            "APP",
+        ],
+    );
+    assert_eq!(renamed.code, 0, "{}", renamed.stderr);
+    assert_eq!(renamed.one()["name"], "Scale");
+    assert_eq!(renamed.one()["leadTeam"]["key"], "APP");
+    let nothing = muster(&fake, &["initiative", "update", "Scale"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    let nope = muster(&fake, &["initiative", "update", "Nope", "--priority", "1"]);
+    assert_eq!(nope.code, 4, "{}", nope.stderr);
+
+    let archived = muster(&fake, &["initiative", "archive", "Scale"]);
+    assert_eq!(archived.code, 0, "{}", archived.stderr);
+    assert!(archived.one()["archivedAt"].is_string());
+    assert_eq!(muster(&fake, &["initiative", "list"]).lines().len(), 2);
+    assert_eq!(muster(&fake, &["initiative", "get", "Scale"]).code, 4);
+    assert_eq!(
+        muster(&fake, &["initiative", "archive", "Scale"]).code,
+        4,
+        "an archived initiative is not archived again"
+    );
+    let back = muster(&fake, &["initiative", "unarchive", "Scale"]);
+    assert_eq!(back.code, 0, "{}", back.stderr);
+    assert!(back.one()["archivedAt"].is_null());
+    assert_eq!(muster(&fake, &["initiative", "list"]).lines().len(), 3);
+
+    for (op, args) in [
+        (
+            "InitiativeCreate",
+            vec!["initiative", "create", "--name", "Dropped"],
+        ),
+        (
+            "InitiativeUpdate",
+            vec!["initiative", "update", "Scale", "--priority", "1"],
+        ),
+        ("InitiativeArchive", vec!["initiative", "archive", "Scale"]),
+        (
+            "InitiativeToProjectCreate",
+            vec!["initiative", "add-project", "Scale", "--project", "Muster"],
+        ),
+        (
+            "InitiativeToProjectDelete",
+            vec![
+                "initiative",
+                "remove-project",
+                "Launch",
+                "--project",
+                "Muster",
+            ],
+        ),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+    let archived = muster(&fake, &["initiative", "archive", "Scale"]);
+    assert_eq!(archived.code, 0, "{}", archived.stderr);
+    fake.fail_next("InitiativeUnarchive", Failure::Drop);
+    let run = muster(&fake, &["initiative", "unarchive", "Scale"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("Initiatives", Failure::Drop);
+    let run = muster(&fake, &["initiative", "list"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+    fake.fail_next("InitiativeByName", Failure::Drop);
+    let run = muster(&fake, &["initiative", "get", "Launch"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+}
+
 // ---- project updates (ADR 0014, group 11) ------------------------------------------------
 
 #[test]
@@ -3290,6 +3534,7 @@ fn the_fakes_answers_have_the_recorded_shapes() {
             Some("APP-1"),
             Some("APP"),
             Some("Muster"),
+            Some("Launch"),
         )
         .unwrap();
         let answer = post(

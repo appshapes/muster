@@ -9,7 +9,9 @@ use clap::{ArgAction, Command, CommandFactory};
 use serde_json::{Map, Value, json};
 
 use crate::bounds;
-use crate::bounds::{MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, TEAMS_PER_PROJECT};
+use crate::bounds::{
+    MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, PROJECTS_PER_INITIATIVE, TEAMS_PER_PROJECT,
+};
 use crate::cli::{Cli, SchemaArgs, SchemaFormat};
 use crate::config::{ENVIRONMENT, LINEAR_ENDPOINT};
 use crate::error::{Error, ErrorCode};
@@ -336,6 +338,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
     let (sample, lack) = sample_issue(session)?;
     let team = sample_team(session)?;
     let project = sample_project(session)?;
+    let initiative = sample_initiative(session)?;
     match (&sample, lack) {
         (Some(id), Some(lack)) => out.notice(
             "partial",
@@ -356,6 +359,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
             sample.as_deref(),
             team.as_deref(),
             project.as_deref(),
+            initiative.as_deref(),
         ) else {
             if [
                 "IssueById",
@@ -364,6 +368,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
                 "ProjectByName",
                 "Milestones",
                 "ProjectUpdates",
+                "InitiativeByName",
             ]
             .contains(&op.name)
             {
@@ -440,6 +445,18 @@ fn sample_project(session: &Session) -> Result<Option<String>, Error> {
         .and_then(|p| str_at(p, "name").map(str::to_string)))
 }
 
+/// The name of the initiative `InitiativeByName` is recorded on: the first one
+/// `Initiatives` lists.
+fn sample_initiative(session: &Session) -> Result<Option<String>, Error> {
+    let data = session.linear.run(
+        &ops::INITIATIVES,
+        json!({ "first": 1, "filter": Value::Null }),
+    )?;
+    Ok(nodes(&data, "initiatives")
+        .first()
+        .and_then(|i| str_at(i, "name").map(str::to_string)))
+}
+
 /// The variables each read operation is recorded with, and the fixture test replays
 /// against the fake; `None` when `IssueById` has no issue, `TeamByKey` no team, or
 /// `ProjectByName` no project, to ask for.
@@ -448,6 +465,7 @@ pub fn fixture_variables(
     first_issue: Option<&str>,
     first_team: Option<&str>,
     first_project: Option<&str>,
+    first_initiative: Option<&str>,
 ) -> Option<Value> {
     Some(match op {
         "Viewer" | "Workspace" => json!({}),
@@ -459,6 +477,11 @@ pub fn fixture_variables(
         "UserById" => json!({ "id": "me" }),
         "ProjectStatuses" => json!({ "first": 5, "includeArchived": false }),
         "Milestones" | "ProjectUpdates" => json!({ "project": first_project?, "first": 5 }),
+        "Initiatives" => json!({ "first": 5, "filter": Value::Null }),
+        "InitiativeByName" => {
+            json!({ "name": first_initiative?, "includeArchived": false, "projects": PROJECTS_PER_INITIATIVE })
+        }
+        "InitiativeLinks" => json!({ "first": 5 }),
         "ProjectByName" => {
             json!({ "name": first_project?, "includeArchived": false, "teams": TEAMS_PER_PROJECT, "members": MEMBERS_PER_PROJECT, "milestones": MILESTONES_PER_PROJECT })
         }
@@ -584,6 +607,14 @@ mod tests {
             "milestone delete",
             "project-update list",
             "project-update create",
+            "initiative list",
+            "initiative get",
+            "initiative create",
+            "initiative update",
+            "initiative archive",
+            "initiative unarchive",
+            "initiative add-project",
+            "initiative remove-project",
             "state list",
             "label list",
             "project list",

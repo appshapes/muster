@@ -1,0 +1,21 @@
+{
+  "initiativeToProjects": {
+    "nodes": [
+      {
+        "createdAt": "<string>",
+        "id": "<string>",
+        "initiative": {
+          "id": "<string>",
+          "name": "<string>"
+        },
+        "project": {
+          "id": "<string>",
+          "name": "<string>"
+        }
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": true
+    }
+  }
+}

@@ -95,6 +95,13 @@ step "muster project-update create and list"
 jq -e '.health == "onTrack" and .body == "Shipping on Friday." and .project.name == "Trying muster"' "$tmp/project-update.json" >/dev/null
 "$bin" project-update list --project "Trying muster" | jq -s -e 'length == 1' >/dev/null
 
+step "muster initiative create, add-project and get"
+"$bin" initiative create --name "Launch" --owner me --status Active | tee "$tmp/initiative.json"
+jq -e '.name == "Launch" and .status == "Active" and .leadTeam == null' "$tmp/initiative.json" >/dev/null
+"$bin" initiative update Launch --lead-team APP | jq -e '.leadTeam.key == "APP"' >/dev/null
+"$bin" initiative add-project Launch --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
+"$bin" initiative get Launch | jq -e '.projects.nodes[0].name == "Trying muster"' >/dev/null
+
 step "muster issue list --project"
 "$bin" issue update "$id" --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
 "$bin" issue list --project "Trying muster" | tee "$tmp/in-project.jsonl"
