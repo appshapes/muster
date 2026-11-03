@@ -20,7 +20,17 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 | comment | A markdown note on an issue, by a user; `issue get` prints them newest first, as Linear orders them. | `comment` | comment | `docs/reference/commands.md#muster-issue-comment` |
 | attachment | A link on an issue, with a title and a URL. | `attachment` | attachment | `docs/reference/commands.md#muster-issue-get` |
 | sub-issue | An issue whose `parent` is another issue; the parent prints its `children`, and `--parent` on `issue create`, `issue update` and `issue list` names one. | `parent`, `children`, `parentId` | checklist item (the nearest) | `docs/reference/commands.md#muster-issue-get` |
+| user | A member of the workspace, named by `me`, an email address or a name; `muster user list` shows them. | `user` | member | `docs/reference/commands.md#muster-user-list` |
 | assignee | The user responsible for an issue; `me` is the key's owner. | `assignee` | member | `docs/reference/commands.md#muster-issue-create` |
+| title | An issue's one-line name; `--title` on `issue create` and `issue update`. | `title` | name | `docs/reference/commands.md#muster-issue-create` |
+| description | An issue's body, markdown; `--description` or `--description-file`. | `description` | desc | `docs/reference/commands.md#muster-issue-create` |
+| body | A comment's text, markdown; `--body` or `--body-file`. | `body` | text | `docs/reference/commands.md#muster-issue-comment` |
+| parent | The issue a sub-issue belongs to; `--parent` on `issue create`, `issue update` and `issue list`. | `parent`, `parentId` | none | `docs/reference/commands.md#muster-issue-get` |
+| name | What a team, state, label or project is called; the value of `--state`, `--label` and `--project`. | `name` | name | `docs/reference/commands.md#muster-state-list` |
+| url | A link's address, on an attachment; `url` is also every issue's own web address. | `url` | attachment URL | `docs/reference/commands.md#muster-issue-get` |
+| subtitle | A link's second line, under its title, on an attachment. | `subtitle` | none | `docs/reference/commands.md#muster-issue-get` |
+| search | Text an issue's title must contain, case-insensitively; `--search` on `issue list`. | `title.containsIgnoreCase` | search | `docs/reference/commands.md#muster-issue-list` |
+| limit | The most items a list prints, `--limit`, at most `PAGE_CAP`; past it a `truncated` notice. | `first` | none | `docs/reference/commands.md#bounds` |
 | priority | An integer from 0 (none) to 4 (low); 1 is urgent. | `priority`, `priorityLabel` | none | `docs/reference/commands.md#muster-issue-create` |
 | session stamp | The last line of a comment an agent writes: `Session stamp: <team>/<session>, <date>`. | none | the same line | `.claude/skills/linear-done/SKILL.md` |
 | exit code | What muster returns to the shell; each failure class has its own. | none | none | `docs/reference/commands.md#exit-codes` |

@@ -18,6 +18,11 @@ user-visible change, added in the same commit as the change. The format follows
   `MUSTER_TEAM` names one, and an issue named as its own parent is a usage error,
   exit 2, before any request (ADR 0013, feature 1;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `just lint-docs` and `just docs` check the glossary: every command group and every
+  flag noun the reference introduces has a row in `docs/glossary.md`, and a flag that
+  is a switch or a mode is listed in the script with its reason (ADR 0006's Revisit).
+  Ten rows join the glossary: `user`, `title`, `description`, `body`, `parent`, `name`,
+  `url`, `subtitle`, `search` and `limit`.
 - `muster fixtures` records `IssueById` on an issue that has comments, attachments and
   sub-issues when the workspace has one, and writes a `partial` notice saying what the
   recording lacks; `skipped` and `partial` join the notices table of the reference.
