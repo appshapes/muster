@@ -738,9 +738,9 @@ impl Session {
             None if cut => Err(Error::with_hint(
                 ErrorCode::Refused,
                 format!(
-                    "no webhook labelled, at or with id {word:?} among the {PAGE_CAP} newest, and the workspace has more"
+                    "the workspace has more than PAGE_CAP ({PAGE_CAP}) webhooks and none of the first {PAGE_CAP} is labelled, at or with id {word:?}"
                 ),
-                "Linear's list of webhooks takes no filter; the rest are reached in the browser",
+                "Linear's list of webhooks takes no filter; the rest are reached in the browser; PAGE_CAP is the bound",
             )
             .at("bounds")),
             None => Err(Error::with_hint(
@@ -2755,8 +2755,8 @@ fn webhook_create(session: &Session, args: &WebhookCreateArgs, out: &Output) -> 
         if cut {
             return Err(Error::with_hint(
                 ErrorCode::Refused,
-                format!("the workspace has more than {PAGE_CAP} webhooks, so a duplicate of {} cannot be ruled out", args.url),
-                "pass --allow-duplicate to create it anyway",
+                format!("the workspace has more than PAGE_CAP ({PAGE_CAP}) webhooks, so a duplicate of {} cannot be ruled out", args.url),
+                "pass --allow-duplicate to create it anyway; PAGE_CAP is the bound",
             )
             .at("bounds"));
         }

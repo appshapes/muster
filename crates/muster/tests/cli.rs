@@ -3474,6 +3474,120 @@ fn webhook_trace_never_prints_the_secret() {
     assert!(!plain.stderr.contains("redacted"), "{}", plain.stderr);
 }
 
+/// `<WEBHOOK>` and the duplicate guard read one page of up to `PAGE_CAP` webhooks,
+/// since Linear's list takes no filter: a webhook past it is refused, exit 6, rather
+/// than called unknown, and a URL past it is refused rather than assumed new
+/// (ADR 0014, group 16; CLAUDE.md, gate 3).
+#[test]
+fn webhook_past_the_bound_is_refused_rather_than_guessed() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds "Fake hook"; PAGE_CAP newer ones put it past the one page that
+    // `<WEBHOOK>` and the guard read, since the store is newest first.
+    fake.add_webhooks("APP", PAGE_CAP);
+    for args in [
+        vec!["webhook", "update", "Fake hook", "--enabled", "false"],
+        vec!["webhook", "delete", "Fake hook"],
+        vec![
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/new",
+            "--resource-type",
+            "Issue",
+        ],
+    ] {
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 6, "{args:?}: {}", run.stderr);
+        let e = run.error();
+        assert_eq!(e["code"], "refused", "{e}");
+        assert!(
+            e["message"]
+                .as_str()
+                .unwrap()
+                .contains("more than PAGE_CAP (250) webhooks"),
+            "{e}"
+        );
+        assert!(e["hint"].as_str().unwrap().contains("PAGE_CAP"), "{e}");
+        assert!(e["docs"].as_str().unwrap().ends_with("#bounds"), "{e}");
+    }
+    let mutations = ["WebhookCreate", "WebhookUpdate", "WebhookDelete"];
+    assert!(
+        !fake
+            .operations()
+            .iter()
+            .any(|o| mutations.contains(&o.as_str())),
+        "refused before any mutation: {:?}",
+        fake.operations()
+    );
+
+    // The guard's refusal is overridden, the reference's is not.
+    let forced = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/new",
+            "--resource-type",
+            "Issue",
+            "--allow-duplicate",
+        ],
+    );
+    assert_eq!(forced.code, 0, "{}", forced.stderr);
+    let forced_id = forced.one()["id"].as_str().unwrap().to_string();
+    let full = muster(&fake, &["webhook", "list", "--limit", "250"]);
+    assert_eq!(full.code, 0, "{}", full.stderr);
+    assert_eq!(full.lines().len(), 250, "the page is the bound");
+    assert_eq!(full.notices()[0]["code"], "truncated");
+    assert_eq!(full.lines()[0]["id"], forced_id.as_str(), "newest first");
+    assert_eq!(full.lines()[1]["label"], format!("Hook {PAGE_CAP}"));
+
+    // Back to exactly PAGE_CAP, by id, which is inside the page for both.
+    let newest_added = full.lines()[1]["id"].as_str().unwrap().to_string();
+    for id in [&forced_id, &newest_added] {
+        let run = muster(&fake, &["webhook", "delete", id]);
+        assert_eq!(run.code, 0, "{}", run.stderr);
+        assert_eq!(run.one()["entityId"], id.as_str());
+    }
+
+    // At the bound is not over it: the workspace has exactly PAGE_CAP webhooks, the
+    // page is not cut, "Fake hook" is the last one on it, a label no webhook has is
+    // exit 4 as before, and a URL no webhook posts to goes through.
+    let run = muster(
+        &fake,
+        &["webhook", "update", "Fake hook", "--enabled", "false"],
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(run.one()["enabled"], false);
+    let run = muster(&fake, &["webhook", "update", "Nope", "--enabled", "true"]);
+    assert_eq!(run.code, 4, "{}", run.stderr);
+    assert_eq!(run.error()["code"], "not_found");
+    let run = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/new",
+            "--resource-type",
+            "Issue",
+        ],
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(run.one()["url"], "https://example.com/hooks/new");
+    let ops = fake.operations();
+    let count = |name: &str| ops.iter().filter(|o| *o == name).count();
+    assert_eq!(
+        (
+            count("WebhookCreate"),
+            count("WebhookUpdate"),
+            count("WebhookDelete")
+        ),
+        (2, 1, 2),
+        "the two creates, the one update and the two deletes that went, and nothing for the refusals: {ops:?}"
+    );
+}
+
 // ---- project updates (ADR 0014, group 11) ------------------------------------------------
 
 #[test]

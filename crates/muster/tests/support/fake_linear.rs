@@ -337,6 +337,27 @@ impl Fake {
         }
     }
 
+    /// Add `n` webhooks of a team, each through `new_webhook` so the store stays newest
+    /// first, labelled `Hook k` at `https://example.com/hooks/k`, for the bound test
+    /// (ADR 0014, group 16): with `PAGE_CAP` added, the seeded "Fake hook" is past the
+    /// one page of `PAGE_CAP` that `<WEBHOOK>` and the duplicate guard read.
+    pub fn add_webhooks(&self, team_key: &str, n: usize) {
+        let mut st = self.state.lock().unwrap();
+        let team_id = st
+            .ws
+            .team_by_key(team_key)
+            .map(|t| t["id"].clone())
+            .expect("the team exists");
+        for k in 1..=n {
+            st.ws
+                .new_webhook(&json!({
+                    "label": format!("Hook {k}"), "url": format!("https://example.com/hooks/{k}"),
+                    "resourceTypes": ["Issue"], "teamId": team_id,
+                }))
+                .expect("the team exists");
+        }
+    }
+
     /// The comments of an issue, oldest first.
     pub fn comments(&self, identifier: &str) -> Vec<Value> {
         let st = self.state.lock().unwrap();
