@@ -2043,7 +2043,7 @@ fn initiative_list_get_create_update_archive_and_projects() {
     assert_eq!(no_project.code, 4, "{}", no_project.stderr);
 
     // The projects of `initiative get` are bounded by PROJECTS_PER_INITIATIVE.
-    fake.add_initiative_projects("Growth", 51);
+    fake.add_initiative_projects("Growth", "Project", 51);
     let full = muster(&fake, &["initiative", "get", "Growth"]);
     assert_eq!(full.code, 0, "{}", full.stderr);
     assert_eq!(
@@ -2188,6 +2188,113 @@ fn initiative_list_get_create_update_archive_and_projects() {
     fake.fail_next("InitiativeByName", Failure::Drop);
     let run = muster(&fake, &["initiative", "get", "Launch"]);
     assert_eq!(run.code, 7, "{}", run.stderr);
+    // The third read: the link list `remove-project` searches, dropped before the
+    // delete, is exit 7 with no delete sent.
+    let deletes = |fake: &Fake| {
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "InitiativeToProjectDelete")
+            .count()
+    };
+    let before = deletes(&fake);
+    fake.fail_next("InitiativeLinks", Failure::Drop);
+    let run = muster(
+        &fake,
+        &[
+            "initiative",
+            "remove-project",
+            "Launch",
+            "--project",
+            "Muster",
+        ],
+    );
+    assert_eq!(run.code, 7, "{}", run.stderr);
+    assert_eq!(
+        deletes(&fake),
+        before,
+        "no delete after the link list's read failed"
+    );
+}
+
+/// `initiative remove-project` reads one page of up to `PAGE_CAP` links, since
+/// Linear's list takes no filter: a link past that page is refused, exit 6, naming
+/// the bound, before any mutation, rather than reported missing.
+#[test]
+fn initiative_remove_project_refuses_a_link_past_page_cap() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds one link, Launch to Muster; PAGE_CAP more put the last one past
+    // the page `remove-project` reads.
+    fake.add_initiative_projects("Launch", "Linked", PAGE_CAP);
+    let last = format!("Linked {PAGE_CAP}");
+    let cut = muster(
+        &fake,
+        &["initiative", "remove-project", "Launch", "--project", &last],
+    );
+    assert_eq!(cut.code, 6, "{}", cut.stderr);
+    assert!(
+        cut.error()["message"]
+            .as_str()
+            .unwrap()
+            .contains("PAGE_CAP"),
+        "{}",
+        cut.stderr
+    );
+    assert!(
+        !fake
+            .operations()
+            .iter()
+            .any(|o| o == "InitiativeToProjectDelete"),
+        "refused before any mutation"
+    );
+    // A project in no initiative is refused the same way while the list is cut: the
+    // one page cannot tell the two apart.
+    let made = muster(&fake, &["project", "create", "--name", "Unlinked"]);
+    assert_eq!(made.code, 0, "{}", made.stderr);
+    let unknown = muster(
+        &fake,
+        &[
+            "initiative",
+            "remove-project",
+            "Launch",
+            "--project",
+            "Unlinked",
+        ],
+    );
+    assert_eq!(unknown.code, 6, "{}", unknown.stderr);
+    // A link within the page is found and deleted, and the list is then whole again,
+    // so the last link is found too.
+    let first = muster(
+        &fake,
+        &[
+            "initiative",
+            "remove-project",
+            "Launch",
+            "--project",
+            "Muster",
+        ],
+    );
+    assert_eq!(first.code, 0, "{}", first.stderr);
+    assert_eq!(first.one()["success"], true);
+    let now_within = muster(
+        &fake,
+        &["initiative", "remove-project", "Launch", "--project", &last],
+    );
+    assert_eq!(now_within.code, 0, "{}", now_within.stderr);
+    let gone = muster(
+        &fake,
+        &[
+            "initiative",
+            "remove-project",
+            "Launch",
+            "--project",
+            "Unlinked",
+        ],
+    );
+    assert_eq!(
+        gone.code, 4,
+        "a whole list tells a missing link: {}",
+        gone.stderr
+    );
 }
 
 // ---- project updates (ADR 0014, group 11) ------------------------------------------------

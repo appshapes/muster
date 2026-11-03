@@ -163,8 +163,10 @@ impl Fake {
         st.ws.projects.push(project);
     }
 
-    /// Put `n` new projects in an initiative, for the bound test of `initiative get`.
-    pub fn add_initiative_projects(&self, initiative: &str, n: usize) {
+    /// Put `n` new projects, named `prefix 1` to `prefix n`, in an initiative, for the
+    /// bound tests of `initiative get` and `initiative remove-project`; the prefix
+    /// keeps the names unique across calls.
+    pub fn add_initiative_projects(&self, initiative: &str, prefix: &str, n: usize) {
         let mut st = self.state.lock().unwrap();
         let initiative_id = st
             .ws
@@ -177,7 +179,7 @@ impl Fake {
         let backlog = st.ws.project_statuses[0].clone();
         for k in 1..=n {
             let project = st.ws.new_project(
-                &format!("Project {k}"),
+                &format!("{prefix} {k}"),
                 "for the bound",
                 std::slice::from_ref(&team),
                 &backlog,

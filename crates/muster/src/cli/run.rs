@@ -2045,10 +2045,10 @@ fn initiative_remove_project(
             return Err(Error::with_hint(
                 ErrorCode::Refused,
                 format!(
-                    "the link between {:?} and {:?} is not among the {PAGE_CAP} newest, and the workspace has more",
+                    "the link between {:?} and {:?} is not among the PAGE_CAP ({PAGE_CAP}) newest, and the workspace has more",
                     args.name, args.project
                 ),
-                "Linear's list of initiative-to-project links takes no filter; the rest are reached in the browser",
+                "Linear's list of initiative-to-project links takes no filter; the rest are reached in the browser; PAGE_CAP is the bound",
             )
             .at("bounds"));
         }
