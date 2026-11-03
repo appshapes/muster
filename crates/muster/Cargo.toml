@@ -1,7 +1,7 @@
 [package]
-# Published as `muster-cli`, because `muster` on crates.io belongs to another project;
-# the binary and the library are both `muster` (ADR 0011).
-name = "muster-cli"
+# Published as `muster-linear`, because `muster` and `muster-cli` on crates.io belong to
+# another project; the binary and the library are both `muster` (ADR 0011, ADR 0012).
+name = "muster-linear"
 description = "A command-line client for Linear, for coding agents first: JSON Lines out, an exit code per failure, the key from a file"
 readme = "README.md"
 keywords = ["linear", "cli", "agents", "issues", "graphql"]

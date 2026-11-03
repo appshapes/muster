@@ -1,9 +1,9 @@
 # muster
 
-The one crate (ADR 0003), published as `muster-cli` because `muster` on crates.io
-belongs to another project (ADR 0011): `cargo install muster-cli` gives the `muster`
-binary, and `cargo add muster-cli` gives the library, whose crate name is `muster`, with
-`muster::Linear`, the client the binary is built on.
+The one crate (ADR 0003), published as `muster-linear` because `muster` and `muster-cli`
+on crates.io belong to another project (ADR 0011, ADR 0012): `cargo install muster-linear`
+gives the `muster` binary, and `cargo add muster-linear` gives the library, whose crate
+name is `muster`, with `muster::Linear`, the client the binary is built on.
 
 ## What this does
 
@@ -78,7 +78,8 @@ line, such as `"APP-5" "Try muster" ("Backlog")`; a missing key is an `Error` wh
 - [ADR 0007](../../docs/decisions/0007-build-the-trello-command-set-first.md), the first
   slice; [ADR 0008](../../docs/decisions/0008-speak-to-agents-first.md), the agent
   contract; [ADR 0010](../../docs/decisions/0010-test-against-a-fake-linear-held-to-recorded-shapes.md),
-  how it is tested; [ADR 0011](../../docs/decisions/0011-release-as-muster-cli.md), how
-  it is released and why under this name.
+  how it is tested; [ADR 0011](../../docs/decisions/0011-release-as-muster-cli.md) and
+  [ADR 0012](../../docs/decisions/0012-publish-as-muster-linear.md), how it is released
+  and why under this name.
 - [Work an issue in ten minutes](../../docs/tutorials/work-an-issue-in-ten-minutes.md),
   the tutorial.

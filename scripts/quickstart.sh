@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 command -v jq >/dev/null || { echo "quickstart: jq is not installed (brew install jq, or apt-get install jq)" >&2; exit 1; }
 start=$(date +%s)
 
-cargo build --release -p muster-cli --bin muster --example fake-linear
+cargo build --release -p muster-linear --bin muster --example fake-linear
 bin=target/release/muster
 fake=target/release/examples/fake-linear
 

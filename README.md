@@ -10,8 +10,9 @@ on: `0` ok, `3` authentication, `4` not found, `5` rate limited, `6` refused, `7
 network, `8` unknown. It never prompts, never pages, never colours, and never takes the
 API key on the command line. A person adds `--human`.
 
-**Status:** 0.1.0 is released, as the crate `muster-cli`
-([ADR 0011](docs/decisions/0011-release-as-muster-cli.md)): the first slice
+**Status:** 0.1.1 is released, as the crate `muster-linear`
+([ADR 0011](docs/decisions/0011-release-as-muster-cli.md),
+[ADR 0012](docs/decisions/0012-publish-as-muster-linear.md)): the first slice
 ([ADR 0007](docs/decisions/0007-build-the-trello-command-set-first.md)), the five
 operations the house's Trello skills use, as `muster` commands, each tested against a
 fake Linear held to recorded shapes and smoke-tested against a real workspace. Not
@@ -44,7 +45,7 @@ shows. You need a Linear API key (Linear, Settings, Security & access, Personal 
 keys) and `jq`.
 
 ```sh
-cargo install muster-cli                              # the binary is `muster`; from a checkout: cargo install --path crates/muster
+cargo install muster-linear                              # the binary is `muster`; from a checkout: cargo install --path crates/muster
 mkdir -p ~/.config/muster && (umask 077; cat > ~/.config/muster/key)   # paste the key, then Ctrl-D
 muster whoami                                         # the workspace, you, and the team muster will use
 muster issue create --title "Try muster" --description "Created from the README."   # prints the issue; note its identifier

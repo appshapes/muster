@@ -12,13 +12,13 @@ issue, one comment, one close.
 ## 1. Install the binary (two minutes)
 
 ```sh
-cargo install muster-cli
+cargo install muster-linear
 ```
 
-The crate is `muster-cli` and the binary is `muster`
-([ADR 0011](../decisions/0011-release-as-muster-cli.md)); from a checkout,
+The crate is `muster-linear` and the binary is `muster`
+([ADR 0012](../decisions/0012-publish-as-muster-linear.md)); from a checkout,
 `cargo install --path crates/muster` builds the same binary. You will see
-`Installed package muster-cli v0.1.0` and `muster --version` prints `muster 0.1.0`.
+`Installed package muster-linear v0.1.1` and `muster --version` prints `muster 0.1.1`.
 
 ## 2. Put the key where muster reads it (one minute)
 

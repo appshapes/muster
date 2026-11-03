@@ -37,3 +37,4 @@ under `docs/` is listed here; `just lint-docs` fails on one that is not.
 - [0009. Email the week's changes to a list, drafted by an agent and gated before it is sent](decisions/0009-email-the-weeks-changes.md)
 - [0010. Test against a fake Linear in process, held to recorded response shapes](decisions/0010-test-against-a-fake-linear-held-to-recorded-shapes.md)
 - [0011. Release as `muster-cli` on crates.io and as binaries on GitHub, from a tag](decisions/0011-release-as-muster-cli.md)
+- [0012. Publish as `muster-linear`: `muster-cli` is taken as well](decisions/0012-publish-as-muster-linear.md)

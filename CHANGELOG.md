@@ -8,18 +8,32 @@ user-visible change, added in the same commit as the change. The format follows
 
 Nothing yet.
 
+## 0.1.1 - 2026-11-03
+
+The first release on crates.io, as the crate `muster-linear`: `cargo install
+muster-linear` installs the `muster` binary. The same five commands as 0.1.0.
+
+### Changed
+
+- The crate is `muster-linear`, not `muster-cli`: that name, like `muster`, belongs to
+  another project, which the publish of 0.1.0 found out
+  ([ADR 0012](docs/decisions/0012-publish-as-muster-linear.md)). The binary and the
+  library are `muster` as before. The GitHub Release carries
+  `muster-0.1.1-x86_64-unknown-linux-gnu.tar.gz` and
+  `muster-0.1.1-aarch64-apple-darwin.tar.gz` with their SHA-256 sums.
+
 ## 0.1.0 - 2026-11-03
 
 The first release: the five Trello operations as `muster` commands, for coding agents
-first. Install with `cargo install muster-cli`; the binary is `muster`.
+first. On GitHub only: its notes said `cargo install muster-cli`, and that crate is
+another project's, so the crates.io publish was refused; 0.1.1 is the one to install.
 
 ### Added
 
-- Released as the crate `muster-cli` 0.1.0 on crates.io, because `muster` belongs to
-  another project, with the binary and the library both named `muster`; a GitHub
-  Release carries `muster-0.1.0-x86_64-unknown-linux-gnu.tar.gz` and
-  `muster-0.1.0-aarch64-apple-darwin.tar.gz` with their SHA-256 sums, built by
-  `.github/workflows/release.yml` from the tag `v0.1.0`
+- A GitHub Release with `muster-0.1.0-x86_64-unknown-linux-gnu.tar.gz` and
+  `muster-0.1.0-aarch64-apple-darwin.tar.gz` and their SHA-256 sums, built by
+  `.github/workflows/release.yml` from the tag `v0.1.0`; the binary and the library
+  are both named `muster`
   ([ADR 0011](docs/decisions/0011-release-as-muster-cli.md),
   [how to cut a release](docs/how-to/cut-a-release.md)).
 

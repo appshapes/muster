@@ -30,7 +30,7 @@ jobs:
       - name: Check the tag against the manifest
         run: |
           version="${GITHUB_REF_NAME#v}"
-          manifest=$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "muster-cli"))')
+          manifest=$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "muster-linear"))')
           if [ "$version" != "$manifest" ]; then
             echo "::error::tag $GITHUB_REF_NAME does not match the manifest version $manifest (docs/how-to/cut-a-release.md)"
             exit 1
@@ -67,7 +67,7 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo build --release --locked -p muster-cli --bin muster --target ${{ matrix.target }}
+      - run: cargo build --release --locked -p muster-linear --bin muster --target ${{ matrix.target }}
       - name: Pack the tarball and its sum
         run: |
           version="${GITHUB_REF_NAME#v}"

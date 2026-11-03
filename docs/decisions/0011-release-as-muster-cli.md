@@ -1,6 +1,6 @@
 # 0011. Release as `muster-cli` on crates.io and as binaries on GitHub, from a tag
 
-- **Status:** Accepted
+- **Status:** Superseded by 0012
 - **Date:** 2026-11-03
 - **Invariants affected:** 5, 6
 - **Supersedes:** the `publish = false` clause of ADR 0003; the rest of ADR 0003 stands

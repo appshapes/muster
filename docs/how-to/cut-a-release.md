@@ -44,7 +44,7 @@ GitHub and the crate on crates.io. Why a release is shaped this way is
 5. **Publish the crate**, once the release run is green:
 
    ```sh
-   cargo publish -p muster-cli --locked
+   cargo publish -p muster-linear --locked
    ```
 
    with `CARGO_REGISTRY_TOKEN` set in the environment of that one command, from the
@@ -58,9 +58,9 @@ GitHub and the crate on crates.io. Why a release is shaped this way is
 - `curl -sL https://github.com/appshapes/muster/releases/download/vX.Y.Z/muster-X.Y.Z-aarch64-apple-darwin.tar.gz | tar -xz`
   on a Mac, or the Linux name on Linux, gives a `muster` that prints `muster X.Y.Z` for
   `--version`.
-- `cargo install muster-cli` on a machine with a toolchain prints
-  `Installed package muster-cli vX.Y.Z`, and `muster --version` prints `muster X.Y.Z`.
-- <https://crates.io/crates/muster-cli> shows the version and the crate's README.
+- `cargo install muster-linear` on a machine with a toolchain prints
+  `Installed package muster-linear vX.Y.Z`, and `muster --version` prints `muster X.Y.Z`.
+- <https://crates.io/crates/muster-linear> shows the version and the crate's README.
 
 ## When it does not work
 
@@ -68,10 +68,15 @@ GitHub and the crate on crates.io. Why a release is shaped this way is
   tag was pushed on a commit whose `Cargo.toml` says another version. Delete the tag
   locally and on origin (`git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z`), land
   the version (step 1 to 3), tag again.
-- **`cargo publish` answers 403.** The token cannot publish this crate: it needs the
-  `publish-new` scope for a first release and `publish-update` after, on crates.io under
-  Account Settings, API Tokens. Nothing on GitHub is affected; publish again with a token
-  that can.
+- **`cargo publish` answers 403 "this crate exists but you don't seem to be an
+  owner".** The name belongs to someone else, which is how `muster-cli` was lost
+  ([ADR 0012](../decisions/0012-publish-as-muster-linear.md)). Before an ADR names a
+  crate, `curl -s -o /dev/null -w '%{http_code}' https://crates.io/api/v1/crates/<name>`
+  prints `404`; a new name is a new ADR and the next patch version, never a moved tag.
+- **`cargo publish` answers 403 about permissions.** The token cannot publish this
+  crate: it needs the `publish-new` scope for a first release and `publish-update`
+  after, on crates.io under Account Settings, API Tokens. Nothing on GitHub is affected;
+  publish again with a token that can.
 - **`cargo publish` says the version already exists.** crates.io never takes a version
   twice, even after a yank. Bump the patch version and release again.
 - **A `build` job fails.** The release exists with the notes and the other tarball; fix
