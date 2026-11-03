@@ -84,6 +84,11 @@ user-visible change, added in the same commit as the change. The format follows
   flag takes, `<owner|admin|user|guest>` and `<Sunday|Monday|...|Saturday>` rather than
   `<ROLE>` and `<DAY>`, for every flag whose values `clap` knows, so a flag added later
   cannot leave them out ([the reference](docs/reference/commands.md)).
+- Linear's `FORBIDDEN` and `FEATURE_NOT_ACCESSIBLE` answers, to what the workspace's
+  plan or the key's role does not allow ("Not allowed on free plan", "Not allowed to
+  access feature 'guestAccounts'"), are a refusal, exit 6, with Linear's code and
+  message and a hint naming the plan and the role; they were exit 1, muster's own
+  failure (ADR 0014; [the reference](docs/reference/commands.md#exit-codes)).
 
 ## 0.2.0 - 2026-11-03
 
