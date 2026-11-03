@@ -6,6 +6,21 @@ user-visible change, added in the same commit as the change. The format follows
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.4.0 - 2026-11-03
+
+The second block of the third slice ([ADR 0014](docs/decisions/0014-build-the-third-slice-administrative-commands.md)),
+the things a project is made of, for an agent that sets up a team's work and keeps it
+in order: `label create`, `update`, `retire`, `restore` and `delete`; `state create`,
+`update` and `archive`; `project get`, `update`, `delete` and `unarchive`;
+`project-status list`, `create`, `update`, `archive` and `unarchive`; `milestone list`,
+`create`, `update` and `delete` with `--milestone` on the issue commands;
+`project-update list` and `create`; and `initiative list`, `get`, `create`, `update`,
+`archive`, `unarchive`, `add-project` and `remove-project`. Every list is bounded, a
+name an object already has is refused before any request, `none` clears, and a delete
+prints Linear's own answer. The crate is `muster-linear`: `cargo install muster-linear`.
+
 ### Added
 
 - `label create --name <TEXT> [--workspace] [--color <HEX>] [--description <TEXT>]
