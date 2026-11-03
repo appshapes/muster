@@ -4,7 +4,9 @@
 
 use serde_json::{Value, json};
 
-use crate::bounds::{ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, PAGE_CAP};
+use crate::bounds::{
+    ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, PAGE_CAP, TEAMS_PER_PROJECT,
+};
 use crate::cli::{
     AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
     IssueListArgs, ListArgs, ListCommand, ProjectCommand, ProjectCreateArgs, UpdateArgs,
@@ -203,7 +205,7 @@ impl Session {
     fn project_id(&self, name: &str) -> Result<String, Error> {
         let data = self.linear.run(
             &ops::PROJECTS,
-            json!({ "first": PAGE_CAP, "filter": { "name": { "eqIgnoreCase": name } } }),
+            json!({ "first": 1, "filter": { "name": { "eqIgnoreCase": name } }, "teams": TEAMS_PER_PROJECT }),
         )?;
         let projects = nodes(&data, "projects");
         match projects.first() {
@@ -450,17 +452,39 @@ fn list_labels(session: &Session, args: &ListArgs, out: &Output) -> Result<(), E
 
 fn list_projects(session: &Session, args: &ListArgs, out: &Output) -> Result<(), Error> {
     let n = limit(args.limit)?;
-    let data = session
-        .linear
-        .run(&ops::PROJECTS, json!({ "first": n, "filter": Value::Null }))?;
+    let data = session.linear.run(
+        &ops::PROJECTS,
+        json!({ "first": n, "filter": Value::Null, "teams": TEAMS_PER_PROJECT }),
+    )?;
+    let projects = nodes(&data, "projects");
+    let cut_teams: Vec<String> = projects
+        .iter()
+        .filter(|p| has_next_page(p, "teams"))
+        .map(|p| str_at(p, "name").unwrap_or("?").to_string())
+        .collect();
     emit_list(
         out,
-        nodes(&data, "projects"),
+        projects,
         has_next_page(&data, "projects"),
         "projects",
         n,
     );
+    teams_notice(out, &cut_teams);
     Ok(())
+}
+
+/// The notice for projects whose teams were cut at `TEAMS_PER_PROJECT`.
+fn teams_notice(out: &Output, cut: &[String]) {
+    if !cut.is_empty() {
+        out.notice(
+            "truncated",
+            &format!(
+                "teams: {} in more than the {TEAMS_PER_PROJECT} teams printed",
+                cut.join(", ")
+            ),
+            "TEAMS_PER_PROJECT is the bound (docs/reference/commands.md#bounds); Linear's own page shows the rest",
+        );
+    }
 }
 
 fn list_users(session: &Session, args: &ListArgs, out: &Output) -> Result<(), Error> {
@@ -484,7 +508,7 @@ fn project_create(session: &Session, args: &ProjectCreateArgs, out: &Output) -> 
     if !args.allow_duplicate {
         let data = session.linear.run(
             &ops::PROJECTS,
-            json!({ "first": 1, "filter": { "name": { "eqIgnoreCase": args.name } } }),
+            json!({ "first": 1, "filter": { "name": { "eqIgnoreCase": args.name } }, "teams": TEAMS_PER_PROJECT }),
         )?;
         if let Some(existing) = nodes(&data, "projects").first() {
             return Err(Error::with_hint(
@@ -502,10 +526,15 @@ fn project_create(session: &Session, args: &ProjectCreateArgs, out: &Output) -> 
     if let (Some(description), Some(map)) = (&args.description, input.as_object_mut()) {
         map.insert("description".into(), json!(description));
     }
-    let data = session
-        .linear
-        .run(&ops::PROJECT_CREATE, json!({ "input": input }))?;
-    out.emit(&payload(&data, "projectCreate", "project")?);
+    let data = session.linear.run(
+        &ops::PROJECT_CREATE,
+        json!({ "input": input, "teams": TEAMS_PER_PROJECT }),
+    )?;
+    let project = payload(&data, "projectCreate", "project")?;
+    out.emit(&project);
+    if has_next_page(&project, "teams") {
+        teams_notice(out, &[str_at(&project, "name").unwrap_or("?").to_string()]);
+    }
     Ok(())
 }
 

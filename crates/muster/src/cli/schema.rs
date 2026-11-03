@@ -9,6 +9,7 @@ use clap::{ArgAction, Command, CommandFactory};
 use serde_json::{Map, Value, json};
 
 use crate::bounds;
+use crate::bounds::TEAMS_PER_PROJECT;
 use crate::cli::{Cli, SchemaArgs, SchemaFormat};
 use crate::config::{ENVIRONMENT, LINEAR_ENDPOINT};
 use crate::error::{Error, ErrorCode};
@@ -409,9 +410,10 @@ pub fn fixture_variables(op: &str, first_issue: Option<&str>) -> Option<Value> {
     Some(match op {
         "Viewer" => json!({}),
         "Teams" => json!({ "first": 5 }),
-        "WorkflowStates" | "IssueLabels" | "Projects" | "Users" => {
+        "WorkflowStates" | "IssueLabels" | "Users" => {
             json!({ "first": 5, "filter": Value::Null })
         }
+        "Projects" => json!({ "first": 5, "filter": Value::Null, "teams": TEAMS_PER_PROJECT }),
         // Issues that carry a label, so that the label node shape is recorded too.
         "Issues" => {
             json!({ "first": 2, "filter": { "labels": { "length": { "gt": 0 } } }, "orderBy": "createdAt" })

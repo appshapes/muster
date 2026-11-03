@@ -56,7 +56,7 @@ pub const PROJECT_FIELDS: &str = "fragment ProjectFields on Project {
   id name url description priority startDate targetDate
   status { id name type }
   lead { id name displayName }
-  teams { nodes { id key } }
+  teams(first: $teams) { nodes { id key } pageInfo { hasNextPage } }
 }";
 
 /// The fields every comment answer carries.
@@ -136,7 +136,7 @@ op!(
     PROJECTS,
     "Projects",
     Kind::Query,
-    "query Projects($first: Int!, $filter: ProjectFilter) {
+    "query Projects($first: Int!, $filter: ProjectFilter, $teams: Int!) {
   projects(first: $first, filter: $filter) { nodes { ...ProjectFields } pageInfo { hasNextPage } }
 }",
     &[PROJECT_FIELDS]
@@ -203,7 +203,7 @@ op!(
     PROJECT_CREATE,
     "ProjectCreate",
     Kind::Mutation,
-    "mutation ProjectCreate($input: ProjectCreateInput!) {
+    "mutation ProjectCreate($input: ProjectCreateInput!, $teams: Int!) {
   projectCreate(input: $input) { success project { ...ProjectFields } }
 }",
     &[PROJECT_FIELDS]

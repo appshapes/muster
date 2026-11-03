@@ -38,6 +38,12 @@ user-visible change, added in the same commit as the change. The format follows
 
 ### Fixed
 
+- `project list --limit 250` was refused by Linear as "Query too complex": each
+  project's `teams` connection multiplied the query's cost. `project list` and
+  `project create` now print at most `TEAMS_PER_PROJECT` teams per project, with a
+  `truncated` notice past it, so that a page of `PAGE_CAP` projects stays inside the
+  limit; the project lookup behind `--project <NAME>` asks for one project, not a page.
+
 - The reference, the tutorial and the `linear-read` skill said `issue get` prints
   comments oldest first. Linear orders a connection newest first, `orderBy: createdAt`
   included, and muster prints what Linear returns; the pages now say so, and a cut thread

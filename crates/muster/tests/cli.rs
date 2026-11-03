@@ -1246,6 +1246,42 @@ fn issue_list_filters_by_project_and_by_no_project() {
     );
 }
 
+#[test]
+fn a_project_in_more_teams_than_the_bound_prints_the_bound_and_a_notice() {
+    let fake = Fake::start().unwrap();
+    fake.add_project_across_teams("Everywhere", 11);
+    let run = muster(&fake, &["project", "list"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let everywhere = run
+        .lines()
+        .into_iter()
+        .find(|p| p["name"] == "Everywhere")
+        .unwrap();
+    assert_eq!(everywhere["teams"]["nodes"].as_array().unwrap().len(), 10);
+    assert_eq!(everywhere["teams"]["pageInfo"]["hasNextPage"], true);
+    let notices = run.notices();
+    assert_eq!(notices.len(), 1, "{}", run.stderr);
+    assert_eq!(notices[0]["code"], "truncated");
+    assert!(
+        notices[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Everywhere")
+            && notices[0]["hint"]
+                .as_str()
+                .unwrap()
+                .contains("TEAMS_PER_PROJECT"),
+        "{}",
+        run.stderr
+    );
+
+    let exact = Fake::start().unwrap();
+    exact.add_project_across_teams("Ten", 10);
+    let run = muster(&exact, &["project", "list"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert!(run.notices().is_empty(), "at the bound is not over it");
+}
+
 // ---- failures: network, unknown, rate limit, server -------------------------------------
 
 #[test]

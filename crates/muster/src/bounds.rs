@@ -29,6 +29,12 @@ pub const ATTACHMENTS_PER_ISSUE: usize = 50;
 /// How many sub-issues `issue get` fetches with an issue, newest first, as Linear orders
 /// a connection. A parent with more is reported cut with a notice on stderr.
 pub const CHILDREN_PER_ISSUE: usize = 50;
+/// How many teams `project list` and `project create` print with a project, under
+/// `teams.nodes`. A project in more is reported cut with a notice on stderr. Bounded so
+/// that a page of `PAGE_CAP` projects stays inside Linear's query-complexity limit of
+/// 10,000: on 2026-11-03 Linear refused `project list --limit 250` at 20 teams per
+/// project as "Query too complex" (complexity 13,525), and accepts it at 10.
+pub const TEAMS_PER_PROJECT: usize = 10;
 /// How long one request may take, connect to last byte. Past it a query exits 7 and a
 /// mutation exits 8.
 pub const REQUEST_TIMEOUT_SECS: u64 = 30;
@@ -72,6 +78,12 @@ pub const ALL: &[Bound] = &[
         value: CHILDREN_PER_ISSUE as u64,
         unit: "items",
         meaning: "the sub-issues `issue get` fetches with an issue, newest first, as Linear orders them; a parent with more writes a `truncated` notice to stderr and the oldest are the ones left out",
+    },
+    Bound {
+        name: "TEAMS_PER_PROJECT",
+        value: TEAMS_PER_PROJECT as u64,
+        unit: "items",
+        meaning: "the teams `project list` and `project create` print with a project under `teams.nodes`; a project in more writes a `truncated` notice to stderr; bounded so that a page of PAGE_CAP projects stays inside Linear's query-complexity limit of 10,000",
     },
     Bound {
         name: "REQUEST_TIMEOUT_SECS",
