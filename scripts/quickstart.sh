@@ -55,9 +55,13 @@ step "muster issue create"
 id=$(jq -r .identifier "$tmp/create.json")
 [[ "$id" =~ ^APP-[0-9]+$ ]] || { echo "quickstart: no identifier in the create answer" >&2; exit 1; }
 
-step "muster issue comment $id"
-"$bin" issue comment "$id" --body "Read it back with issue get." | tee "$tmp/comment.json"
-jq -e '.body == "Read it back with issue get." and .issue.identifier == "'"$id"'"' "$tmp/comment.json" >/dev/null
+step "muster issue comment $id, then comment update and comment delete by id"
+"$bin" issue comment "$id" --body "A first draft." | tee "$tmp/comment.json"
+jq -e '.body == "A first draft." and .issue.identifier == "'"$id"'"' "$tmp/comment.json" >/dev/null
+cid=$(jq -r .id "$tmp/comment.json")
+"$bin" comment update "$cid" --body "Read it back with issue get." | jq -e '.body == "Read it back with issue get." and .editedAt != null' >/dev/null
+"$bin" issue comment "$id" --body "A passing thought." | jq -r .id > "$tmp/comment2.id"
+"$bin" comment delete "$(cat "$tmp/comment2.id")" | jq -e '.success == true' >/dev/null
 
 step "muster issue get $id"
 "$bin" issue get "$id" | jq '{title, state: .state.name, comments: [.comments.nodes[].body]}' | tee "$tmp/get.json"

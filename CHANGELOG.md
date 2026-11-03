@@ -6,7 +6,13 @@ user-visible change, added in the same commit as the change. The format follows
 
 ## Unreleased
 
-Nothing yet.
+### Added
+- `comment update <ID> --body <TEXT>|--body-file <PATH>` replaces a comment's body
+  and prints the comment as Linear returns it, with `editedAt` set; `comment delete
+  <ID>` deletes one, with no undo, printing Linear's answer. The id is the one `issue
+  get` prints under `comments`, and `issue comment` prints for a new one; an id Linear
+  does not know is exit 4 (ADR 0014, group 19;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.4.0 - 2026-11-03
 

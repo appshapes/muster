@@ -808,6 +808,25 @@ op!(
 }"
 );
 
+op!(
+    COMMENT_UPDATE,
+    "CommentUpdate",
+    Kind::Mutation,
+    "mutation CommentUpdate($id: String!, $input: CommentUpdateInput!) {
+  commentUpdate(id: $id, input: $input) { success comment { ...CommentFields issue { id identifier } } }
+}",
+    &[COMMENT_FIELDS]
+);
+
+op!(
+    COMMENT_DELETE,
+    "CommentDelete",
+    Kind::Mutation,
+    "mutation CommentDelete($id: String!) {
+  commentDelete(id: $id) { success entityId }
+}"
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -875,6 +894,8 @@ pub static WRITES: &[&Operation] = &[
     &INITIATIVE_UNARCHIVE,
     &INITIATIVE_LINK_CREATE,
     &INITIATIVE_LINK_DELETE,
+    &COMMENT_UPDATE,
+    &COMMENT_DELETE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.

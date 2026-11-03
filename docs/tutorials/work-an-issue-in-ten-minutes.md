@@ -139,6 +139,11 @@ its Business plan and refuses below it), `muster initiative add-project Growth
 --project "Trying muster"` puts the project in it, `muster initiative get Growth`
 prints it with its `projects` (bounded by `PROJECTS_PER_INITIATIVE`), and `muster
 initiative archive Growth` puts it away (`unarchive` brings it back).
+A comment is changed or removed by the id `issue get` prints under `comments` (and
+`issue comment` prints for a new one): `muster comment update <ID> --body "Second
+thoughts."` replaces its body (one JSON line, with `editedAt` set), `--body-file
+notes.md` takes the body from a file, and `muster comment delete <ID>` deletes it,
+with no undo.
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):

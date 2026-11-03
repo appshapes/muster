@@ -445,6 +445,24 @@ Take a project out of an initiative.
 | `<NAME>` | `<NAME>` | yes |  | The initiative, by name |
 | `--project` | `<NAME>` | yes |  | The project, by name |
 
+### muster comment update
+
+Replace a comment's body.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<ID>` | `<ID>` | yes |  | The comment's id, as `issue get` prints it |
+| `--body` | `<TEXT>` | no |  | The new body, markdown |
+| `--body-file` | `<PATH>` | no |  | The new body from a file, or from stdin when PATH is `-` |
+
+### muster comment delete
+
+Delete a comment; there is no undo.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<ID>` | `<ID>` | yes |  | The comment's id, as `issue get` prints it |
+
 ### muster milestone list
 
 List a project's milestones, one JSON object per line.
@@ -872,3 +890,5 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `InitiativeUnarchive` | mutation |
 | `InitiativeToProjectCreate` | mutation |
 | `InitiativeToProjectDelete` | mutation |
+| `CommentUpdate` | mutation |
+| `CommentDelete` | mutation |
