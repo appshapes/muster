@@ -14,9 +14,10 @@ use crate::cli::{
     MemberArgs, MemberCommand, MilestoneCommand, MilestoneCreateArgs, MilestoneListArgs,
     MilestoneRefArgs, MilestoneUpdateArgs, ProjectCommand, ProjectCreateArgs, ProjectRefArgs,
     ProjectStatusCommand, ProjectStatusCreateArgs, ProjectStatusRefArgs, ProjectStatusUpdateArgs,
-    ProjectUpdateArgs, StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand,
-    TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs,
-    UserRefArgs, UserRoleArgs, UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
+    ProjectUpdateArgs, ProjectUpdateCommand, ProjectUpdateCreateArgs, ProjectUpdateListArgs,
+    StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs,
+    TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs, UserRoleArgs,
+    UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -111,6 +112,13 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 MilestoneCommand::Create(args) => milestone_create(&session, args, out),
                 MilestoneCommand::Update(args) => milestone_update(&session, args, out),
                 MilestoneCommand::Delete(args) => milestone_delete(&session, args, out),
+            }
+        }
+        Command::ProjectUpdate { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                ProjectUpdateCommand::List(args) => project_update_list(&session, args, out),
+                ProjectUpdateCommand::Create(args) => project_update_create(&session, args, out),
             }
         }
         Command::ProjectStatus { command } => {
@@ -1768,6 +1776,64 @@ fn milestone_delete(session: &Session, args: &MilestoneRefArgs, out: &Output) ->
     Ok(())
 }
 
+fn project_update_list(
+    session: &Session,
+    args: &ProjectUpdateListArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let data = session.linear.run(
+        &ops::PROJECT_UPDATES,
+        json!({ "project": args.project, "first": n }),
+    )?;
+    emit_list(
+        out,
+        nodes(&data, "projectUpdates"),
+        has_next_page(&data, "projectUpdates"),
+        "project updates",
+        n,
+    );
+    Ok(())
+}
+
+/// The input of `projectUpdateCreate` but its `projectId`: a body, a health, or
+/// both; neither is a usage error before any request.
+fn status_post_input(args: &ProjectUpdateCreateArgs) -> Result<Map<String, Value>, Error> {
+    let mut input = Map::new();
+    if let Some(body) = body_from(&args.body, &args.body_file)? {
+        input.insert("body".into(), json!(body));
+    }
+    if let Some(health) = args.health {
+        input.insert("health".into(), json!(health.linear()));
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "a project update needs --body, --body-file or --health",
+            "say what changed, how the project is doing, or both",
+        ));
+    }
+    Ok(input)
+}
+
+fn project_update_create(
+    session: &Session,
+    args: &ProjectUpdateCreateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let mut input = status_post_input(args)?;
+    input.insert(
+        "projectId".into(),
+        json!(session.project_id(&args.project)?),
+    );
+    let data = session.linear.run(
+        &ops::PROJECT_UPDATE_CREATE,
+        json!({ "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "projectUpdateCreate", "projectUpdate")?);
+    Ok(())
+}
+
 fn project_status_list(session: &Session, args: &ListArgs, out: &Output) -> Result<(), Error> {
     let n = limit(args.limit)?;
     let mut statuses = session.project_statuses(false)?;
@@ -2997,6 +3063,35 @@ mod tests {
         };
         assert!(
             project_update_input(&long)
+                .err()
+                .is_some_and(|e| e.code == ErrorCode::Refused)
+        );
+    }
+
+    #[test]
+    fn a_project_update_needs_a_body_or_a_health() {
+        use crate::cli::Health;
+        let e = status_post_input(&ProjectUpdateCreateArgs {
+            project: "Muster".into(),
+            ..ProjectUpdateCreateArgs::default()
+        })
+        .err();
+        assert_eq!(e.as_ref().map(|e| e.code), Some(ErrorCode::Usage), "{e:?}");
+        let health_only = status_post_input(&ProjectUpdateCreateArgs {
+            project: "Muster".into(),
+            health: Some(Health::AtRisk),
+            ..ProjectUpdateCreateArgs::default()
+        })
+        .unwrap_or_default();
+        assert_eq!(health_only.get("health"), Some(&json!("atRisk")));
+        assert_eq!(health_only.get("body"), None);
+        let long = ProjectUpdateCreateArgs {
+            project: "Muster".into(),
+            body: Some("b".repeat(BODY_MAX_BYTES + 1)),
+            ..ProjectUpdateCreateArgs::default()
+        };
+        assert!(
+            status_post_input(&long)
                 .err()
                 .is_some_and(|e| e.code == ErrorCode::Refused)
         );

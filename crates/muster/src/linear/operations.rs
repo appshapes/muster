@@ -145,6 +145,14 @@ pub const MILESTONE_FIELDS: &str = "fragment MilestoneFields on ProjectMilestone
   project { id name }
 }";
 
+/// The fields every project update answer carries (ADR 0014, group 11): a status
+/// post on a project, with its health, its author and its project.
+pub const PROJECT_UPDATE_FIELDS: &str = "fragment ProjectUpdateFields on ProjectUpdate {
+  id body health url createdAt editedAt
+  user { id name displayName }
+  project { id name }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -313,6 +321,18 @@ op!(
   }
 }",
     &[MILESTONE_FIELDS]
+);
+
+op!(
+    PROJECT_UPDATES,
+    "ProjectUpdates",
+    Kind::Query,
+    "query ProjectUpdates($project: String!, $first: Int!) {
+  projectUpdates(first: $first, filter: { project: { name: { eqIgnoreCase: $project } } }) {
+    nodes { ...ProjectUpdateFields } pageInfo { hasNextPage }
+  }
+}",
+    &[PROJECT_UPDATE_FIELDS]
 );
 
 op!(
@@ -668,6 +688,16 @@ op!(
 }"
 );
 
+op!(
+    PROJECT_UPDATE_CREATE,
+    "ProjectUpdateCreate",
+    Kind::Mutation,
+    "mutation ProjectUpdateCreate($input: ProjectUpdateCreateInput!) {
+  projectUpdateCreate(input: $input) { success projectUpdate { ...ProjectUpdateFields } }
+}",
+    &[PROJECT_UPDATE_FIELDS]
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -685,6 +715,7 @@ pub static READS: &[&Operation] = &[
     &PROJECT_BY_NAME,
     &PROJECT_STATUSES,
     &MILESTONES,
+    &PROJECT_UPDATES,
 ];
 
 /// Every write operation.
@@ -724,6 +755,7 @@ pub static WRITES: &[&Operation] = &[
     &MILESTONE_CREATE,
     &MILESTONE_UPDATE,
     &MILESTONE_DELETE,
+    &PROJECT_UPDATE_CREATE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -777,6 +809,7 @@ mod tests {
                 "ProjectDetailFields",
                 "ProjectStatusFields",
                 "MilestoneFields",
+                "ProjectUpdateFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));
