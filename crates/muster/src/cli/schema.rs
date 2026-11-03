@@ -608,6 +608,7 @@ pub fn fixture_variables(op: &str, s: &Samples<'_>) -> Option<Value> {
         "UserById" => json!({ "id": "me" }),
         "ProjectStatuses" => json!({ "first": 5, "includeArchived": false }),
         "Milestones" | "ProjectUpdates" => json!({ "project": s.project?, "first": 5 }),
+        "Webhooks" => json!({ "first": 5 }),
         "Templates" => json!({ "first": 6, "filter": Value::Null }),
         "TemplateByName" => {
             json!({ "key": s.team?, "name": s.template?, "includeArchived": false })
@@ -749,6 +750,10 @@ mod tests {
             "milestone delete",
             "project-update list",
             "project-update create",
+            "webhook list",
+            "webhook create",
+            "webhook update",
+            "webhook delete",
             "template list",
             "template get",
             "template create",

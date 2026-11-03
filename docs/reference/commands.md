@@ -9,7 +9,7 @@ Every command prints one JSON object per line on stdout with Linear's own field 
 | Flag | Value | Meaning |
 | --- | --- | --- |
 | `--human` |  | Render the answer as text for a person; one JSON object per line is the default |
-| `--trace` |  | Print every request and answer to stderr; the key is never printed |
+| `--trace` |  | Print every request and answer to stderr; the key and a webhook's secret are never printed |
 | `--team` | `<KEY>` | The team key (APP); else MUSTER_TEAM; else the workspace's only team |
 
 ## Commands
@@ -585,6 +585,48 @@ Delete a template; there is no undo.
 | --- | --- | --- | --- | --- |
 | `<NAME>` | `<NAME>` | yes |  | The template, by name, among the team's own and the workspace's |
 
+### muster webhook list
+
+List the workspace's webhooks, one JSON object per line, never with their secret.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
+### muster webhook create
+
+Create a webhook for the team, or for every public team; a URL a webhook already has is refused unless --allow-duplicate.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--url` | `<URL>` | yes |  | The URL Linear posts to |
+| `--resource-type` | `<TYPE>` | yes |  | A kind of change to post, as Linear names it (Issue, Comment, Project, Cycle, IssueLabel, ...); repeatable |
+| `--label` | `<TEXT>` | no |  | A name for it |
+| `--all-public-teams` |  | no |  | Every public team's changes, rather than the team's by the usual rule |
+| `--secret-file` | `<PATH>` | no |  | The signing secret, from a file, or from stdin when PATH is `-`; never on the command line, never printed |
+| `--allow-duplicate` |  | no |  | Create it even when a webhook posts to the URL |
+
+### muster webhook update
+
+Change a webhook's URL, label, switch, resource types or secret.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WEBHOOK>` | `<WEBHOOK>` | yes |  | The webhook: its label, else its URL, else its id |
+| `--url` | `<URL>` | no |  | A new URL |
+| `--label` | `<TEXT>` | no |  | A new label |
+| `--enabled` | `<true\|false>` | no |  | Whether Linear posts to it; `false` is the reversible stop |
+| `--resource-type` | `<TYPE>` | no |  | The kinds of change to post, replacing the list; repeatable |
+| `--secret-file` | `<PATH>` | no |  | A new signing secret, from a file, or from stdin when PATH is `-` |
+
+### muster webhook delete
+
+Delete a webhook; there is no undo (`--enabled false` on `update` is the reversible stop).
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WEBHOOK>` | `<WEBHOOK>` | yes |  | The webhook: its label, else its URL, else its id |
+
 ### muster milestone list
 
 List a project's milestones, one JSON object per line.
@@ -980,6 +1022,7 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `DocumentByTitle` | query |
 | `Templates` | query |
 | `TemplateByName` | query |
+| `Webhooks` | query |
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
@@ -1030,3 +1073,6 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `TemplateCreate` | mutation |
 | `TemplateUpdate` | mutation |
 | `TemplateDelete` | mutation |
+| `WebhookCreate` | mutation |
+| `WebhookUpdate` | mutation |
+| `WebhookDelete` | mutation |

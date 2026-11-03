@@ -22,7 +22,8 @@ use crate::cli::{
     StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs,
     TeamRefArgs, TeamUpdateArgs, TemplateCommand, TemplateCreateArgs, TemplateListArgs,
     TemplateRefArgs, TemplateUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs,
-    UserRoleArgs, UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
+    UserRoleArgs, UserUpdateArgs, WebhookCommand, WebhookCreateArgs, WebhookListArgs,
+    WebhookRefArgs, WebhookUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -180,6 +181,15 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 TemplateCommand::Create(args) => template_create(&session, args, out),
                 TemplateCommand::Update(args) => template_update(&session, args, out),
                 TemplateCommand::Delete(args) => template_delete(&session, args, out),
+            }
+        }
+        Command::Webhook { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                WebhookCommand::List(args) => webhook_list(&session, args, out),
+                WebhookCommand::Create(args) => webhook_create(&session, args, out),
+                WebhookCommand::Update(args) => webhook_update(&session, args, out),
+                WebhookCommand::Delete(args) => webhook_delete(&session, args, out),
             }
         }
         Command::Milestone { command } => {
@@ -701,6 +711,42 @@ impl Session {
                 ErrorCode::NotFound,
                 format!("no template named {name:?} for team {team_key} or the workspace"),
                 "name one from `muster template list`",
+            )),
+        }
+    }
+
+    /// The workspace's webhooks, up to `PAGE_CAP`, and whether Linear has more; the
+    /// list takes no filter (ADR 0014, group 16).
+    fn webhooks(&self) -> Result<(Vec<Value>, bool), Error> {
+        let data = self
+            .linear
+            .run(&ops::WEBHOOKS, json!({ "first": PAGE_CAP }))?;
+        Ok((nodes(&data, "webhooks"), has_next_page(&data, "webhooks")))
+    }
+
+    /// One webhook from a word: its label (case aside), else its URL, else its id;
+    /// exit 4 when none matches, exit 6 when the list was cut and none matched.
+    fn webhook_ref(&self, word: &str) -> Result<Value, Error> {
+        let (hooks, cut) = self.webhooks()?;
+        let found = hooks
+            .iter()
+            .find(|h| str_at(h, "label").is_some_and(|l| l.eq_ignore_ascii_case(word)))
+            .or_else(|| hooks.iter().find(|h| str_at(h, "url") == Some(word)))
+            .or_else(|| hooks.iter().find(|h| str_at(h, "id") == Some(word)));
+        match found {
+            Some(hook) => Ok(hook.clone()),
+            None if cut => Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "the workspace has more than PAGE_CAP ({PAGE_CAP}) webhooks and none of the first {PAGE_CAP} is labelled, at or with id {word:?}"
+                ),
+                "Linear's list of webhooks takes no filter; the rest are reached in the browser; PAGE_CAP is the bound",
+            )
+            .at("bounds")),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("no webhook labelled, at or with id {word:?}"),
+                "`muster webhook list` prints the workspace's webhooks with their labels, URLs and ids",
             )),
         }
     }
@@ -2626,6 +2672,164 @@ fn template_delete(session: &Session, args: &TemplateRefArgs, out: &Output) -> R
         .linear
         .run(&ops::TEMPLATE_DELETE, json!({ "id": id }))?;
     out.emit(&delete_payload(&answer, "templateDelete")?);
+    Ok(())
+}
+
+fn webhook_list(session: &Session, args: &WebhookListArgs, out: &Output) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let data = session.linear.run(&ops::WEBHOOKS, json!({ "first": n }))?;
+    emit_list(
+        out,
+        nodes(&data, "webhooks"),
+        has_next_page(&data, "webhooks"),
+        "webhooks",
+        n,
+    );
+    Ok(())
+}
+
+/// A webhook's secret from its file: read through `read_body` and its bound, with
+/// the line end a file carries taken off; never from argv, never printed.
+fn secret_from(path: &str) -> Result<String, Error> {
+    let text = read_body(path)?;
+    let secret = text.trim_end_matches(['\n', '\r']).to_string();
+    if secret.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "the secret file is empty",
+            "put the signing secret in the file, on one line",
+        ));
+    }
+    Ok(secret)
+}
+
+/// The resource types of a create or update: each checked as a name, none empty.
+fn resource_types(types: &[String]) -> Result<Vec<String>, Error> {
+    let mut out = Vec::new();
+    for kind in types {
+        let kind = kind.trim();
+        if kind.is_empty() {
+            return Err(Error::with_hint(
+                ErrorCode::Usage,
+                "a resource type is empty",
+                "name a kind of change as Linear does: Issue, Comment, Project, Cycle, IssueLabel, Reaction, ...",
+            ));
+        }
+        check_body(Text::Name, kind)?;
+        out.push(kind.to_string());
+    }
+    Ok(out)
+}
+
+fn webhook_create(session: &Session, args: &WebhookCreateArgs, out: &Output) -> Result<(), Error> {
+    check_body(Text::Link, &args.url)?;
+    let types = resource_types(&args.resource_type)?;
+    if let Some(label) = &args.label {
+        check_body(Text::Name, label)?;
+    }
+    let secret = match &args.secret_file {
+        Some(path) => Some(secret_from(path)?),
+        None => None,
+    };
+    // The guard: a webhook posts to one URL, and `<WEBHOOK>` resolves a URL to one.
+    if !args.allow_duplicate {
+        let (hooks, cut) = session.webhooks()?;
+        if let Some(existing) = hooks
+            .iter()
+            .find(|h| str_at(h, "url") == Some(args.url.as_str()))
+        {
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "a webhook posts to {} already{}",
+                    args.url,
+                    match str_at(existing, "label") {
+                        Some(label) => format!(" ({label:?})"),
+                        None => String::new(),
+                    }
+                ),
+                "use that webhook, or pass --allow-duplicate if a second one is wanted",
+            )
+            .at("muster-webhook-create"));
+        }
+        if cut {
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!("the workspace has more than PAGE_CAP ({PAGE_CAP}) webhooks, so a duplicate of {} cannot be ruled out", args.url),
+                "pass --allow-duplicate to create it anyway; PAGE_CAP is the bound",
+            )
+            .at("bounds"));
+        }
+    }
+    let mut input = Map::new();
+    input.insert("url".into(), json!(args.url));
+    input.insert("resourceTypes".into(), json!(types));
+    if let Some(label) = &args.label {
+        input.insert("label".into(), json!(label));
+    }
+    if let Some(secret) = secret {
+        input.insert("secret".into(), json!(secret));
+    }
+    if args.all_public_teams {
+        input.insert("allPublicTeams".into(), json!(true));
+    } else {
+        let (team, _) = session.team()?;
+        input.insert("teamId".into(), json!(need_str(&team, "id", "Teams")?));
+    }
+    let data = session.linear.run(
+        &ops::WEBHOOK_CREATE,
+        json!({ "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "webhookCreate", "webhook")?);
+    Ok(())
+}
+
+fn webhook_update(session: &Session, args: &WebhookUpdateArgs, out: &Output) -> Result<(), Error> {
+    let mut input = Map::new();
+    if let Some(url) = &args.url {
+        check_body(Text::Link, url)?;
+        input.insert("url".into(), json!(url));
+    }
+    if let Some(label) = &args.label {
+        check_body(Text::Name, label)?;
+        input.insert("label".into(), json!(label));
+    }
+    if let Some(enabled) = args.enabled {
+        input.insert("enabled".into(), json!(enabled));
+    }
+    if !args.resource_type.is_empty() {
+        input.insert(
+            "resourceTypes".into(),
+            json!(resource_types(&args.resource_type)?),
+        );
+    }
+    if let Some(path) = &args.secret_file {
+        input.insert("secret".into(), json!(secret_from(path)?));
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --url, --label, --enabled, --resource-type, --secret-file",
+        ));
+    }
+    let hook = session.webhook_ref(&args.webhook)?;
+    let id = need_str(&hook, "id", "Webhooks")?;
+    let data = session.linear.run(
+        &ops::WEBHOOK_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "webhookUpdate", "webhook")?);
+    Ok(())
+}
+
+fn webhook_delete(session: &Session, args: &WebhookRefArgs, out: &Output) -> Result<(), Error> {
+    let hook = session.webhook_ref(&args.webhook)?;
+    let id = need_str(&hook, "id", "Webhooks")?;
+    let data = session
+        .linear
+        .run(&ops::WEBHOOK_DELETE, json!({ "id": id }))?;
+    out.emit(&delete_payload(&data, "webhookDelete")?);
     Ok(())
 }
 

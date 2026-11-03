@@ -254,6 +254,29 @@ printf '{"title": "Renamed at %s"}\n' "$stamp" > "$tmp/template-data-2.json"
 jq -e --arg n "Smoky template $stamp" '.name == $n' "$tmp/template-update.json" >/dev/null
 "$bin" template delete "Smoky template $stamp" --team SMK | jq -c '{success}' | tee "$tmp/template-delete.json"
 jq -e '.success == true' "$tmp/template-delete.json" >/dev/null
+
+echo "smoke: muster webhook create --label 'Smoke webhook' --team SMK (exit 6 after the first run; it stays, disabled, for the fixture), update --enabled false, list, then a throwaway webhook updated and deleted (ADR 0014)"
+printf 'smoke-signing-secret-%s\n' "$stamp" > "$tmp/webhook-secret"
+set +e
+"$bin" webhook create --url "https://appshapes.com/muster/smoke-webhook" --resource-type Issue --label "Smoke webhook" --team SMK --secret-file "$tmp/webhook-secret" > "$tmp/webhook.json" 2> "$tmp/webhook.err"
+code=$?
+set -e
+case "$code" in
+  0) jq -c '{label, url, enabled, team: .team.key, resourceTypes}' "$tmp/webhook.json" ;;
+  6) cat "$tmp/webhook.err"; jq -e '.error.code == "refused"' "$tmp/webhook.err" >/dev/null ;;
+  *) echo "smoke: webhook create exited $code" >&2; cat "$tmp/webhook.err" >&2; exit 1 ;;
+esac
+"$bin" webhook update "Smoke webhook" --enabled false | jq -c '{label, enabled}' | tee "$tmp/webhook-off.json"
+jq -e '.label == "Smoke webhook" and .enabled == false' "$tmp/webhook-off.json" >/dev/null
+"$bin" webhook list | jq -c '{label, url, enabled, team: .team.key}' | tee "$tmp/webhooks.jsonl"
+jq -s -e 'map(.label) | index("Smoke webhook") != null' "$tmp/webhooks.jsonl" >/dev/null
+jq -s -e 'all(has("secret") | not)' "$tmp/webhooks.jsonl" >/dev/null
+"$bin" webhook create --url "https://appshapes.com/muster/smoke-webhook-$(printf '%s' "$stamp" | tr -c 'A-Za-z0-9' '-')" --resource-type Issue --resource-type Comment --label "Smoke webhook $stamp" --team SMK | jq -c '{label, enabled, resourceTypes}' | tee "$tmp/webhook-throwaway.json"
+jq -e --arg l "Smoke webhook $stamp" '.label == $l and .enabled == true' "$tmp/webhook-throwaway.json" >/dev/null
+"$bin" webhook update "Smoke webhook $stamp" --label "Smoky webhook $stamp" --enabled false --resource-type Project | jq -c '{label, enabled, resourceTypes}' | tee "$tmp/webhook-update.json"
+jq -e --arg l "Smoky webhook $stamp" '.label == $l and .enabled == false and .resourceTypes == ["Project"]' "$tmp/webhook-update.json" >/dev/null
+"$bin" webhook delete "Smoky webhook $stamp" | jq -c '{success}' | tee "$tmp/webhook-delete.json"
+jq -e '.success == true' "$tmp/webhook-delete.json" >/dev/null
 echo
 echo "smoke: muster project get 'Smoke tests', then a throwaway project updated, deleted, unarchived and deleted again (ADR 0014)"
 "$bin" project get "Smoke tests" | jq -c '{name, status: .status.name, members: (.members.nodes | length), milestones: (.projectMilestones.nodes | length), trashed}' | tee "$tmp/project-get.json"

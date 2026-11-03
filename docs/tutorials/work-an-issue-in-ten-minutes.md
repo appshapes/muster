@@ -164,6 +164,13 @@ A template is a saved shape for a new issue, project or document:
 that JSON (`--workspace` for one every team shares); `muster template update Feature
 --data-file feature.json` replaces the data, and `muster template delete Feature`
 deletes it, with no undo.
+A webhook is a URL Linear posts changes to: `muster webhook create --url
+https://example.com/hooks/issues --resource-type Issue --resource-type Comment --label
+"Issues" --secret-file secret.txt` makes one for the team (one JSON line with its
+`url`, `enabled`, `resourceTypes` and `team`, never its secret), `muster webhook
+list` prints them, `muster webhook update Issues --enabled false` stops it without
+deleting it, and `muster webhook delete Issues` deletes it, with no undo; a webhook
+is named by its label, else its URL, else its id.
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):

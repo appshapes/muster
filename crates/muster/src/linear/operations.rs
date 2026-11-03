@@ -196,6 +196,15 @@ pub const TEMPLATE_FIELDS: &str = "fragment TemplateFields on Template {
   creator { id name displayName }
 }";
 
+/// The fields every webhook answer carries (ADR 0014, group 16); the `secret` is
+/// never asked for.
+pub const WEBHOOK_FIELDS: &str = "fragment WebhookFields on Webhook {
+  id label url enabled resourceTypes allPublicTeams
+  createdAt updatedAt archivedAt
+  team { id key }
+  creator { id name displayName }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -479,6 +488,16 @@ op!(
   templateSearch(first: 2, filter: { name: { eqIgnoreCase: $name }, or: [ { team: { key: { eq: $key } } }, { team: { null: true } } ] }, includeArchived: $includeArchived) { ...TemplateFields }
 }",
     &[TEMPLATE_FIELDS]
+);
+
+op!(
+    WEBHOOKS,
+    "Webhooks",
+    Kind::Query,
+    "query Webhooks($first: Int!) {
+  webhooks(first: $first) { nodes { ...WebhookFields } pageInfo { hasNextPage } }
+}",
+    &[WEBHOOK_FIELDS]
 );
 
 op!(
@@ -982,6 +1001,35 @@ op!(
 }"
 );
 
+op!(
+    WEBHOOK_CREATE,
+    "WebhookCreate",
+    Kind::Mutation,
+    "mutation WebhookCreate($input: WebhookCreateInput!) {
+  webhookCreate(input: $input) { success webhook { ...WebhookFields } }
+}",
+    &[WEBHOOK_FIELDS]
+);
+
+op!(
+    WEBHOOK_UPDATE,
+    "WebhookUpdate",
+    Kind::Mutation,
+    "mutation WebhookUpdate($id: String!, $input: WebhookUpdateInput!) {
+  webhookUpdate(id: $id, input: $input) { success webhook { ...WebhookFields } }
+}",
+    &[WEBHOOK_FIELDS]
+);
+
+op!(
+    WEBHOOK_DELETE,
+    "WebhookDelete",
+    Kind::Mutation,
+    "mutation WebhookDelete($id: String!) {
+  webhookDelete(id: $id) { success entityId }
+}"
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -1009,6 +1057,7 @@ pub static READS: &[&Operation] = &[
     &DOCUMENT_BY_TITLE,
     &TEMPLATES,
     &TEMPLATE_BY_NAME,
+    &WEBHOOKS,
 ];
 
 /// Every write operation.
@@ -1063,6 +1112,9 @@ pub static WRITES: &[&Operation] = &[
     &TEMPLATE_CREATE,
     &TEMPLATE_UPDATE,
     &TEMPLATE_DELETE,
+    &WEBHOOK_CREATE,
+    &WEBHOOK_UPDATE,
+    &WEBHOOK_DELETE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -1122,6 +1174,7 @@ mod tests {
                 "CycleFields",
                 "DocumentFields",
                 "TemplateFields",
+                "WebhookFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));

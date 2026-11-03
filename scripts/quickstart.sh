@@ -104,6 +104,13 @@ jq -e '.name == "Feature" and .type == "issue" and .team.key == "APP" and (.temp
 "$bin" template list --type issue | jq -s -e 'map(.name) | index("Feature") != null' >/dev/null
 "$bin" template get Feature | jq -e '(.templateData | fromjson).title == "Feature: "' >/dev/null
 
+step "muster webhook create, update --enabled false and list"
+printf 'quickstart-signing-secret\n' > "$tmp/secret"
+"$bin" webhook create --url https://example.com/hooks/trying --resource-type Issue --resource-type Comment --label "Trying hook" --secret-file "$tmp/secret" | tee "$tmp/webhook.json"
+jq -e '.label == "Trying hook" and .enabled == true and .team.key == "APP" and .resourceTypes == ["Issue", "Comment"] and (has("secret") | not)' "$tmp/webhook.json" >/dev/null
+"$bin" webhook update "Trying hook" --enabled false | jq -e '.enabled == false' >/dev/null
+"$bin" webhook list | jq -s -e 'map(.label) | index("Trying hook") != null' >/dev/null
+
 step "muster issue list --project"
 "$bin" issue update "$id" --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
 "$bin" issue list --project "Trying muster" | tee "$tmp/in-project.jsonl"
