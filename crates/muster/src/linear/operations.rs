@@ -1106,6 +1106,24 @@ op!(
 }"
 );
 
+op!(
+    ATTACHMENT_UPDATE,
+    "AttachmentUpdate",
+    Kind::Mutation,
+    "mutation AttachmentUpdate($id: String!, $input: AttachmentUpdateInput!) {
+  attachmentUpdate(id: $id, input: $input) { success attachment { id title subtitle url sourceType createdAt issue { id identifier } } }
+}"
+);
+
+op!(
+    ATTACHMENT_DELETE,
+    "AttachmentDelete",
+    Kind::Mutation,
+    "mutation AttachmentDelete($id: String!) {
+  attachmentDelete(id: $id) { success entityId }
+}"
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -1198,6 +1216,8 @@ pub static WRITES: &[&Operation] = &[
     &ISSUE_BATCH_UPDATE,
     &COMMENT_UPDATE,
     &COMMENT_DELETE,
+    &ATTACHMENT_UPDATE,
+    &ATTACHMENT_DELETE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.

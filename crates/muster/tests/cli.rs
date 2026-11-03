@@ -3971,6 +3971,120 @@ fn comment_update_and_delete_by_id() {
     assert_eq!(run.code, 8, "{}", run.stderr);
 }
 
+// ---- attachments (ADR 0014, group 20) ----------------------------------------------------
+
+#[test]
+fn attachment_update_and_delete_by_id() {
+    let fake = Fake::start().unwrap();
+    let made = muster(
+        &fake,
+        &[
+            "issue",
+            "attach",
+            "APP-1",
+            "--url",
+            "https://example.com/spec",
+            "--title",
+            "The spec",
+        ],
+    );
+    assert_eq!(made.code, 0, "{}", made.stderr);
+    let id = made.one()["id"].as_str().unwrap().to_string();
+    let renamed = muster(
+        &fake,
+        &[
+            "attachment",
+            "update",
+            &id,
+            "--title",
+            "The spec, v2",
+            "--subtitle",
+            "revised",
+        ],
+    );
+    assert_eq!(renamed.code, 0, "{}", renamed.stderr);
+    assert_eq!(renamed.one()["id"], id);
+    assert_eq!(renamed.one()["title"], "The spec, v2");
+    assert_eq!(renamed.one()["subtitle"], "revised");
+    assert_eq!(
+        renamed.one()["url"],
+        "https://example.com/spec",
+        "the URL stays"
+    );
+    assert_eq!(renamed.one()["issue"]["identifier"], "APP-1");
+    assert_eq!(
+        fake.operations().last().map(String::as_str),
+        Some("AttachmentUpdate"),
+        "one request"
+    );
+    let title_only = muster(
+        &fake,
+        &["attachment", "update", &id, "--title", "The spec, v3"],
+    );
+    assert_eq!(
+        title_only.one()["subtitle"],
+        "revised",
+        "a flag left out leaves its field alone"
+    );
+    let no_title = muster(&fake, &["attachment", "update", &id, "--subtitle", "x"]);
+    assert_eq!(
+        no_title.code, 2,
+        "Linear requires the title: {}",
+        no_title.stderr
+    );
+    let blank_title = muster(&fake, &["attachment", "update", &id, "--title", " "]);
+    assert_eq!(blank_title.code, 2, "{}", blank_title.stderr);
+    let blank_id = muster(&fake, &["attachment", "update", " ", "--title", "x"]);
+    assert_eq!(blank_id.code, 2, "{}", blank_id.stderr);
+    let nope = muster(
+        &fake,
+        &["attachment", "update", "no-such-id", "--title", "x"],
+    );
+    assert_eq!(nope.code, 4, "Linear's not found: {}", nope.stderr);
+    let shown = muster(&fake, &["issue", "get", "APP-1"]).one();
+    assert!(
+        shown["attachments"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["id"] == id && a["title"] == "The spec, v3"),
+        "`issue get` shows the change"
+    );
+    let deleted = muster(&fake, &["attachment", "delete", &id]);
+    assert_eq!(deleted.code, 0, "{}", deleted.stderr);
+    assert_eq!(deleted.one()["success"], true);
+    assert_eq!(deleted.one()["entityId"], id);
+    let shown = muster(&fake, &["issue", "get", "APP-1"]).one();
+    assert!(
+        shown["attachments"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|a| a["id"] != id),
+        "`issue get` no longer shows it"
+    );
+    assert_eq!(muster(&fake, &["attachment", "delete", &id]).code, 4);
+    let again = muster(
+        &fake,
+        &[
+            "issue",
+            "attach",
+            "APP-1",
+            "--url",
+            "https://example.com/dropped",
+            "--title",
+            "Dropped",
+        ],
+    );
+    let id = again.one()["id"].as_str().unwrap().to_string();
+    fake.fail_next("AttachmentUpdate", Failure::Drop);
+    let run = muster(&fake, &["attachment", "update", &id, "--title", "x"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("AttachmentDelete", Failure::Drop);
+    let run = muster(&fake, &["attachment", "delete", &id]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+}
+
 // ---- project updates (ADR 0014, group 11) ------------------------------------------------
 
 #[test]

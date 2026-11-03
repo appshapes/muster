@@ -88,6 +88,12 @@ user-visible change, added in the same commit as the change. The format follows
   get` prints under `comments`, and `issue comment` prints for a new one; an id Linear
   does not know is exit 4 (ADR 0014, group 19;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `attachment update <ID> --title <TEXT> [--subtitle <TEXT>]` changes a link's title
+  and subtitle (Linear's input requires the title on every update) and prints the
+  attachment as Linear returns it; `attachment delete <ID>` deletes one, with no undo,
+  printing Linear's answer. The id is the one `issue get` prints under `attachments`,
+  and `issue attach` prints for a new one; an id Linear does not know is exit 4 (ADR
+  0014, group 20; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.4.0 - 2026-11-03
 

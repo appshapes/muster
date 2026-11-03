@@ -190,6 +190,11 @@ A comment is changed or removed by the id `issue get` prints under `comments` (a
 thoughts."` replaces its body (one JSON line, with `editedAt` set), `--body-file
 notes.md` takes the body from a file, and `muster comment delete <ID>` deletes it,
 with no undo.
+A link on an issue is changed or removed by the id `issue get` prints under
+`attachments` (and `issue attach` prints for a new one): `muster attachment update
+<ID> --title "The spec, v2" --subtitle "revised"` changes its title and subtitle
+(Linear requires the title every time), and `muster attachment delete <ID>` deletes
+it, with no undo.
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):

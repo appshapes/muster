@@ -395,6 +395,13 @@ echo "smoke: muster issue attach $id"
 "$bin" issue attach "$id" --url "https://github.com/appshapes/muster/blob/master/scripts/smoke.sh" --title "The smoke script" --subtitle "attached at $stamp" | tee "$tmp/attach.json"
 jq -e '.issue.identifier == "'"$id"'" and .title == "The smoke script"' "$tmp/attach.json" >/dev/null
 echo
+echo "smoke: muster attachment update and attachment delete, on a second link of $id (ADR 0014)"
+"$bin" issue attach "$id" --url "https://github.com/appshapes/muster/blob/master/scripts/quickstart.sh" --title "The quickstart script" | jq -r .id > "$tmp/attach-second.id"
+"$bin" attachment update "$(cat "$tmp/attach-second.id")" --title "The quickstart script, renamed" --subtitle "renamed at $stamp" | jq -c '{id, title, subtitle}' | tee "$tmp/attachment-update.json"
+jq -e --arg s "renamed at $stamp" '.title == "The quickstart script, renamed" and .subtitle == $s' "$tmp/attachment-update.json" >/dev/null
+"$bin" attachment delete "$(cat "$tmp/attach-second.id")" | jq -c '{success, entityId}' | tee "$tmp/attachment-delete.json"
+jq -e '.success == true' "$tmp/attachment-delete.json" >/dev/null
+echo
 echo "smoke: muster issue attach $id, the same URL again"
 "$bin" issue attach "$id" --url "https://github.com/appshapes/muster/blob/master/scripts/smoke.sh" --title "The smoke script, renamed" | jq -c '{id, title, subtitle}' | tee "$tmp/attach2.json"
 jq -e --slurpfile first "$tmp/attach.json" '.id == $first[0].id and .title == "The smoke script, renamed" and .subtitle == $first[0].subtitle' "$tmp/attach2.json" >/dev/null

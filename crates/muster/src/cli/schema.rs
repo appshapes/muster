@@ -751,6 +751,8 @@ mod tests {
             "milestone delete",
             "project-update list",
             "project-update create",
+            "attachment update",
+            "attachment delete",
             "comment update",
             "comment delete",
             "issue archive",

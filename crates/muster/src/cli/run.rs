@@ -10,20 +10,21 @@ use crate::bounds::{
     PROJECTS_PER_INITIATIVE, TEAMS_PER_PROJECT,
 };
 use crate::cli::{
-    AttachArgs, AuditCommand, AuditListArgs, BatchUpdateArgs, Cli, CloseArgs, Command, CommentArgs,
-    CommentCommand, CommentRefArgs, CommentUpdateArgs, CreateArgs, CycleCommand, CycleListArgs,
-    CycleRefArgs, CycleUpdateArgs, DocumentCommand, DocumentCreateArgs, DocumentListArgs,
-    DocumentRefArgs, DocumentUpdateArgs, GetArgs, InitiativeCommand, InitiativeCreateArgs,
-    InitiativeListArgs, InitiativeProjectArgs, InitiativeRefArgs, InitiativeUpdateArgs,
-    IssueCommand, IssueListArgs, IssueRefArgs, LabelCommand, LabelCreateArgs, LabelRefArgs,
-    LabelUpdateArgs, ListArgs, MemberArgs, MemberCommand, MilestoneCommand, MilestoneCreateArgs,
-    MilestoneListArgs, MilestoneRefArgs, MilestoneUpdateArgs, ProjectCommand, ProjectCreateArgs,
-    ProjectRefArgs, ProjectStatusCommand, ProjectStatusCreateArgs, ProjectStatusRefArgs,
-    ProjectStatusUpdateArgs, ProjectUpdateArgs, ProjectUpdateCommand, ProjectUpdateCreateArgs,
-    ProjectUpdateListArgs, StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs,
-    TeamCommand, TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, TemplateCommand, TemplateCreateArgs,
-    TemplateListArgs, TemplateRefArgs, TemplateUpdateArgs, UpdateArgs, UserCommand, UserListArgs,
-    UserRefArgs, UserRoleArgs, UserUpdateArgs, WebhookCommand, WebhookCreateArgs, WebhookListArgs,
+    AttachArgs, AttachmentCommand, AttachmentRefArgs, AttachmentUpdateArgs, AuditCommand,
+    AuditListArgs, BatchUpdateArgs, Cli, CloseArgs, Command, CommentArgs, CommentCommand,
+    CommentRefArgs, CommentUpdateArgs, CreateArgs, CycleCommand, CycleListArgs, CycleRefArgs,
+    CycleUpdateArgs, DocumentCommand, DocumentCreateArgs, DocumentListArgs, DocumentRefArgs,
+    DocumentUpdateArgs, GetArgs, InitiativeCommand, InitiativeCreateArgs, InitiativeListArgs,
+    InitiativeProjectArgs, InitiativeRefArgs, InitiativeUpdateArgs, IssueCommand, IssueListArgs,
+    IssueRefArgs, LabelCommand, LabelCreateArgs, LabelRefArgs, LabelUpdateArgs, ListArgs,
+    MemberArgs, MemberCommand, MilestoneCommand, MilestoneCreateArgs, MilestoneListArgs,
+    MilestoneRefArgs, MilestoneUpdateArgs, ProjectCommand, ProjectCreateArgs, ProjectRefArgs,
+    ProjectStatusCommand, ProjectStatusCreateArgs, ProjectStatusRefArgs, ProjectStatusUpdateArgs,
+    ProjectUpdateArgs, ProjectUpdateCommand, ProjectUpdateCreateArgs, ProjectUpdateListArgs,
+    StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs,
+    TeamRefArgs, TeamUpdateArgs, TemplateCommand, TemplateCreateArgs, TemplateListArgs,
+    TemplateRefArgs, TemplateUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs,
+    UserRoleArgs, UserUpdateArgs, WebhookCommand, WebhookCreateArgs, WebhookListArgs,
     WebhookRefArgs, WebhookUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
@@ -204,6 +205,13 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
             match command {
                 CommentCommand::Update(args) => comment_update(&session, args, out),
                 CommentCommand::Delete(args) => comment_delete(&session, args, out),
+            }
+        }
+        Command::Attachment { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                AttachmentCommand::Update(args) => attachment_update(&session, args, out),
+                AttachmentCommand::Delete(args) => attachment_delete(&session, args, out),
             }
         }
         Command::Milestone { command } => {
@@ -3084,6 +3092,63 @@ fn comment_delete(session: &Session, args: &CommentRefArgs, out: &Output) -> Res
         .linear
         .run(&ops::COMMENT_DELETE, json!({ "id": id }))?;
     out.emit(&delete_payload(&data, "commentDelete")?);
+    Ok(())
+}
+
+/// `attachment update`: the title, and the subtitle when given, by the attachment's
+/// id; Linear's input requires the title (ADR 0014, group 20).
+fn attachment_update(
+    session: &Session,
+    args: &AttachmentUpdateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let id = args.id.trim();
+    if id.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "the attachment id is empty",
+            "`muster issue get <ISSUE>` prints each attachment's id",
+        ));
+    }
+    if args.title.trim().is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "the title is empty",
+            "Linear requires a title on every attachment update; pass --title <TEXT>",
+        ));
+    }
+    check_body(Text::Title, &args.title)?;
+    let mut input = Map::new();
+    input.insert("title".into(), json!(args.title));
+    if let Some(subtitle) = &args.subtitle {
+        check_body(Text::Subtitle, subtitle)?;
+        input.insert("subtitle".into(), json!(subtitle));
+    }
+    let data = session.linear.run(
+        &ops::ATTACHMENT_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "attachmentUpdate", "attachment")?);
+    Ok(())
+}
+
+fn attachment_delete(
+    session: &Session,
+    args: &AttachmentRefArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let id = args.id.trim();
+    if id.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "the attachment id is empty",
+            "`muster issue get <ISSUE>` prints each attachment's id",
+        ));
+    }
+    let data = session
+        .linear
+        .run(&ops::ATTACHMENT_DELETE, json!({ "id": id }))?;
+    out.emit(&delete_payload(&data, "attachmentDelete")?);
     Ok(())
 }
 

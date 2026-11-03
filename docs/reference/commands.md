@@ -656,6 +656,24 @@ Delete a comment; there is no undo.
 | --- | --- | --- | --- | --- |
 | `<ID>` | `<ID>` | yes |  | The comment's id, as `issue get` prints it |
 
+### muster attachment update
+
+Change an attachment's title and subtitle; Linear's input requires the title.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<ID>` | `<ID>` | yes |  | The attachment's id, as `issue get` prints it |
+| `--title` | `<TEXT>` | yes |  | The title; Linear requires it on every update |
+| `--subtitle` | `<TEXT>` | no |  | The second line under the title |
+
+### muster attachment delete
+
+Delete an attachment; there is no undo.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<ID>` | `<ID>` | yes |  | The attachment's id, as `issue get` prints it |
+
 ### muster milestone list
 
 List a project's milestones, one JSON object per line.
@@ -1152,3 +1170,5 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `IssueBatchUpdate` | mutation |
 | `CommentUpdate` | mutation |
 | `CommentDelete` | mutation |
+| `AttachmentUpdate` | mutation |
+| `AttachmentDelete` | mutation |
