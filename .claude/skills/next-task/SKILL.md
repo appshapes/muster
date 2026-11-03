@@ -47,11 +47,12 @@ to `master` while this one runs.
 - `grep -n 'not built yet' justfile`: the gates that do not exist.
 - `grep -H -m1 'Status' docs/decisions/*.md`: the Proposed ADRs.
 - `grep -n -A4 '^Revisit' docs/decisions/*.md`: the Revisit clauses.
-- The Decision section of the slice ADR: ADR 0013,
-  `docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md`,
-  three features in order, since the five of ADR 0007 are done (its Revisit clause
-  fired on 2026-11-03); the issue identifier where it names one, and the gates each
-  feature builds.
+- The Decision section of the slice ADR: ADR 0014,
+  `docs/decisions/0014-build-the-third-slice-administrative-commands.md`,
+  twenty groups in three blocks, in order, since the three features of ADR 0013 are
+  done (its Revisit clause fired on 2026-11-03 with release 0.2.0; ADR 0007's fired
+  the same day); the issue identifier where it names one, and the gates each group
+  builds.
   When its Revisit clause has fired (the slice is done by its own "done when"), the
   slice is done, and until the next slice's ADR is Accepted, writing it is the task.
 - For every feature of the slice and every open issue:

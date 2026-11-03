@@ -8,6 +8,82 @@ user-visible change, added in the same commit as the change. The format follows
 
 ### Added
 
+- `label create --name <TEXT> [--workspace] [--color <HEX>] [--description <TEXT>]
+  [--parent <NAME>] [--group]` makes a label for the team, or for every team with
+  `--workspace`, through Linear's `issueLabelCreate`; a name a label of the same
+  scope has is refused, exit 6, unless `--allow-duplicate`. `label update <NAME>`
+  changes the name, colour, description or group (`--parent none` takes it out of
+  its group); `label retire <NAME>` and `label restore <NAME>` take a label out of
+  use and back, a retired label staying on its issues and going on no new one;
+  `label delete <NAME>` removes it from every issue, with no undo in Linear, so the
+  reference names retire first. A label is named as `--label` names one, the team's
+  own before the workspace's; `label list` now prints `retiredAt` and `createdAt`
+  (ADR 0014, group 6; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `state create --name <TEXT> --type <backlog|unstarted|started|completed|canceled>
+  --color <HEX> [--description <TEXT>] [--position <N>]` adds a state to the team's
+  workflow through Linear's `workflowStateCreate`; a name a state of the team has is
+  refused, exit 6, unless `--allow-duplicate`, and the type cannot change
+  afterwards. `state update <NAME>` changes the name, colour, description or
+  position; `state archive <NAME>` takes a state out of the workflow, which Linear
+  refuses, exit 6, while the state holds an issue that is not archived, and nothing
+  brings an archived state back. `--position` takes a finite number; `nan`, `inf`
+  and a number too large for one, such as `1e400`, are usage errors, exit 2, before
+  any request (ADR 0014, group 7;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `project get <NAME>` prints a project whole, in one request: what `project list`
+  prints, with its `content`, `slugId`, `color`, `icon`, `health`, `progress`,
+  `scope`, the lifecycle times, `trashed`, `creator`, `lastUpdate`, and its
+  `members` and `projectMilestones`, each bounded by a new constant,
+  `MEMBERS_PER_PROJECT` and `MILESTONES_PER_PROJECT`, with a `truncated` notice past
+  it. `project update <NAME>` changes a project through Linear's `projectUpdate`:
+  `--name`, `--description`, `--content` or `--content-file`, `--status <NAME>` (one
+  of the workspace's project statuses), `--lead <WHO|none>`, `--start-date` and
+  `--target-date` (a date or `none`), `--priority`, `--teams <KEY,...>` (which
+  replaces the list), `--add-member` and `--remove-member` (Linear replaces the
+  member list whole, so muster reads it first and refuses, exit 6, before any
+  request, a project whose list is cut at `MEMBERS_PER_PROJECT`), `--color` and
+  `--icon`. `project delete <NAME>` trashes a project, which Linear keeps for thirty
+  days, and `project unarchive <NAME>` brings it back; both print Linear's entity
+  (ADR 0014, group 8; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `project-status list` prints the workspace's project statuses by position, each
+  with its `type`, `color`, `position` and `indefinite`; `project-status create
+  --name <TEXT> --type <backlog|planned|started|paused|completed|canceled> --color
+  <HEX> --position <N> [--description] [--indefinite <true|false>]` adds one through
+  Linear's `projectStatusCreate` (a name a status has is refused, exit 6, unless
+  `--allow-duplicate`); `project-status update <NAME>` changes it; `project-status
+  archive <NAME>` takes it out, which Linear refuses, exit 6, for a status with
+  active projects or the last of its type, and `project-status unarchive <NAME>`
+  brings it back (ADR 0014, group 9;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+
+### Changed
+
+- When Linear answers "Argument Validation Error", the reason it puts in
+  `userPresentableMessage`, such as "name must be shorter than or equal to 25
+  characters", now rides on the error object's `linear.message` after the message,
+  so that the output says what to fix (invariant 4); every other message stays as
+  Linear sent it.
+
+## 0.3.0 - 2026-11-03
+
+The first block of the third slice ([ADR 0014](docs/decisions/0014-build-the-third-slice-administrative-commands.md)),
+for an agent that administers a workspace: `workspace get` and `workspace update`;
+`team get`, `create`, `update`, `retire`, `unretire`, `delete` and `unarchive`;
+`member list`, `add` and `remove`; `user get`, `update`, `change-role`, `suspend`,
+`unsuspend` and `revoke-sessions`, with `user list --all`. Every setting is one typed
+flag, a boolean takes `true` or `false`, `none` clears, and a flag left out leaves its
+setting alone. Linear's plan and role refusals are exit 6, and the reference spells
+out every enumerated flag's values. Invites wait on a paid plan. The crate is
+`muster-linear`: `cargo install muster-linear`.
+
+### Added
+
+- ADR 0014 decides the third slice: Linear's administrative operations as eighty-one
+  `muster` commands in twenty groups, landed one group per pull request in three
+  release blocks (0.3.0 the workspace and its people, 0.4.0 the things a project is
+  made of, 0.5.0 the rest), with the fixtures of the empty kinds recorded from a smoke
+  team and an invite to the house's own address
+  ([ADR 0014](docs/decisions/0014-build-the-third-slice-administrative-commands.md)).
 - `workspace get` prints the workspace as Linear returns it, one JSON line and no team
   needed: its `name` and `urlKey`, its settings, `securitySettings` and
   `authSettings`, `userCount`, `createdIssueCount`, `previousUrlKeys` and
@@ -20,9 +96,11 @@ user-visible change, added in the same commit as the change. The format follows
   switches, the project update reminders, the fiscal year, the upload content types,
   the ten security roles and the sign-in services. A flag left out leaves its setting
   alone, a boolean takes `true` or `false`, `none` clears the branch format, `all`
-  allows every sign-in service, and no flag at all is a usage error, exit 2, before any
-  request; most settings need a workspace admin, and Linear's refusal is exit 6 (ADR
-  0014, group 1; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+  allows every sign-in service and is the one spelling of that empty list (a value
+  that names no service is exit 2), and no flag at all is a usage error, exit 2,
+  before any request; most settings need a workspace admin, and Linear's refusal is
+  exit 6 (ADR 0014, group 1;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 - `team get [<KEY>]` prints a team with every setting, read in one request by key, or
   the team muster would use; `team list` now prints `visibility`, `cyclesEnabled`,
   `retiredAt` and `timezone` with each team. `team create --name <TEXT> [--key <KEY>]
@@ -51,9 +129,11 @@ user-visible change, added in the same commit as the change. The format follows
   `owner` and `sortOrder`, bounded by `--limit` with a `truncated` notice past it;
   `member add --user <WHO>` adds a user to the team through Linear's
   `teamMembershipCreate` (a second membership is Linear's refusal, exit 6), and
-  `member remove --user <WHO>` removes one, the membership found in the team's list
-  first, so that a user who is not a member is exit 4 before any mutation; the team
-  is the usual rule, `--team`, `MUSTER_TEAM` or the only one (ADR 0014, group 3;
+  `member remove --user <WHO>` removes one, the membership found in the team's first
+  `PAGE_CAP` members first, so that a user who is not a member is exit 4 before any
+  mutation, and a user who is not among them in a team with more is refused, exit 6,
+  a muster guard, rather than called a non-member; the team is the usual rule,
+  `--team`, `MUSTER_TEAM` or the only one (ADR 0014, group 3;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 - `user get <WHO>` prints one user with their role flags (`admin`, `owner`, `guest`,
   `app`), `active` and `disableReason`, profile, status and `lastSeen`; `user list`
@@ -64,62 +144,24 @@ user-visible change, added in the same commit as the change. The format follows
   <TIME|none>` and `--avatar-url`; a flag left out leaves its field alone. The admin's
   commands `user change-role <WHO> --role <owner|admin|user|guest>`, `user suspend`,
   `user unsuspend` and `user revoke-sessions` print Linear's `success`, then the user
-  read back, two JSON lines; a suspended user is still found by email or name, so that
+  read back, two JSON lines; when the read-back fails after the mutation landed, the
+  exit code is the read-back's (7 for a dropped query) and the error says the mutation
+  landed and names `user get`, rather than "nothing changed in Linear". A suspended
+  user is still found by email or name, by every command that names a user, so that
   `unsuspend` reaches them (ADR 0014, group 4;
-  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
-- `label create --name <TEXT> [--workspace] [--color <HEX>] [--description <TEXT>]
-  [--parent <NAME>] [--group]` makes a label for the team, or for every team with
-  `--workspace`, through Linear's `issueLabelCreate`; a name a label of the same
-  scope has is refused, exit 6, unless `--allow-duplicate`. `label update <NAME>`
-  changes the name, colour, description or group (`--parent none` takes it out of
-  its group); `label retire <NAME>` and `label restore <NAME>` take a label out of
-  use and back, a retired label staying on its issues and going on no new one;
-  `label delete <NAME>` removes it from every issue, with no undo in Linear, so the
-  reference names retire first. A label is named as `--label` names one, the team's
-  own before the workspace's; `label list` now prints `retiredAt` and `createdAt`
-  (ADR 0014, group 6; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
-- `state create --name <TEXT> --type <backlog|unstarted|started|completed|canceled>
-  --color <HEX> [--description <TEXT>] [--position <N>]` adds a state to the team's
-  workflow through Linear's `workflowStateCreate`; a name a state of the team has is
-  refused, exit 6, unless `--allow-duplicate`, and the type cannot change
-  afterwards. `state update <NAME>` changes the name, colour, description or
-  position; `state archive <NAME>` takes a state out of the workflow, which Linear
-  refuses, exit 6, while the state holds an issue that is not archived, and nothing
-  brings an archived state back (ADR 0014, group 7;
-  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
-- `project get <NAME>` prints a project whole, in one request: what `project list`
-  prints, with its `content`, `slugId`, `color`, `icon`, `health`, `progress`,
-  `scope`, the lifecycle times, `trashed`, `creator`, `lastUpdate`, and its
-  `members` and `projectMilestones`, each bounded by a new constant,
-  `MEMBERS_PER_PROJECT` and `MILESTONES_PER_PROJECT`, with a `truncated` notice past
-  it. `project update <NAME>` changes a project through Linear's `projectUpdate`:
-  `--name`, `--description`, `--content-file`, `--status <NAME>` (one of the
-  workspace's project statuses), `--lead <WHO|none>`, `--start-date` and
-  `--target-date` (a date or `none`), `--priority`, `--teams <KEY,...>` (which
-  replaces the list), `--add-member` and `--remove-member` (Linear replaces the
-  member list whole, so muster reads it first and refuses, exit 6, before any
-  request, a project whose list is cut at `MEMBERS_PER_PROJECT`), `--color` and
-  `--icon`. `project delete <NAME>` trashes a project, which Linear keeps for thirty
-  days, and `project unarchive <NAME>` brings it back; both print Linear's entity
-  (ADR 0014, group 8; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
-- `project-status list` prints the workspace's project statuses by position, each
-  with its `type`, `color`, `position` and `indefinite`; `project-status create
-  --name <TEXT> --type <backlog|planned|started|paused|completed|canceled> --color
-  <HEX> --position <N> [--description] [--indefinite <true|false>]` adds one through
-  Linear's `projectStatusCreate` (a name a status has is refused, exit 6, unless
-  `--allow-duplicate`); `project-status update <NAME>` changes it; `project-status
-  archive <NAME>` takes it out, which Linear refuses, exit 6, for a status with
-  active projects or the last of its type, and `project-status unarchive <NAME>`
-  brings it back (ADR 0014, group 9;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ### Changed
 
-- When Linear answers "Argument Validation Error", the reason it puts in
-  `userPresentableMessage`, such as "name must be shorter than or equal to 25
-  characters", now rides on the error object's `linear.message` after the message,
-  so that the output says what to fix (invariant 4); every other message stays as
-  Linear sent it.
+- `muster schema` and the reference it generates spell out the values an enumerated
+  flag takes, `<owner|admin|user|guest>` and `<Sunday|Monday|...|Saturday>` rather than
+  `<ROLE>` and `<DAY>`, for every flag whose values `clap` knows, so a flag added later
+  cannot leave them out ([the reference](docs/reference/commands.md)).
+- Linear's `FORBIDDEN` and `FEATURE_NOT_ACCESSIBLE` answers, to what the workspace's
+  plan or the key's role does not allow ("Not allowed on free plan", "Not allowed to
+  access feature 'guestAccounts'"), are a refusal, exit 6, with Linear's code and
+  message and a hint naming the plan and the role; they were exit 1, muster's own
+  failure (ADR 0014; [the reference](docs/reference/commands.md#exit-codes)).
 
 ## 0.2.0 - 2026-11-03
 

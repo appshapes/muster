@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use muster::bounds::{MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, PAGE_CAP};
 use serde_json::{Value, json};
 use support::fake_linear::{Failure, Fake, KEY};
 
@@ -864,6 +865,56 @@ fn fixtures_records_the_newest_issue_that_has_comments_attachments_and_sub_issue
         issues["issues"]["nodes"][0]["labels"]["nodes"][0]["name"], "<string>",
         "the Issues fixture is recorded on labelled issues"
     );
+    let project: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("ProjectByName.json")).unwrap())
+            .unwrap();
+    let node = &project["projects"]["nodes"][0];
+    assert_eq!(
+        node["members"]["nodes"][0]["email"], "<string>",
+        "the member node shape is recorded"
+    );
+    assert_eq!(
+        node["projectMilestones"]["nodes"][0]["name"], "<string>",
+        "the milestone node shape is recorded"
+    );
+
+    // The recorder prefers a project with a member and a milestone over a newer one
+    // with neither, and says in a `partial` notice what the project it had to settle
+    // for lacks (ADR 0014).
+    let empty = muster(&fake, &["project", "create", "--name", "Empty"]);
+    assert_eq!(empty.code, 0, "{}", empty.stderr);
+    let again = muster(&fake, &["fixtures", temp_dir().to_str().unwrap()]);
+    assert_eq!(again.code, 0, "{}", again.stderr);
+    assert!(
+        again.notices().is_empty(),
+        "Muster has both, so Empty is passed over: {}",
+        again.stderr
+    );
+    let fewer = muster(
+        &fake,
+        &["project", "update", "Muster", "--remove-member", "me"],
+    );
+    assert_eq!(fewer.code, 0, "{}", fewer.stderr);
+    let lacking = muster(&fake, &["fixtures", temp_dir().to_str().unwrap()]);
+    assert_eq!(lacking.code, 0, "{}", lacking.stderr);
+    let notices = lacking.notices();
+    assert_eq!(notices.len(), 1, "{}", lacking.stderr);
+    assert_eq!(notices[0]["code"], "partial");
+    let message = notices[0]["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("ProjectByName: recorded on \"Muster\"")
+            && message.contains("no member")
+            && !message.contains("milestone"),
+        "{message}"
+    );
+    assert!(
+        notices[0]["hint"]
+            .as_str()
+            .unwrap()
+            .contains("--add-member me"),
+        "{}",
+        lacking.stderr
+    );
 }
 
 #[test]
@@ -1519,6 +1570,17 @@ fn team_update_changes_only_what_is_passed_and_resolves_names() {
     let orphan = muster(&fake, &["team", "update", "SMK", "--parent", "none"]);
     assert_eq!(orphan.code, 0, "{}", orphan.stderr);
     assert!(orphan.one()["parent"].is_null());
+    let lowercase = muster(
+        &fake,
+        &["team", "update", "smk", "--default-issue-state", "Todo"],
+    );
+    assert_eq!(
+        lowercase.code, 0,
+        "the states are filtered by the key Linear returned, not the key as typed: {}",
+        lowercase.stderr
+    );
+    assert_eq!(lowercase.one()["key"], "SMK");
+    assert_eq!(lowercase.one()["defaultIssueState"]["name"], "Todo");
     let inferred = muster_with(
         &fake,
         &["team", "update", "--timezone", "Europe/London"],
@@ -1704,6 +1766,41 @@ fn user_get_update_role_suspension_and_sessions() {
         "`app` is not a role a person takes: {}",
         bad.stderr
     );
+
+    // A read-back that fails after the mutation landed: Linear's `success` is on
+    // stdout, the exit code is the read-back's, and the error says the mutation
+    // landed and names `user get`, never "nothing changed" (invariant 4).
+    fake.fail_next("UserById", Failure::Drop);
+    let landed = muster(&fake, &["user", "suspend", "other"]);
+    assert_eq!(landed.code, 7, "{}", landed.stderr);
+    let landed_lines = landed.lines();
+    assert_eq!(
+        landed_lines.len(),
+        1,
+        "Linear's success and no user: {}",
+        landed.stdout
+    );
+    assert_eq!(landed_lines[0]["success"], true);
+    let error = landed.error();
+    assert_eq!(error["code"], "network");
+    let message = error["message"].as_str().unwrap_or("");
+    assert!(
+        message.contains("userSuspend succeeded in Linear") && !message.contains("nothing changed"),
+        "{message}"
+    );
+    let hint = error["hint"].as_str().unwrap_or("");
+    assert!(hint.contains("muster user get \"other\""), "{hint}");
+    let everyone = muster(&fake, &["user", "list", "--all"]);
+    assert!(
+        everyone
+            .lines()
+            .iter()
+            .any(|u| u["displayName"] == "other" && u["active"] == false),
+        "the suspension landed: {}",
+        everyone.stdout
+    );
+    let restored = muster(&fake, &["user", "unsuspend", "other"]);
+    assert_eq!(restored.code, 0, "{}", restored.stderr);
 
     let suspended = muster(&fake, &["user", "suspend", "other"]);
     assert_eq!(suspended.code, 0, "{}", suspended.stderr);
@@ -1933,7 +2030,11 @@ fn project_get_prints_the_detail_and_bounds_the_members_and_milestones() {
     assert_eq!(v["lead"]["displayName"], "fake");
     assert_eq!(v["teams"]["nodes"][0]["key"], "APP");
     assert_eq!(v["members"]["nodes"][0]["displayName"], "fake");
-    assert_eq!(v["projectMilestones"]["nodes"].as_array().unwrap().len(), 0);
+    let milestone = &v["projectMilestones"]["nodes"][0];
+    assert_eq!(milestone["name"], "First cut");
+    assert_eq!(milestone["targetDate"], "2026-12-01");
+    assert!(milestone["status"].is_string() && milestone["progress"].is_number());
+    assert_eq!(v["projectMilestones"]["nodes"].as_array().unwrap().len(), 1);
     assert!(v["slugId"].is_string() && v["progress"].is_number() && v["createdAt"].is_string());
     assert!(v["content"].is_null() && v["trashed"].is_null() && v["archivedAt"].is_null());
     assert!(v["creator"]["id"].is_string());
@@ -1942,13 +2043,49 @@ fn project_get_prints_the_detail_and_bounds_the_members_and_milestones() {
     let nope = muster(&fake, &["project", "get", "Nope"]);
     assert_eq!(nope.code, 4, "{}", nope.stderr);
 
-    fake.add_project_members("Muster", 50);
+    // MILESTONES_PER_PROJECT at the bound: the seeded milestone and fifty more make
+    // fifty-one, the page holds fifty, and the notice says so.
+    fake.add_project_milestones("Muster", MILESTONES_PER_PROJECT);
+    let stones = muster(&fake, &["project", "get", "Muster"]);
+    assert_eq!(stones.code, 0, "{}", stones.stderr);
+    assert_eq!(
+        stones.one()["projectMilestones"]["nodes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        MILESTONES_PER_PROJECT
+    );
+    assert_eq!(
+        stones.one()["projectMilestones"]["pageInfo"]["hasNextPage"],
+        true
+    );
+    let notices = stones.notices();
+    assert_eq!(notices.len(), 1, "{}", stones.stderr);
+    assert!(
+        notices[0]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("projectMilestones:")
+            && notices[0]["hint"]
+                .as_str()
+                .unwrap()
+                .contains("MILESTONES_PER_PROJECT"),
+        "{}",
+        stones.stderr
+    );
+
+    // MEMBERS_PER_PROJECT at the bound, the same way; both connections are now cut, so
+    // there is one notice per connection, in the order the fields are printed.
+    fake.add_project_members("Muster", MEMBERS_PER_PROJECT);
     let cut = muster(&fake, &["project", "get", "Muster"]);
     assert_eq!(cut.code, 0, "{}", cut.stderr);
-    assert_eq!(cut.one()["members"]["nodes"].as_array().unwrap().len(), 50);
+    assert_eq!(
+        cut.one()["members"]["nodes"].as_array().unwrap().len(),
+        MEMBERS_PER_PROJECT
+    );
     assert_eq!(cut.one()["members"]["pageInfo"]["hasNextPage"], true);
     let notices = cut.notices();
-    assert_eq!(notices.len(), 1, "{}", cut.stderr);
+    assert_eq!(notices.len(), 2, "{}", cut.stderr);
     assert!(
         notices[0]["message"]
             .as_str()
@@ -1958,6 +2095,14 @@ fn project_get_prints_the_detail_and_bounds_the_members_and_milestones() {
                 .as_str()
                 .unwrap()
                 .contains("MEMBERS_PER_PROJECT"),
+        "{}",
+        cut.stderr
+    );
+    assert!(
+        notices[1]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("projectMilestones:"),
         "{}",
         cut.stderr
     );
@@ -2067,6 +2212,33 @@ Three steps.
         2,
         "me and other"
     );
+    let inline = muster(
+        &fake,
+        &["project", "update", "Muster", "--content", "One line."],
+    );
+    assert_eq!(inline.code, 0, "{}", inline.stderr);
+    assert_eq!(
+        muster(&fake, &["project", "get", "Muster"]).one()["content"],
+        "One line.",
+        "--content inline, as --content-file from a file"
+    );
+    let both = muster(
+        &fake,
+        &[
+            "project",
+            "update",
+            "Muster",
+            "--content",
+            "x",
+            "--content-file",
+            &content,
+        ],
+    );
+    assert_eq!(
+        both.code, 2,
+        "--content and --content-file conflict: {}",
+        both.stderr
+    );
     let fewer = muster(
         &fake,
         &[
@@ -2096,7 +2268,7 @@ Three steps.
             .iter()
             .filter(|o| *o == "ProjectUpdate")
             .count(),
-        2,
+        3,
         "the refusals sent nothing"
     );
 
@@ -2188,12 +2360,35 @@ fn state_create_update_and_archive() {
         "triage is Linear's own type: {}",
         triage.stderr
     );
+    // `f64::from_str`, which `clap` parses `--position` with, takes `nan`, `inf` and
+    // `1e400` (which overflows to infinity), and serde_json would write each as `null`:
+    // a position the caller never typed. Each is muster's usage error, before any
+    // request. The `=` form, since `clap` reads a bare `-inf` as flags.
+    for position in ["nan", "inf", "-inf", "1e400"] {
+        let flag = format!("--position={position}");
+        let create = muster(
+            &fake,
+            &[
+                "state", "create", "--name", "Nowhere", "--type", "backlog", "--color", "#000000",
+                &flag,
+            ],
+        );
+        assert_eq!(create.code, 2, "{flag}: {}", create.stderr);
+        assert_eq!(create.error()["code"], "usage", "{flag}: {}", create.stderr);
+        let update = muster(&fake, &["state", "update", "Blocked", &flag]);
+        assert_eq!(update.code, 2, "{flag}: {}", update.stderr);
+        assert_eq!(update.error()["code"], "usage", "{flag}: {}", update.stderr);
+    }
     assert_eq!(
         fake.operations()
             .iter()
             .filter(|o| *o == "WorkflowStateCreate")
             .count(),
         1,
+        "refused before any mutation"
+    );
+    assert!(
+        !fake.operations().iter().any(|o| o == "WorkflowStateUpdate"),
         "refused before any mutation"
     );
     let moved = muster(&fake, &["issue", "update", "APP-1", "--state", "Blocked"]);
@@ -2419,6 +2614,63 @@ fn label_create_update_retire_restore_and_delete() {
 // ---- members (ADR 0014, group 3) ---------------------------------------------------------
 
 #[test]
+fn member_remove_past_the_bound_is_refused_rather_than_called_a_non_member() {
+    let fake = Fake::start().unwrap();
+    // APP has its two seeded members; PAGE_CAP - 1 more make PAGE_CAP + 1, and the
+    // last one added is past the one page of PAGE_CAP that `member remove` reads.
+    fake.add_members("APP", PAGE_CAP - 1);
+    let last = format!("member-{}@example.com", PAGE_CAP - 1);
+    let run = muster(&fake, &["member", "remove", "--user", &last]);
+    assert_eq!(run.code, 6, "{}", run.stderr);
+    let e = run.error();
+    assert_eq!(e["code"], "refused");
+    assert!(
+        e["message"]
+            .as_str()
+            .unwrap()
+            .contains("more than PAGE_CAP (250) members"),
+        "{e}"
+    );
+    assert!(e["hint"].as_str().unwrap().contains("browser"), "{e}");
+    assert!(e["docs"].as_str().unwrap().ends_with("#bounds"), "{e}");
+    assert!(
+        !fake
+            .operations()
+            .iter()
+            .any(|o| o == "TeamMembershipDelete"),
+        "refused before any mutation: {:?}",
+        fake.operations()
+    );
+    assert_eq!(
+        muster(&fake, &["member", "list", "--limit", "250"])
+            .lines()
+            .len(),
+        250,
+        "the member is still there"
+    );
+
+    // A member inside the first page still goes.
+    let run = muster(&fake, &["member", "remove", "--user", "other@example.com"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(run.one()["success"], true);
+
+    // At the bound is not over it: the team now has exactly PAGE_CAP members, the
+    // page is not cut, and a user who is not one of them is exit 4, as before.
+    let run = muster(&fake, &["member", "remove", "--user", "other@example.com"]);
+    assert_eq!(run.code, 4, "{}", run.stderr);
+    assert_eq!(run.error()["code"], "not_found");
+    let deletes = fake
+        .operations()
+        .iter()
+        .filter(|o| *o == "TeamMembershipDelete")
+        .count();
+    assert_eq!(
+        deletes, 1,
+        "the one removal, and nothing for the two refusals"
+    );
+}
+
+#[test]
 fn member_list_add_and_remove_work_on_the_teams_memberships() {
     let fake = Fake::start().unwrap();
     let run = muster(&fake, &["member", "list"]);
@@ -2633,6 +2885,21 @@ fn workspace_update_changes_only_what_is_passed_and_reads_back() {
         "the day is spelt as Linear's enum spells it: {}",
         someday.stderr
     );
+    for empty in ["", ","] {
+        let none = muster(
+            &fake,
+            &["workspace", "update", "--allowed-auth-services", empty],
+        );
+        assert_eq!(
+            none.code, 2,
+            "{empty:?} is the empty list too, which only `all` may send: {}",
+            none.stderr
+        );
+        assert_eq!(
+            none.error()["message"],
+            "--allowed-auth-services names no service"
+        );
+    }
     assert_eq!(
         fake.operations()
             .iter()

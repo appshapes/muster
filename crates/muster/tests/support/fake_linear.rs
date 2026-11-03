@@ -183,6 +183,22 @@ impl Fake {
         st.ws.projects[index]["memberIds"] = json!(ids);
     }
 
+    /// Add `n` milestones to a project, for the bound tests.
+    pub fn add_project_milestones(&self, project: &str, n: usize) {
+        let mut st = self.state.lock().unwrap();
+        let id = st
+            .ws
+            .projects
+            .iter()
+            .find(|p| p["name"] == project)
+            .map(|p| p["id"].clone())
+            .expect("the project exists");
+        for k in 1..=n {
+            st.ws
+                .new_milestone(&id, &format!("Milestone {k}"), Some("2026-12-01"));
+        }
+    }
+
     /// Add `n` links to an issue, for the bound tests.
     pub fn add_attachments(&self, issue: &str, n: usize) {
         let mut st = self.state.lock().unwrap();
@@ -227,6 +243,23 @@ impl Fake {
                 Some(&parent),
             );
             st.ws.issues.push(child);
+        }
+    }
+
+    /// Add `n` members to a team, each a new user `Member k` with the email
+    /// `member-k@example.com`, for the bound test (ADR 0014, group 3).
+    pub fn add_members(&self, team_key: &str, n: usize) {
+        let mut st = self.state.lock().unwrap();
+        let team_id = st
+            .ws
+            .team_by_key(team_key)
+            .map(|t| t["id"].clone())
+            .expect("the team exists");
+        for k in 1..=n {
+            let id = st.ws.id();
+            let user = json!({ "id": id, "name": format!("Member {k}"), "displayName": format!("member-{k}"), "email": format!("member-{k}@example.com"), "active": true, "admin": false, "isMe": false });
+            st.ws.users.push(user.clone());
+            st.ws.new_membership(&team_id, &user["id"], false);
         }
     }
 
@@ -547,7 +580,11 @@ impl Workspace {
         project["lead"] =
             json!({ "id": me["id"], "name": me["name"], "displayName": me["displayName"] });
         project["memberIds"] = json!([me["id"]]);
+        let project_id = project["id"].clone();
         ws.projects.push(project);
+        // One milestone, so that `project get` prints a node and the recorder finds
+        // one (ADR 0014, group 8).
+        ws.new_milestone(&project_id, "First cut", Some("2026-12-01"));
         let a = ws.new_issue(
             "APP",
             "Get familiar with Linear",
@@ -704,6 +741,17 @@ impl Workspace {
             "creator": { "id": me["id"], "name": me["name"], "displayName": me["displayName"] },
             "lastUpdate": null, "memberIds": [],
         })
+    }
+
+    /// A milestone of a project, with every field `ProjectDetailFields` asks for under
+    /// `projectMilestones` (ADR 0014, group 8), pushed; `projectId` is the fake's own
+    /// and the view leaves it out.
+    fn new_milestone(&mut self, project_id: &Value, name: &str, target_date: Option<&str>) {
+        let id = self.id();
+        self.milestones.push(json!({
+            "id": id, "projectId": project_id, "name": name, "targetDate": target_date,
+            "status": "unstarted", "progress": 0.0,
+        }));
     }
 
     /// A project as `ProjectByName` answers it: the detail fields with `members` and
@@ -1057,8 +1105,9 @@ impl Workspace {
             ),
             "WorkspaceUpdate" => {
                 // Only what is sent changes; the security and auth settings merge key by
-                // key, as Linear's nested inputs do; a new URL key keeps the old one
-                // among the last three previous keys, as Linear does.
+                // key, which is the fake's model of Linear's nested inputs, not a
+                // recorded fact (the smoke run proved the hour path only); a new URL key
+                // keeps the old one among the last three previous keys, as Linear does.
                 let Some(input) = vars["input"].as_object().cloned() else {
                     return missing_variable("input", "OrganizationUpdateInput!");
                 };
@@ -1381,10 +1430,20 @@ impl Workspace {
                 let Some(teams) = vars["teams"].as_u64().map(|n| n as usize) else {
                     return missing_variable("teams", "Int!");
                 };
+                // The filter is answered from the detail view, which carries the
+                // `members` and `projectMilestones` connections the recorder's sampler
+                // filters on, as Linear filters a project by its relations; the page
+                // prints `ProjectFields`.
                 let projects: Vec<Value> = self
                     .projects
                     .iter()
-                    .filter(|p| p["archivedAt"].is_null() && passes(p, filter))
+                    .filter(|p| {
+                        p["archivedAt"].is_null()
+                            && passes(
+                                &self.project_detail(p, teams, usize::MAX, usize::MAX),
+                                filter,
+                            )
+                    })
                     .map(|p| Workspace::project_view(p, teams))
                     .collect();
                 (

@@ -122,7 +122,7 @@ pub struct WorkspaceUpdateArgs {
     #[arg(long, value_name = "URL")]
     pub logo_url: Option<String>,
     /// The template for the branch name Linear suggests for an issue, or `none` for Linear's default
-    #[arg(long, value_name = "TEXT")]
+    #[arg(long, value_name = "TEXT|none")]
     pub git_branch_format: Option<String>,
     /// Whether the git integration posts a linkback comment on a private repository's pull request
     #[arg(long, value_name = "true|false")]
@@ -199,7 +199,7 @@ pub struct WorkspaceUpdateArgs {
     /// The least role that may create a workspace-wide initiative
     #[arg(long, value_name = "ROLE", value_enum)]
     pub workspace_initiatives_role: Option<Role>,
-    /// The sign-in services allowed, comma-separated (google,saml), or `all`
+    /// The sign-in services allowed, comma-separated (google,saml), or `all` for every one; a value that names none is a usage error, exit 2
     #[arg(long, value_name = "SERVICE,...|all")]
     pub allowed_auth_services: Option<String>,
     /// Whether a new user whose email domain this workspace claims is shown no other workspace at sign-up
@@ -534,7 +534,7 @@ pub enum MemberCommand {
     List(ListArgs),
     /// Add a user to the team
     Add(MemberArgs),
-    /// Remove a user from the team; a user may remove themselves, a team owner or a workspace admin anyone
+    /// Remove a user from the team; a user may remove themselves, a team owner or a workspace admin anyone. The membership is found in the team's first PAGE_CAP members: a user who is not among them is exit 4 when the team has no more, and exit 6, refused before any mutation, when it has
     Remove(MemberArgs),
 }
 
@@ -737,7 +737,7 @@ pub struct StateCreateArgs {
     /// The description, plain text
     #[arg(long, value_name = "TEXT")]
     pub description: Option<String>,
-    /// Where the state sits among the team's, a number; Linear's default is the end
+    /// Where the state sits among the team's, a finite number; Linear's default is the end
     #[arg(long, value_name = "N")]
     pub position: Option<f64>,
     /// Create it even when a state of the team has the name
@@ -760,7 +760,7 @@ pub struct StateUpdateArgs {
     /// A new description, plain text
     #[arg(long, value_name = "TEXT")]
     pub description: Option<String>,
-    /// A new position among the team's states
+    /// A new position among the team's states, a finite number
     #[arg(long, value_name = "N")]
     pub position: Option<f64>,
 }
@@ -839,7 +839,10 @@ pub struct ProjectUpdateArgs {
     /// A new description, plain text
     #[arg(long, value_name = "TEXT")]
     pub description: Option<String>,
-    /// The project's content, markdown, from a file, or from stdin when PATH is `-`
+    /// The project's content, markdown
+    #[arg(long, value_name = "TEXT", conflicts_with = "content_file")]
+    pub content: Option<String>,
+    /// The content from a file, or from stdin when PATH is `-`
     #[arg(long, value_name = "PATH")]
     pub content_file: Option<String>,
     /// A new status, by name, one of the workspace's project statuses
