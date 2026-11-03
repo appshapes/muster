@@ -202,14 +202,20 @@ impl Session {
             .collect()
     }
 
-    fn project_id(&self, name: &str) -> Result<String, Error> {
+    /// The first project of the workspace with this name, case-insensitively, in one
+    /// `Projects` request; `None` when there is none. What `--project <NAME>` resolves
+    /// and what `project create`'s duplicate guard checks, from one place.
+    fn find_project(&self, name: &str) -> Result<Option<Value>, Error> {
         let data = self.linear.run(
             &ops::PROJECTS,
             json!({ "first": 1, "filter": { "name": { "eqIgnoreCase": name } }, "teams": TEAMS_PER_PROJECT }),
         )?;
-        let projects = nodes(&data, "projects");
-        match projects.first() {
-            Some(project) => need_str(project, "id", "Projects"),
+        Ok(nodes(&data, "projects").into_iter().next())
+    }
+
+    fn project_id(&self, name: &str) -> Result<String, Error> {
+        match self.find_project(name)? {
+            Some(project) => need_str(&project, "id", "Projects"),
             None => Err(Error::with_hint(
                 ErrorCode::NotFound,
                 format!("no project named {name:?}"),
@@ -502,39 +508,47 @@ fn list_users(session: &Session, args: &ListArgs, out: &Output) -> Result<(), Er
     Ok(())
 }
 
-fn project_create(session: &Session, args: &ProjectCreateArgs, out: &Output) -> Result<(), Error> {
-    let (team, _) = session.team()?;
-    let team_id = need_str(&team, "id", "Teams")?;
-    if !args.allow_duplicate {
-        let data = session.linear.run(
-            &ops::PROJECTS,
-            json!({ "first": 1, "filter": { "name": { "eqIgnoreCase": args.name } }, "teams": TEAMS_PER_PROJECT }),
-        )?;
-        if let Some(existing) = nodes(&data, "projects").first() {
-            return Err(Error::with_hint(
-                ErrorCode::Refused,
-                format!(
-                    "a project named {:?} exists: {}",
-                    str_at(existing, "name").unwrap_or(&args.name),
-                    str_at(existing, "url").unwrap_or("?")
-                ),
-                "use that project, or pass --allow-duplicate if a second one is wanted; `--project <NAME>` resolves a name to the first match",
-            ));
-        }
+/// The input of `projectCreate` but its `teamIds`: `--name` and `--description`, each
+/// checked against `BODY_MAX_BYTES` before any request. The unit test reaches the bound
+/// here, in process, where Linux argv cannot (one argument is capped at 128 KiB).
+fn project_input(args: &ProjectCreateArgs) -> Result<Map<String, Value>, Error> {
+    check_body(Text::Name, &args.name)?;
+    let mut input = Map::new();
+    input.insert("name".into(), json!(args.name));
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
     }
-    let mut input = json!({ "name": args.name, "teamIds": [team_id] });
-    if let (Some(description), Some(map)) = (&args.description, input.as_object_mut()) {
-        map.insert("description".into(), json!(description));
+    Ok(input)
+}
+
+fn project_create(session: &Session, args: &ProjectCreateArgs, out: &Output) -> Result<(), Error> {
+    let mut input = project_input(args)?;
+    let (team, _) = session.team()?;
+    input.insert("teamIds".into(), json!([need_str(&team, "id", "Teams")?]));
+    // The guard is workspace-wide, as `--project <NAME>` resolves workspace-wide: a
+    // second project with the name would make the first unreachable by name.
+    if !args.allow_duplicate
+        && let Some(existing) = session.find_project(&args.name)?
+    {
+        return Err(Error::with_hint(
+            ErrorCode::Refused,
+            format!(
+                "a project named {:?} exists in the workspace: {}",
+                str_at(&existing, "name").unwrap_or(&args.name),
+                str_at(&existing, "url").unwrap_or("?")
+            ),
+            "use that project, or pass --allow-duplicate if a second one is wanted; `--project <NAME>` resolves a name to the first match",
+        )
+        .at("muster-project-create"));
     }
     let data = session.linear.run(
         &ops::PROJECT_CREATE,
-        json!({ "input": input, "teams": TEAMS_PER_PROJECT }),
+        json!({ "input": Value::Object(input), "teams": TEAMS_PER_PROJECT }),
     )?;
-    let project = payload(&data, "projectCreate", "project")?;
-    out.emit(&project);
-    if has_next_page(&project, "teams") {
-        teams_notice(out, &[str_at(&project, "name").unwrap_or("?").to_string()]);
-    }
+    // A project muster makes has the one team, so its `teams` page is never cut; the
+    // `truncated` notice is `project list`'s, where a project may span many.
+    out.emit(&payload(&data, "projectCreate", "project")?);
     Ok(())
 }
 
@@ -769,7 +783,8 @@ fn issue_create(session: &Session, args: &CreateArgs, out: &Output) -> Result<()
                     str_at(existing, "identifier").unwrap_or("?")
                 ),
                 "use that issue, or pass --allow-duplicate if a second one is wanted",
-            ));
+            )
+            .at("muster-issue-create"));
         }
     }
     input.insert("teamId".into(), json!(team_id));
@@ -1090,6 +1105,38 @@ mod tests {
         let e =
             title_and_description(Some("x"), &None, &Some("/nonexistent/notes.md".into())).err();
         assert_eq!(e.as_ref().map(|e| e.code), Some(ErrorCode::Usage), "{e:?}");
+    }
+
+    #[test]
+    fn a_project_input_is_bounded_in_process() {
+        let at = ProjectCreateArgs {
+            name: "n".repeat(BODY_MAX_BYTES),
+            description: Some("d".repeat(BODY_MAX_BYTES)),
+            allow_duplicate: false,
+        };
+        assert!(project_input(&at).is_ok(), "at the bound is not over it");
+        let over = ProjectCreateArgs {
+            name: "n".repeat(BODY_MAX_BYTES + 1),
+            description: None,
+            allow_duplicate: false,
+        };
+        let e = project_input(&over).err();
+        assert_eq!(e.as_ref().map(|e| e.code), Some(ErrorCode::Refused));
+        assert!(
+            e.as_ref()
+                .is_some_and(|e| e.message.starts_with("the name is")),
+            "{e:?}"
+        );
+        let long = ProjectCreateArgs {
+            name: "ok".into(),
+            description: Some("d".repeat(BODY_MAX_BYTES + 1)),
+            allow_duplicate: false,
+        };
+        assert!(
+            project_input(&long)
+                .err()
+                .is_some_and(|e| e.message.starts_with("the body is"))
+        );
     }
 
     #[test]

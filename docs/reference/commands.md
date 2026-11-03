@@ -54,13 +54,13 @@ List them, one JSON object per line.
 
 ### muster project create
 
-Create a project for the team; a name an existing project already has is refused unless --allow-duplicate.
+Create a project for the team; a name a project of the workspace already has is refused unless --allow-duplicate.
 
 | Argument or flag | Value | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `--name` | `<TEXT>` | yes |  | The name |
 | `--description` | `<TEXT>` | no |  | The description, plain text |
-| `--allow-duplicate` |  | no |  | Create it even when a project with the same name exists |
+| `--allow-duplicate` |  | no |  | Create it even when a project of the workspace has the same name |
 
 ### muster user list
 
@@ -217,7 +217,7 @@ Every limit muster has, from `crates/muster/src/bounds.rs` (CLAUDE.md, invariant
 | `CHILDREN_PER_ISSUE` | 50 | items | the sub-issues `issue get` fetches with an issue, newest first, as Linear orders them; a parent with more writes a `truncated` notice to stderr and the oldest are the ones left out |
 | `TEAMS_PER_PROJECT` | 10 | items | the teams `project list` and `project create` print with a project under `teams.nodes`; a project in more writes a `truncated` notice to stderr; bounded so that a page of PAGE_CAP projects stays inside Linear's query-complexity limit of 10,000 |
 | `REQUEST_TIMEOUT_SECS` | 30 | seconds | one request, connect to last byte; past it a query exits 7 and a mutation exits 8 |
-| `BODY_MAX_BYTES` | 262144 | bytes | the largest description, comment, title, link or subtitle sent; a larger one is refused, exit 6, before any request, and the message names which one it was; Linux refuses one argv string over 128 KiB before muster runs, so from a flag's value the bound is reached only where the OS allows the argument, from a file or stdin everywhere |
+| `BODY_MAX_BYTES` | 262144 | bytes | the largest description, comment, title, name, link or subtitle sent; a larger one is refused, exit 6, before any request, and the message names which one it was; Linux refuses one argv string over 128 KiB before muster runs, so from a flag's value the bound is reached only where the OS allows the argument, from a file or stdin everywhere |
 | `RESPONSE_MAX_BYTES` | 16777216 | bytes | the largest answer read; a larger one is muster's failure, exit 1 |
 | `RETRIES` | 0 | attempts | how many times a failed request is sent again: never; the exit code tells the caller what happened and the caller decides |
 

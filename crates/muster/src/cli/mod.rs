@@ -101,7 +101,7 @@ pub struct ListArgs {
 pub enum ProjectCommand {
     /// List them, one JSON object per line
     List(ListArgs),
-    /// Create a project for the team; a name an existing project already has is refused unless --allow-duplicate
+    /// Create a project for the team; a name a project of the workspace already has is refused unless --allow-duplicate
     Create(ProjectCreateArgs),
 }
 
@@ -114,7 +114,7 @@ pub struct ProjectCreateArgs {
     /// The description, plain text
     #[arg(long, value_name = "TEXT")]
     pub description: Option<String>,
-    /// Create it even when a project with the same name exists
+    /// Create it even when a project of the workspace has the same name
     #[arg(long)]
     pub allow_duplicate: bool,
 }

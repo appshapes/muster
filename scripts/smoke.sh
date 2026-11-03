@@ -25,7 +25,7 @@ code=$?
 set -e
 case "$code" in
   0) cat "$tmp/project.json" ;;
-  6) cat "$tmp/project.err"; jq -e '.error.code == "refused"' "$tmp/project.err" >/dev/null ;;
+  6) cat "$tmp/project.err"; jq -e '.error.code == "refused" and (.error.message | test("a project named"))' "$tmp/project.err" >/dev/null ;;
   *) echo "smoke: project create exited $code" >&2; cat "$tmp/project.err" >&2; exit 1 ;;
 esac
 echo

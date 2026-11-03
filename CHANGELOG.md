@@ -34,8 +34,10 @@ user-visible change, added in the same commit as the change. The format follows
   through Linear's `projectCreate` and prints it as `project list` prints one; a name an
   existing project already has is refused, exit 6, unless `--allow-duplicate`, so that
   `--project <NAME>` keeps resolving to one project. `issue list --project <NAME>` lists
-  the team's issues in a project and `--project none` those in no project (ADR 0013,
-  feature 3; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+  the team's issues in a project and `--project none` those in no project; the guard is
+  workspace-wide, as `--project <NAME>` resolves, and `--name` and `--description` are
+  bounded by `BODY_MAX_BYTES` like every other text (ADR 0013, feature 3;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 - `muster fixtures` records `IssueById` on an issue that has comments, attachments and
   sub-issues when the workspace has one, and writes a `partial` notice saying what the
   recording lacks; `skipped` and `partial` join the notices table of the reference.

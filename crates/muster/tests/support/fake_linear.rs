@@ -308,6 +308,16 @@ fn respond(
     stream.flush()
 }
 
+/// Linear's answer to a request that left a required variable out, as the `$teams: Int!`
+/// of `Projects` and `ProjectCreate`: a GraphQL validation error, which muster reports
+/// as exit 1 (it is muster's own mistake, not Linear's).
+fn missing_variable(name: &str, kind: &str) -> (u16, Value) {
+    (
+        400,
+        json!({ "errors": [ { "message": format!("Variable \"${name}\" of required type \"{kind}\" was not provided."), "extensions": { "code": "GRAPHQL_VALIDATION_FAILED", "type": "graphql error", "userError": true } } ] }),
+    )
+}
+
 fn not_found(what: &str) -> (u16, Value) {
     (
         200,
@@ -772,7 +782,9 @@ impl Workspace {
                 json!({ "data": { "issueLabels": Workspace::page(self.labels.iter().filter(|l| passes(l, filter)).cloned().collect(), first) } }),
             ),
             "Projects" => {
-                let teams = vars["teams"].as_u64().unwrap_or(50) as usize;
+                let Some(teams) = vars["teams"].as_u64().map(|n| n as usize) else {
+                    return missing_variable("teams", "Int!");
+                };
                 let projects: Vec<Value> = self
                     .projects
                     .iter()
@@ -1050,8 +1062,10 @@ impl Workspace {
                     "status": { "id": status_id, "name": "Backlog", "type": "backlog" },
                     "lead": null, "teams": { "nodes": teams },
                 });
+                let Some(teams) = vars["teams"].as_u64().map(|n| n as usize) else {
+                    return missing_variable("teams", "Int!");
+                };
                 self.projects.push(project.clone());
-                let teams = vars["teams"].as_u64().unwrap_or(50) as usize;
                 (
                     200,
                     json!({ "data": { "projectCreate": { "success": true, "project": Workspace::project_view(&project, teams) } } }),

@@ -3,7 +3,9 @@
 # 0010). The README's first two commands install the binary and write the key file; this
 # script builds the binary from the checkout and gives it the fake's key through the
 # environment instead, then runs the five commands that reach Linear exactly as the
-# README shows them, and checks what each one printed. What CI runs on Linux and macOS.
+# README shows them, with the second slice's project steps where the tutorial's step 4
+# names them (ADR 0013), and checks what each one printed. What CI runs on Linux and
+# macOS.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -44,6 +46,15 @@ jq -e '.body == "Read it back with issue get." and .issue.identifier == "'"$id"'
 step "muster issue get $id"
 "$bin" issue get "$id" | jq '{title, state: .state.name, comments: [.comments.nodes[].body]}' | tee "$tmp/get.json"
 jq -e '.title == "Try muster" and .state == "Backlog" and .comments == ["Read it back with issue get."]' "$tmp/get.json" >/dev/null
+
+step "muster project create"
+"$bin" project create --name "Trying muster" | tee "$tmp/project.json"
+jq -e '.name == "Trying muster" and .teams.nodes[0].key == "APP"' "$tmp/project.json" >/dev/null
+
+step "muster issue list --project"
+"$bin" issue update "$id" --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
+"$bin" issue list --project "Trying muster" | tee "$tmp/in-project.jsonl"
+jq -s -e --arg id "$id" 'map(.identifier) == [$id]' "$tmp/in-project.jsonl" >/dev/null
 
 step "muster issue close $id"
 "$bin" issue close "$id" --comment "Done from the README." | tee "$tmp/close.jsonl"

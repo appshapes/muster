@@ -134,6 +134,8 @@ pub enum Text {
     Link,
     /// A link's `--subtitle`.
     Subtitle,
+    /// A project's `--name`.
+    Name,
 }
 
 impl Text {
@@ -144,6 +146,7 @@ impl Text {
             Text::Title => "the title",
             Text::Link => "the link",
             Text::Subtitle => "the subtitle",
+            Text::Name => "the name",
         }
     }
 
@@ -156,6 +159,7 @@ impl Text {
             }
             Text::Link => "shorten the link; muster sends a URL as it is and never cuts one",
             Text::Subtitle => "shorten the subtitle; the detail belongs in a comment on the issue",
+            Text::Name => "shorten the subtitle; the detail belongs in a comment on the issue",
         }
     }
 }
