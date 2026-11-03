@@ -774,13 +774,22 @@ fn team_update_input(args: &TeamUpdateArgs) -> Result<Map<String, Value>, Error>
         let value = if is_none(period) {
             Value::Null
         } else {
-            let months: f64 = period.trim().parse().map_err(|_| {
-                Error::with_hint(
-                    ErrorCode::Usage,
-                    format!("--auto-close-period {period:?} is not a number of months"),
-                    "pass a number of months, or `none` to never close an idle issue",
-                )
-            })?;
+            // `f64::from_str` accepts `nan`, `inf` and a sign, and serde_json turns a
+            // number that is not finite into `null`, the `none` sentinel: only a
+            // finite, non-negative number is sent, and anything else is refused before
+            // any request (CLAUDE.md, When in doubt: exit non-zero rather than guess).
+            let months = period
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|months| months.is_finite() && *months >= 0.0)
+                .ok_or_else(|| {
+                    Error::with_hint(
+                        ErrorCode::Usage,
+                        format!("--auto-close-period {period:?} is not a number of months"),
+                        "pass a non-negative number of months, or `none` to never close idle issues",
+                    )
+                })?;
             json!(months)
         };
         input.insert("autoClosePeriod".into(), value);
@@ -1860,14 +1869,18 @@ mod tests {
                 .get("autoClosePeriod"),
             Some(&json!(3.0))
         );
-        let bad = TeamUpdateArgs {
-            auto_close_period: Some("soon".into()),
-            ..TeamUpdateArgs::default()
-        };
-        assert_eq!(
-            team_update_input(&bad).err().map(|e| e.code),
-            Some(ErrorCode::Usage)
-        );
+        for period in ["soon", "nan", "inf", "-inf", "infinity", "-1"] {
+            let bad = TeamUpdateArgs {
+                auto_close_period: Some(period.into()),
+                ..TeamUpdateArgs::default()
+            };
+            assert_eq!(
+                team_update_input(&bad).err().map(|e| e.code),
+                Some(ErrorCode::Usage),
+                "--auto-close-period {period:?} is refused before any request, \
+                 never sent as `null` or as a negative number"
+            );
+        }
         let blank = TeamUpdateArgs {
             key: Some(" ".into()),
             ..TeamUpdateArgs::default()
