@@ -1914,6 +1914,29 @@ fn milestone_list_create_update_delete_and_the_issue_flag() {
         1,
         "refused before any mutation"
     );
+    // The guard's read failing is the command's exit, never "no duplicate" and a
+    // create: an agent that retries after a timeout makes one, not two (ADR 0008).
+    fake.fail_next("Milestones", Failure::Drop);
+    let unread = muster(
+        &fake,
+        &[
+            "milestone",
+            "create",
+            "--project",
+            "Muster",
+            "--name",
+            "Alpha",
+        ],
+    );
+    assert_eq!(unread.code, 7, "{}", unread.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "MilestoneCreate")
+            .count(),
+        1,
+        "no mutation after a guard whose read failed"
+    );
     let nowhere = muster(
         &fake,
         &["milestone", "create", "--project", "Nope", "--name", "x"],

@@ -1777,19 +1777,27 @@ fn milestone_create(
     let mut input = milestone_input(args)?;
     let project_id = session.project_id(&args.project)?;
     // The guard: `--milestone <NAME>` resolves a name to one milestone of the project.
-    if !args.allow_duplicate
-        && let Ok(existing) = session.milestone_named(&args.project, &args.name)
-    {
-        return Err(Error::with_hint(
-            ErrorCode::Refused,
-            format!(
-                "project {:?} has a milestone named {:?} already",
-                args.project,
-                str_at(&existing, "name").unwrap_or(&args.name)
-            ),
-            "use that milestone, or pass --allow-duplicate if a second one is wanted",
-        )
-        .at("muster-milestone-create"));
+    // Its read is the command's own: a timeout, a rate limit or a dropped connection
+    // is that error on the output, never "no duplicate" and a `MilestoneCreate`. The
+    // guard exists for an agent that retries after a timeout (ADR 0008), so a read
+    // it could not make is no answer.
+    if !args.allow_duplicate {
+        let stones = nodes(
+            &session.milestones(&args.project, PAGE_CAP)?,
+            "projectMilestones",
+        );
+        if let Some(existing) = find_by(&stones, "name", &args.name) {
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "project {:?} has a milestone named {:?} already",
+                    args.project,
+                    str_at(existing, "name").unwrap_or(&args.name)
+                ),
+                "use that milestone, or pass --allow-duplicate if a second one is wanted",
+            )
+            .at("muster-milestone-create"));
+        }
     }
     input.insert("projectId".into(), json!(project_id));
     let data = session.linear.run(
