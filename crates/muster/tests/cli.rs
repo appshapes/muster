@@ -3374,6 +3374,106 @@ fn webhook_list_create_update_and_delete() {
     );
 }
 
+/// The secret is the one value that travels in a request body, so `--trace`, which
+/// prints every request, redacts it: an agent's tool log and a CI log keep stderr
+/// (ADR 0008 for the key; ADR 0014, group 16 for the secret).
+#[test]
+fn webhook_trace_never_prints_the_secret() {
+    let fake = Fake::start().unwrap();
+    let dir = temp_dir();
+    let secret = write(&dir, "secret", "s3cr3t-signing-key\n");
+    let created = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--trace",
+            "--url",
+            "https://example.com/hooks/traced",
+            "--resource-type",
+            "Issue",
+            "--secret-file",
+            &secret,
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    assert!(
+        created.stderr.contains("WebhookCreate"),
+        "the request is traced: {}",
+        created.stderr
+    );
+    assert!(
+        created.stderr.contains(r#""secret":"<redacted>""#),
+        "the secret's place is marked: {}",
+        created.stderr
+    );
+    assert!(
+        !created.stdout.contains("s3cr3t") && !created.stderr.contains("s3cr3t"),
+        "the secret is never printed, not even by --trace: {}",
+        created.stderr
+    );
+    assert!(
+        !created.stderr.contains(KEY),
+        "the key is never printed (ADR 0008): {}",
+        created.stderr
+    );
+    let new_secret = write(&dir, "secret2", "another-secret");
+    let updated = muster(
+        &fake,
+        &[
+            "webhook",
+            "update",
+            "--trace",
+            "https://example.com/hooks/traced",
+            "--label",
+            "Traced",
+            "--secret-file",
+            &new_secret,
+        ],
+    );
+    assert_eq!(updated.code, 0, "{}", updated.stderr);
+    assert_eq!(updated.one()["label"], "Traced");
+    assert!(
+        updated.stderr.contains("WebhookUpdate"),
+        "the request is traced: {}",
+        updated.stderr
+    );
+    assert!(
+        updated.stderr.contains(r#""secret":"<redacted>""#),
+        "{}",
+        updated.stderr
+    );
+    assert!(
+        !updated.stdout.contains("another-secret") && !updated.stderr.contains("another-secret"),
+        "the secret is never printed, not even by --trace: {}",
+        updated.stderr
+    );
+    assert!(
+        !updated.stderr.contains(KEY),
+        "the key is never printed (ADR 0008): {}",
+        updated.stderr
+    );
+    // Without a secret, the trace is the request as sent: nothing else is touched.
+    let plain = muster(
+        &fake,
+        &[
+            "webhook",
+            "update",
+            "--trace",
+            "Traced",
+            "--enabled",
+            "false",
+        ],
+    );
+    assert_eq!(plain.code, 0, "{}", plain.stderr);
+    assert!(
+        plain.stderr.contains(r#""input":{"enabled":false}"#),
+        "{}",
+        plain.stderr
+    );
+    assert!(!plain.stderr.contains("redacted"), "{}", plain.stderr);
+}
+
 // ---- project updates (ADR 0014, group 11) ------------------------------------------------
 
 #[test]

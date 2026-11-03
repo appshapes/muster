@@ -23,7 +23,7 @@ pub struct Cli {
     /// Render the answer as text for a person; one JSON object per line is the default
     #[arg(long, global = true)]
     pub human: bool,
-    /// Print every request and answer to stderr; the key is never printed
+    /// Print every request and answer to stderr; the key and a webhook's secret are never printed
     #[arg(long, global = true)]
     pub trace: bool,
     /// The team key (APP); else MUSTER_TEAM; else the workspace's only team

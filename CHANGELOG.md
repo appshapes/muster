@@ -54,7 +54,7 @@ user-visible change, added in the same commit as the change. The format follows
   <TYPE>... [--label <TEXT>] [--all-public-teams] [--secret-file <PATH>]` makes one for
   the team, or for every public team (a URL a webhook posts to already is refused,
   exit 6, unless `--allow-duplicate`; the secret comes from a file, or stdin as `-`,
-  never argv, and is never printed); `webhook update <WEBHOOK> [--url] [--label]
+  never argv, and is never printed, not even by `--trace`, which redacts it); `webhook update <WEBHOOK> [--url] [--label]
   [--enabled <true|false>] [--resource-type <TYPE>...] [--secret-file <PATH>]`
   changes one, `--enabled false` the reversible stop; `webhook delete <WEBHOOK>`
   deletes one, with no undo, printing Linear's answer. `<WEBHOOK>` is a label, else a

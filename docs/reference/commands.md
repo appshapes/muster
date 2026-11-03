@@ -9,7 +9,7 @@ Every command prints one JSON object per line on stdout with Linear's own field 
 | Flag | Value | Meaning |
 | --- | --- | --- |
 | `--human` |  | Render the answer as text for a person; one JSON object per line is the default |
-| `--trace` |  | Print every request and answer to stderr; the key is never printed |
+| `--trace` |  | Print every request and answer to stderr; the key and a webhook's secret are never printed |
 | `--team` | `<KEY>` | The team key (APP); else MUSTER_TEAM; else the workspace's only team |
 
 ## Commands
