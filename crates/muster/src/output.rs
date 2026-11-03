@@ -159,7 +159,7 @@ impl Text {
             }
             Text::Link => "shorten the link; muster sends a URL as it is and never cuts one",
             Text::Subtitle => "shorten the subtitle; the detail belongs in a comment on the issue",
-            Text::Name => "shorten the subtitle; the detail belongs in a comment on the issue",
+            Text::Name => "shorten the name; the detail belongs in the description",
         }
     }
 }
@@ -251,7 +251,13 @@ mod tests {
     fn a_text_over_the_bound_is_refused_by_the_name_the_caller_gave_it() {
         let at_bound = "x".repeat(BODY_MAX_BYTES);
         let over = "x".repeat(BODY_MAX_BYTES + 1);
-        for what in [Text::Body, Text::Title, Text::Link, Text::Subtitle] {
+        for what in [
+            Text::Body,
+            Text::Title,
+            Text::Link,
+            Text::Subtitle,
+            Text::Name,
+        ] {
             assert_eq!(check_body(what, &at_bound), Ok(()), "{what:?} at the bound");
             let e = check_body(what, &over).err();
             assert_eq!(e.as_ref().map(|e| e.code), Some(ErrorCode::Refused));

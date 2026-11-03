@@ -1127,6 +1127,11 @@ mod tests {
                 .is_some_and(|e| e.message.starts_with("the name is")),
             "{e:?}"
         );
+        assert_eq!(
+            e.as_ref().map(|e| e.hint.as_str()),
+            Some("shorten the name; the detail belongs in the description"),
+            "the hint names what `project create` has, not another command's flag"
+        );
         let long = ProjectCreateArgs {
             name: "ok".into(),
             description: Some("d".repeat(BODY_MAX_BYTES + 1)),
