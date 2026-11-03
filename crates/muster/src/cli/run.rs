@@ -5,22 +5,22 @@
 use serde_json::{Map, Value, json};
 
 use crate::bounds::{
-    ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, ISSUES_PER_CYCLE,
-    MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, PAGE_CAP, PROJECTS_PER_INITIATIVE,
-    TEAMS_PER_PROJECT,
+    ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, ISSUES_PER_BATCH,
+    ISSUES_PER_CYCLE, MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, PAGE_CAP,
+    PROJECTS_PER_INITIATIVE, TEAMS_PER_PROJECT,
 };
 use crate::cli::{
-    AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, CycleCommand, CycleListArgs,
-    CycleRefArgs, CycleUpdateArgs, GetArgs, InitiativeCommand, InitiativeCreateArgs,
+    AttachArgs, BatchUpdateArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, CycleCommand,
+    CycleListArgs, CycleRefArgs, CycleUpdateArgs, GetArgs, InitiativeCommand, InitiativeCreateArgs,
     InitiativeListArgs, InitiativeProjectArgs, InitiativeRefArgs, InitiativeUpdateArgs,
-    IssueCommand, IssueListArgs, LabelCommand, LabelCreateArgs, LabelRefArgs, LabelUpdateArgs,
-    ListArgs, MemberArgs, MemberCommand, MilestoneCommand, MilestoneCreateArgs, MilestoneListArgs,
-    MilestoneRefArgs, MilestoneUpdateArgs, ProjectCommand, ProjectCreateArgs, ProjectRefArgs,
-    ProjectStatusCommand, ProjectStatusCreateArgs, ProjectStatusRefArgs, ProjectStatusUpdateArgs,
-    ProjectUpdateArgs, ProjectUpdateCommand, ProjectUpdateCreateArgs, ProjectUpdateListArgs,
-    StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs,
-    TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs, UserRoleArgs,
-    UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
+    IssueCommand, IssueListArgs, IssueRefArgs, LabelCommand, LabelCreateArgs, LabelRefArgs,
+    LabelUpdateArgs, ListArgs, MemberArgs, MemberCommand, MilestoneCommand, MilestoneCreateArgs,
+    MilestoneListArgs, MilestoneRefArgs, MilestoneUpdateArgs, ProjectCommand, ProjectCreateArgs,
+    ProjectRefArgs, ProjectStatusCommand, ProjectStatusCreateArgs, ProjectStatusRefArgs,
+    ProjectStatusUpdateArgs, ProjectUpdateArgs, ProjectUpdateCommand, ProjectUpdateCreateArgs,
+    ProjectUpdateListArgs, StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs,
+    TeamCommand, TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand,
+    UserListArgs, UserRefArgs, UserRoleArgs, UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -217,6 +217,16 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 IssueCommand::Attach(args) => issue_attach(&session, args, out),
                 IssueCommand::Close(args) => issue_close(&session, args, out),
                 IssueCommand::Update(args) => issue_update(&session, args, out),
+                IssueCommand::Archive(args) => {
+                    issue_lifecycle(&session, args, &ops::ISSUE_ARCHIVE, "issueArchive", out)
+                }
+                IssueCommand::Unarchive(args) => {
+                    issue_lifecycle(&session, args, &ops::ISSUE_UNARCHIVE, "issueUnarchive", out)
+                }
+                IssueCommand::Delete(args) => {
+                    issue_lifecycle(&session, args, &ops::ISSUE_DELETE, "issueDelete", out)
+                }
+                IssueCommand::BatchUpdate(args) => issue_batch_update(&session, args, out),
             }
         }
     }
@@ -2229,6 +2239,158 @@ fn cycle_update(session: &Session, args: &CycleUpdateArgs, out: &Output) -> Resu
         json!({ "id": id, "input": Value::Object(input) }),
     )?;
     out.emit(&payload(&data, "cycleUpdate", "cycle")?);
+    Ok(())
+}
+
+/// `issue archive`, `issue unarchive` and `issue delete`: the issue resolved as
+/// `issue get` resolves one (an archived issue is reached by its identifier or id, as
+/// Linear's `issue` query does), one mutation, Linear's entity printed. `issue delete`
+/// is Linear's trash, never `permanentlyDelete` (ADR 0014, group 18).
+fn issue_lifecycle(
+    session: &Session,
+    args: &IssueRefArgs,
+    op: &ops::Operation,
+    field: &str,
+    out: &Output,
+) -> Result<(), Error> {
+    let issue = session.issue(&args.issue, 1, 1, 1)?;
+    let id = need_str(&issue, "id", "IssueById")?;
+    let data = session.linear.run(op, json!({ "id": id }))?;
+    out.emit(&payload(&data, field, "entity")?);
+    Ok(())
+}
+
+/// `issue batch-update`: the issues resolved one by one (an unknown one is exit 4
+/// before any request), at most `ISSUES_PER_BATCH` and all in one team, since a
+/// state, a label and a cycle are the team's; the fields resolved as `issue update`
+/// resolves them; one `issueBatchUpdate`; the issues printed one per line as Linear
+/// returns them.
+fn issue_batch_update(
+    session: &Session,
+    args: &BatchUpdateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let mut names: Vec<&str> = Vec::new();
+    for name in &args.issue {
+        let name = name.trim();
+        if !name.is_empty() && !names.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+            names.push(name);
+        }
+    }
+    if names.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "no issue named",
+            "pass --issue <ISSUE> once per issue, up to ISSUES_PER_BATCH",
+        ));
+    }
+    if names.len() > ISSUES_PER_BATCH {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            format!(
+                "{} issues named, and Linear changes at most {ISSUES_PER_BATCH} in one request",
+                names.len()
+            ),
+            "split the issues over several runs (docs/reference/commands.md#bounds)",
+        )
+        .at("bounds"));
+    }
+    let mut ids = Vec::new();
+    let mut team_key: Option<String> = None;
+    for name in &names {
+        let issue = session.issue(name, 1, 1, 1)?;
+        let key = need_str(&issue, "team.key", "IssueById")?;
+        match &team_key {
+            Some(first) if *first != key => {
+                return Err(Error::with_hint(
+                    ErrorCode::Usage,
+                    format!(
+                        "the issues are in two teams, {first} and {key}; a batch changes one team's issues"
+                    ),
+                    "run `issue batch-update` once per team",
+                ));
+            }
+            Some(_) => {}
+            None => team_key = Some(key),
+        }
+        ids.push(need_str(&issue, "id", "IssueById")?);
+    }
+    let Some(team_key) = team_key else {
+        return Err(Error::new(ErrorCode::Usage, "no issue named"));
+    };
+    let mut input = Map::new();
+    if let Some(state) = &args.state {
+        input.insert("stateId".into(), json!(session.state_id(&team_key, state)?));
+    }
+    if let Some(priority) = args.priority {
+        input.insert("priority".into(), json!(priority));
+    }
+    if let Some(who) = &args.assignee {
+        let value = if is_none(who) {
+            Value::Null
+        } else {
+            json!(session.user_id(who)?)
+        };
+        input.insert("assigneeId".into(), value);
+    }
+    let added = session.label_ids(&team_key, &args.add_label)?;
+    if !added.is_empty() {
+        input.insert("addedLabelIds".into(), json!(added));
+    }
+    if let Some(project) = &args.project {
+        let value = if is_none(project) {
+            Value::Null
+        } else {
+            json!(session.project_id(project)?)
+        };
+        input.insert("projectId".into(), value);
+        if let Some(milestone) = &args.milestone {
+            let value = if is_none(milestone) || is_none(project) {
+                Value::Null
+            } else {
+                let stone = session.milestone_named(project, milestone)?;
+                json!(need_str(&stone, "id", "Milestones")?)
+            };
+            input.insert("projectMilestoneId".into(), value);
+        }
+    }
+    if let Some(cycle) = &args.cycle {
+        let value = if is_none(cycle) {
+            Value::Null
+        } else {
+            let cycle = session.cycle_ref(&team_key, cycle)?;
+            json!(need_str(&cycle, "id", "Cycles")?)
+        };
+        input.insert("cycleId".into(), value);
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --state, --priority, --assignee, --add-label, --project, --cycle, --milestone",
+        ));
+    }
+    let data = session.linear.run(
+        &ops::ISSUE_BATCH_UPDATE,
+        json!({ "ids": ids, "input": Value::Object(input) }),
+    )?;
+    let answer = &data["issueBatchUpdate"];
+    if answer["success"] != Value::Bool(true) {
+        return Err(Error::with_hint(
+            ErrorCode::Refused,
+            "Linear answered issueBatchUpdate with success false",
+            "the issues were not changed; `muster issue get <ISSUE>` shows each as it is",
+        ));
+    }
+    let issues = answer["issues"].as_array().cloned().ok_or_else(|| {
+        Error::new(
+            ErrorCode::Failed,
+            "issueBatchUpdate answered without its issues",
+        )
+    })?;
+    for issue in &issues {
+        out.emit(issue);
+    }
     Ok(())
 }
 

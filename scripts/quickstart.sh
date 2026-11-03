@@ -90,6 +90,12 @@ jq -e '.isActive == true and .number == 2 and .team.key == "APP"' "$tmp/cycle.js
 "$bin" issue update "$id" --cycle active | jq -e '.cycle.number == 2' >/dev/null
 "$bin" cycle get 2 | jq -e --arg id "$id" '[.issues.nodes[].identifier] | index($id) != null' >/dev/null
 
+step "muster issue batch-update, archive and unarchive"
+"$bin" issue batch-update --issue "$id" --priority 3 | jq -e '.priority == 3 and .identifier == "'"$id"'"' >/dev/null
+"$bin" issue archive "$id" | jq -e '.archivedAt != null' >/dev/null
+"$bin" issue list --all | jq -s -e --arg id "$id" 'map(.identifier) | index($id) == null' >/dev/null
+"$bin" issue unarchive "$id" | jq -e '.archivedAt == null' >/dev/null
+
 step "muster issue list --project"
 "$bin" issue update "$id" --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
 "$bin" issue list --project "Trying muster" | tee "$tmp/in-project.jsonl"

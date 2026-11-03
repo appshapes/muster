@@ -139,6 +139,13 @@ its Business plan and refuses below it), `muster initiative add-project Growth
 --project "Trying muster"` puts the project in it, `muster initiative get Growth`
 prints it with its `projects` (bounded by `PROJECTS_PER_INITIATIVE`), and `muster
 initiative archive Growth` puts it away (`unarchive` brings it back).
+Several issues change at once with `muster issue batch-update --issue APP-5 --issue
+APP-6 --state Todo --priority 3` (one JSON line per issue, as Linear returns them;
+up to `ISSUES_PER_BATCH` issues of one team per run). `muster issue archive APP-5`
+takes an issue out of the lists and `muster issue unarchive APP-5` brings it back;
+`muster issue delete APP-5` puts it in Linear's trash, with its sub-issues, for
+thirty days, and `unarchive` brings that back too; muster never deletes an issue for
+good.
 A team that uses cycles (`team update --cycles-enabled true`) has
 them made by Linear: `muster cycle list` prints them newest first with their `number`
 and the `isActive` flag, `muster cycle list --active` the one running now, `muster

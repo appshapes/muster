@@ -2715,7 +2715,7 @@ impl Workspace {
                 let mut issues: Vec<Value> = self
                     .issues
                     .iter()
-                    .filter(|i| passes(&self.filter_view(i), filter))
+                    .filter(|i| i["archivedAt"].is_null() && passes(&self.filter_view(i), filter))
                     .cloned()
                     .collect();
                 match vars["orderBy"].as_str() {
@@ -2835,6 +2835,73 @@ impl Workspace {
                 (
                     200,
                     json!({ "data": { "issueCreate": { "success": true, "issue": issue } } }),
+                )
+            }
+            "IssueArchive" | "IssueUnarchive" | "IssueDelete" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.issues.iter().position(|i| i["id"] == id) else {
+                    return not_found("Issue");
+                };
+                let now = self.now();
+                let field = match op {
+                    "IssueArchive" => {
+                        self.issues[index]["archivedAt"] = json!(now);
+                        "issueArchive"
+                    }
+                    "IssueDelete" => {
+                        // The trash: archived and marked, with the sub-issues, as Linear does.
+                        self.issues[index]["archivedAt"] = json!(now);
+                        self.issues[index]["trashed"] = json!(true);
+                        let parent_id = self.issues[index]["id"].clone();
+                        for child in self
+                            .issues
+                            .iter_mut()
+                            .filter(|i| i["parent"]["id"] == parent_id)
+                        {
+                            child["archivedAt"] = json!(now);
+                            child["trashed"] = json!(true);
+                        }
+                        "issueDelete"
+                    }
+                    _ => {
+                        self.issues[index]["archivedAt"] = Value::Null;
+                        self.issues[index]["trashed"] = Value::Null;
+                        "issueUnarchive"
+                    }
+                };
+                (
+                    200,
+                    json!({ "data": { field: { "success": true, "entity": self.issues[index].clone() } } }),
+                )
+            }
+            "IssueBatchUpdate" => {
+                // Linear's cap, read on 2026-11-03: fifty ids in one request.
+                let ids: Vec<String> = vars["ids"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if ids.is_empty() || ids.len() > 50 {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "ids must have between 1 and 50 items" } } ], "data": null }),
+                    );
+                }
+                let mut issues = Vec::new();
+                for id in ids {
+                    let (status, answer) =
+                        self.dispatch("IssueUpdate", &json!({ "id": id, "input": vars["input"] }));
+                    if answer.get("errors").is_some() || status != 200 {
+                        return (status, answer);
+                    }
+                    issues.push(answer["data"]["issueUpdate"]["issue"].clone());
+                }
+                (
+                    200,
+                    json!({ "data": { "issueBatchUpdate": { "success": true, "issues": issues } } }),
                 )
             }
             "IssueUpdate" => {

@@ -2491,6 +2491,220 @@ fn cycle_list_get_update_and_the_issue_flag() {
     );
 }
 
+// ---- issue archive, delete and batch update (ADR 0014, group 18) -------------------------
+
+#[test]
+fn issue_archive_unarchive_delete_and_batch_update() {
+    let fake = Fake::start().unwrap();
+    let archived = muster(&fake, &["issue", "archive", "APP-2"]);
+    assert_eq!(archived.code, 0, "{}", archived.stderr);
+    assert_eq!(archived.one()["identifier"], "APP-2");
+    assert!(archived.one()["archivedAt"].is_string());
+    assert!(
+        muster(&fake, &["issue", "list", "--all"])
+            .lines()
+            .iter()
+            .all(|i| i["identifier"] != "APP-2"),
+        "an archived issue leaves the list"
+    );
+    let still = muster(&fake, &["issue", "get", "APP-2"]);
+    assert_eq!(still.code, 0, "reached by its identifier: {}", still.stderr);
+    let back = muster(&fake, &["issue", "unarchive", "APP-2"]);
+    assert_eq!(back.code, 0, "{}", back.stderr);
+    assert!(back.one()["archivedAt"].is_null());
+    assert!(
+        muster(&fake, &["issue", "list", "--all"])
+            .lines()
+            .iter()
+            .any(|i| i["identifier"] == "APP-2")
+    );
+    let trashed = muster(&fake, &["issue", "delete", "APP-3"]);
+    assert_eq!(trashed.code, 0, "{}", trashed.stderr);
+    assert!(trashed.one()["archivedAt"].is_string());
+    assert!(
+        !fake
+            .operations()
+            .iter()
+            .any(|o| o.contains("permanentlyDelete")),
+        "never a permanent delete"
+    );
+    let restored = muster(&fake, &["issue", "unarchive", "APP-3"]);
+    assert_eq!(
+        restored.code, 0,
+        "the fake restores a trashed issue, as the smoke run found: {}",
+        restored.stderr
+    );
+    assert_eq!(muster(&fake, &["issue", "archive", "APP-999"]).code, 4);
+
+    let batch = muster(
+        &fake,
+        &[
+            "issue",
+            "batch-update",
+            "--issue",
+            "APP-1",
+            "--issue",
+            "APP-2",
+            "--issue",
+            "app-1",
+            "--state",
+            "Todo",
+            "--priority",
+            "3",
+            "--assignee",
+            "me",
+            "--add-label",
+            "Bug",
+            "--project",
+            "Muster",
+            "--cycle",
+            "active",
+        ],
+    );
+    assert_eq!(batch.code, 0, "{}", batch.stderr);
+    assert_eq!(
+        batch.lines().len(),
+        2,
+        "one line per issue, the repeat folded"
+    );
+    for issue in batch.lines() {
+        assert_eq!(issue["state"]["name"], "Todo");
+        assert_eq!(issue["priority"], 3);
+        assert_eq!(issue["assignee"]["displayName"], "fake");
+        assert_eq!(issue["project"]["name"], "Muster");
+        assert_eq!(issue["cycle"]["number"], 2.0);
+        assert!(
+            issue["labels"]["nodes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|l| l["name"] == "Bug"),
+            "the label added, the others kept"
+        );
+    }
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "IssueBatchUpdate")
+            .count(),
+        1,
+        "one request for the batch"
+    );
+    let cleared = muster(
+        &fake,
+        &[
+            "issue",
+            "batch-update",
+            "--issue",
+            "APP-1",
+            "--assignee",
+            "none",
+            "--project",
+            "none",
+            "--cycle",
+            "none",
+        ],
+    );
+    assert_eq!(cleared.code, 0, "{}", cleared.stderr);
+    assert!(
+        cleared.lines()[0]["assignee"].is_null()
+            && cleared.lines()[0]["project"].is_null()
+            && cleared.lines()[0]["cycle"].is_null()
+    );
+    let nothing = muster(&fake, &["issue", "batch-update", "--issue", "APP-1"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    let orphan = muster(
+        &fake,
+        &[
+            "issue",
+            "batch-update",
+            "--issue",
+            "APP-1",
+            "--milestone",
+            "Alpha",
+        ],
+    );
+    assert_eq!(
+        orphan.code, 2,
+        "--milestone needs --project: {}",
+        orphan.stderr
+    );
+    let unknown = muster(
+        &fake,
+        &[
+            "issue",
+            "batch-update",
+            "--issue",
+            "APP-1",
+            "--issue",
+            "APP-999",
+            "--priority",
+            "1",
+        ],
+    );
+    assert_eq!(unknown.code, 4, "{}", unknown.stderr);
+    fake.add_team("SMK", "Smoke tests");
+    let other = muster(
+        &fake,
+        &["issue", "create", "--team", "SMK", "--title", "Elsewhere"],
+    )
+    .one();
+    let two_teams = muster(
+        &fake,
+        &[
+            "issue",
+            "batch-update",
+            "--issue",
+            "APP-1",
+            "--issue",
+            other["identifier"].as_str().unwrap(),
+            "--priority",
+            "1",
+        ],
+    );
+    assert_eq!(
+        two_teams.code, 2,
+        "one team per batch: {}",
+        two_teams.stderr
+    );
+    let mut many = vec!["issue", "batch-update", "--priority", "1"];
+    let names: Vec<String> = (1..=51).map(|n| format!("APP-{n}")).collect();
+    for name in &names {
+        many.push("--issue");
+        many.push(name);
+    }
+    let too_many = muster(&fake, &many);
+    assert_eq!(too_many.code, 2, "ISSUES_PER_BATCH: {}", too_many.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "IssueBatchUpdate")
+            .count(),
+        2,
+        "the usage errors and the unknown issue sent no batch"
+    );
+    for (op, args) in [
+        ("IssueArchive", vec!["issue", "archive", "APP-1"]),
+        ("IssueUnarchive", vec!["issue", "unarchive", "APP-1"]),
+        ("IssueDelete", vec!["issue", "delete", "APP-1"]),
+        (
+            "IssueBatchUpdate",
+            vec![
+                "issue",
+                "batch-update",
+                "--issue",
+                "APP-1",
+                "--priority",
+                "2",
+            ],
+        ),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+}
+
 // ---- project updates (ADR 0014, group 11) ------------------------------------------------
 
 #[test]

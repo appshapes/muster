@@ -1391,6 +1391,52 @@ pub enum IssueCommand {
     Close(CloseArgs),
     /// Change an issue's title, state, labels, priority, assignee, project, parent or description
     Update(Box<UpdateArgs>),
+    /// Archive an issue; `issue unarchive` brings it back
+    Archive(IssueRefArgs),
+    /// Bring an archived issue back
+    Unarchive(IssueRefArgs),
+    /// Put an issue in the trash, with its sub-issues, for Linear's thirty days; never a permanent delete
+    Delete(IssueRefArgs),
+    /// Change the same fields on up to ISSUES_PER_BATCH issues of one team in one request
+    BatchUpdate(Box<BatchUpdateArgs>),
+}
+
+/// An issue, for `issue archive`, `issue unarchive` and `issue delete`.
+#[derive(Args, Debug)]
+pub struct IssueRefArgs {
+    /// The identifier (APP-12), the number alone (12, in the team) or the id
+    #[arg(value_name = "ISSUE")]
+    pub issue: String,
+}
+
+/// `issue batch-update` (ADR 0014, group 18): the fields `issue update` takes that
+/// make sense for many issues at once, through Linear's `issueBatchUpdate`.
+#[derive(Args, Debug, Default)]
+pub struct BatchUpdateArgs {
+    /// An issue to change: the identifier, the number alone or the id; repeatable, up to ISSUES_PER_BATCH, all in one team
+    #[arg(long, value_name = "ISSUE", required = true)]
+    pub issue: Vec<String>,
+    /// A new state, by name in the team
+    #[arg(long, value_name = "NAME")]
+    pub state: Option<String>,
+    /// A new priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low
+    #[arg(long, value_name = "0-4", value_parser = clap::value_parser!(u8).range(0..=4))]
+    pub priority: Option<u8>,
+    /// A new assignee: `me`, an email address, a name, or `none`
+    #[arg(long, value_name = "WHO")]
+    pub assignee: Option<String>,
+    /// A label to add, by name; repeatable
+    #[arg(long, value_name = "NAME")]
+    pub add_label: Vec<String>,
+    /// A new project, by name, or `none`
+    #[arg(long, value_name = "NAME")]
+    pub project: Option<String>,
+    /// A new cycle of the team: a number, `active`, `next`, or `none`
+    #[arg(long, value_name = "NUMBER|active|next|none")]
+    pub cycle: Option<String>,
+    /// A new milestone of the project `--project` names, or `none`
+    #[arg(long, value_name = "NAME", requires = "project")]
+    pub milestone: Option<String>,
 }
 
 /// `issue get`.
