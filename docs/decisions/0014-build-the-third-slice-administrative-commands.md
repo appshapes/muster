@@ -227,9 +227,10 @@ project is made of, 0.5.0 for the rest.
     and the `projects`, bounded by `PROJECTS_PER_INITIATIVE`. `initiative create
     --name <TEXT> [--description] [--owner <WHO>] [--lead-team <KEY>]
     [--status <Proposed|Planned|Active|Completed|Canceled>] [--target-date <DATE>]
-    [--priority <0-4>] [--content-file <PATH>]` (`initiativeCreate`, the duplicate
-    guard on the name). `initiative update <NAME> [...]` (`initiativeUpdate`; `none`
-    clears the owner, the lead team and the target date). `initiative archive <NAME>`
+    [--priority <0-4>] [--content <TEXT>|--content-file <PATH>]` (`initiativeCreate`,
+    the duplicate guard on the name). `initiative update <NAME> [...]`
+    (`initiativeUpdate`; `none` clears the owner, the lead team and the target date).
+    `initiative archive <NAME>`
     and `initiative unarchive <NAME>` (`initiativeArchive`, `initiativeUnarchive`).
     `initiative add-project <NAME> --project <NAME>` and
     `initiative remove-project <NAME> --project <NAME>` (`initiativeToProjectCreate`,
@@ -253,8 +254,8 @@ project is made of, 0.5.0 for the rest.
     `trashed`. `document create --title <TEXT> [--content <TEXT>|--content-file <PATH>]
     [--project <NAME>] [--issue <ISSUE>]` (`documentCreate`, the duplicate guard on
     the title; the initiative and team links are Internal and stay out).
-    `document update <TITLE> [--title] [--content-file] [--project <NAME|none>]
-    [--issue <ISSUE|none>]` (`documentUpdate`). `document delete <TITLE>`
+    `document update <TITLE> [--title] [--content|--content-file]
+    [--project <NAME|none>] [--issue <ISSUE|none>]` (`documentUpdate`). `document delete <TITLE>`
     (`documentDelete`: the trash) and `document unarchive <TITLE>`
     (`documentUnarchive`).
 15. `template list [--type <issue|project|document>]` and `template get <NAME>`
@@ -309,10 +310,14 @@ that removes something prints what Linear returned and nothing muster reconstruc
 muster never sends `permanentlyDelete`. Every list is a bounded connection with
 `--limit` up to `PAGE_CAP` and a `truncated` notice; the nested bounds are
 `MEMBERS_PER_PROJECT`, `MILESTONES_PER_PROJECT`, `PROJECTS_PER_INITIATIVE` and
-`ISSUES_PER_CYCLE`, and `ISSUES_PER_BATCH` is fifty. A secret, a template's data or a
-document's content comes from a file or stdin, never argv, through `read_body` and its
-bound. A value Linear marks Internal, Alpha or deprecated is not a flag and not a
-field. An operation that needs a role the key lacks is Linear's refusal, printed as
+`ISSUES_PER_CYCLE`, and `ISSUES_PER_BATCH` is fifty. A body or a content comes
+inline, `--body <TEXT>`, or from a file or stdin through its `-file` form,
+`--body-file <PATH>` with `-` for stdin, as `issue comment` takes a body today; a
+description comes inline, as every `--description` does today, with a `-file` form
+where the listing names one. Each is checked against `BODY_MAX_BYTES`, a file through
+`read_body`. A secret and a template's data come from a file or stdin only,
+`--secret-file` and `--data-file`, never argv. A value Linear marks Internal, Alpha or
+deprecated is not a flag and not a field. An operation that needs a role the key lacks is Linear's refusal, printed as
 exit 6 with Linear's message; muster checks no role itself, since the schema documents
 none and `whoami` already prints `admin`.
 
