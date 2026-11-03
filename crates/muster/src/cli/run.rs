@@ -9,8 +9,9 @@ use crate::bounds::{
 };
 use crate::cli::{
     AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
-    IssueListArgs, ListArgs, ListCommand, ProjectCommand, ProjectCreateArgs, TeamCommand,
-    TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
+    IssueListArgs, ListArgs, ListCommand, MemberArgs, MemberCommand, ProjectCommand,
+    ProjectCreateArgs, TeamCommand, TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs,
+    WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -49,6 +50,14 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 TeamCommand::Unretire(args) => team_retire(&session, args, false, out),
                 TeamCommand::Delete(args) => team_delete(&session, args, out),
                 TeamCommand::Unarchive(args) => team_unarchive(&session, args, out),
+            }
+        }
+        Command::Member { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                MemberCommand::List(args) => member_list(&session, args, out),
+                MemberCommand::Add(args) => member_add(&session, args, out),
+                MemberCommand::Remove(args) => member_remove(&session, args, out),
             }
         }
         Command::State {
@@ -144,6 +153,23 @@ impl Session {
         match key.as_deref().map(str::trim) {
             Some(key) if !key.is_empty() => Ok(key.to_string()),
             _ => self.team_key(),
+        }
+    }
+
+    /// The team with its memberships, `first` of them, in one `TeamMembers` request:
+    /// the team's `id` and `key`, and `memberships` as Linear pages it (ADR 0014,
+    /// group 3).
+    fn team_members(&self, key: &str, first: usize) -> Result<Value, Error> {
+        let data = self
+            .linear
+            .run(&ops::TEAM_MEMBERS, json!({ "key": key, "first": first }))?;
+        match nodes(&data, "teams").into_iter().next() {
+            Some(team) => Ok(team),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("no team with key {key:?}"),
+                "`muster team list` shows the keys",
+            )),
         }
     }
 
@@ -599,6 +625,56 @@ fn workspace_update(
         json!({ "input": Value::Object(input) }),
     )?;
     out.emit(&payload(&data, "organizationUpdate", "organization")?);
+    Ok(())
+}
+
+fn member_list(session: &Session, args: &ListArgs, out: &Output) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let key = session.team_key()?;
+    let team = session.team_members(&key, n)?;
+    emit_list(
+        out,
+        nodes(&team, "memberships"),
+        has_next_page(&team, "memberships"),
+        "members",
+        n,
+    );
+    Ok(())
+}
+
+fn member_add(session: &Session, args: &MemberArgs, out: &Output) -> Result<(), Error> {
+    let key = session.team_key()?;
+    let user_id = session.user_id(&args.user)?;
+    let team_id = need_str(&session.team_members(&key, 1)?, "id", "TeamMembers")?;
+    let data = session.linear.run(
+        &ops::MEMBERSHIP_CREATE,
+        json!({ "input": { "userId": user_id, "teamId": team_id } }),
+    )?;
+    out.emit(&payload(&data, "teamMembershipCreate", "teamMembership")?);
+    Ok(())
+}
+
+/// `member remove`: the membership is resolved from the team's list, up to
+/// `PAGE_CAP`, before the one mutation; a user who is not a member is exit 4.
+fn member_remove(session: &Session, args: &MemberArgs, out: &Output) -> Result<(), Error> {
+    let key = session.team_key()?;
+    let user_id = session.user_id(&args.user)?;
+    let team = session.team_members(&key, PAGE_CAP)?;
+    let found = nodes(&team, "memberships")
+        .into_iter()
+        .find(|m| str_at(m, "user.id") == Some(user_id.as_str()));
+    let Some(membership) = found else {
+        return Err(Error::with_hint(
+            ErrorCode::NotFound,
+            format!("{:?} is not a member of team {key}", args.user),
+            "`muster member list` shows the team's members",
+        ));
+    };
+    let id = need_str(&membership, "id", "TeamMembers")?;
+    let data = session
+        .linear
+        .run(&ops::MEMBERSHIP_DELETE, json!({ "id": id }))?;
+    out.emit(&delete_payload(&data, "teamMembershipDelete")?);
     Ok(())
 }
 

@@ -42,6 +42,10 @@ step "muster team get"
 "$bin" team get | tee "$tmp/team.json"
 jq -e '.key == "APP" and .cyclesEnabled == false and .defaultIssueState.name == "Backlog"' "$tmp/team.json" >/dev/null
 
+step "muster member list"
+"$bin" member list | tee "$tmp/members.jsonl"
+jq -s -e 'length == 2 and .[0].owner == true and .[0].user.email == "fake@example.com"' "$tmp/members.jsonl" >/dev/null
+
 step "muster issue create"
 "$bin" issue create --title "Try muster" --description "Created from the README." | tee "$tmp/create.json"
 id=$(jq -r .identifier "$tmp/create.json")

@@ -1623,6 +1623,123 @@ fn team_delete_archives_the_team_and_unarchive_brings_it_back() {
     assert_eq!(run.code, 8, "{}", run.stderr);
 }
 
+// ---- members (ADR 0014, group 3) ---------------------------------------------------------
+
+#[test]
+fn member_list_add_and_remove_work_on_the_teams_memberships() {
+    let fake = Fake::start().unwrap();
+    let run = muster(&fake, &["member", "list"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let members = run.lines();
+    assert_eq!(members.len(), 2, "the two seeded people");
+    assert_eq!(members[0]["owner"], true, "the first is the owner");
+    assert_eq!(members[0]["user"]["email"], "fake@example.com");
+    assert_eq!(members[0]["team"]["key"], "APP");
+    assert!(members[0]["id"].is_string() && members[0]["sortOrder"].is_number());
+    assert_eq!(fake.operations(), vec!["Teams", "TeamMembers"]);
+    let cut = muster(&fake, &["member", "list", "--limit", "1"]);
+    assert_eq!(cut.code, 0, "{}", cut.stderr);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(cut.notices()[0]["code"], "truncated", "{}", cut.stderr);
+
+    let created = muster(
+        &fake,
+        &["team", "create", "--name", "Smoke tests", "--key", "SMK"],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let own = muster(&fake, &["--team", "SMK", "member", "list"]);
+    assert_eq!(own.lines().len(), 1, "the creator is the one member");
+    assert_eq!(
+        own.lines()[0]["owner"], false,
+        "as Linear answered for a team made through the API (appshapes, 2026-11-03)"
+    );
+    let added = muster(
+        &fake,
+        &[
+            "--team",
+            "SMK",
+            "member",
+            "add",
+            "--user",
+            "other@example.com",
+        ],
+    );
+    assert_eq!(added.code, 0, "{}", added.stderr);
+    let v = added.one();
+    assert_eq!(v["user"]["displayName"], "other");
+    assert_eq!(v["team"]["key"], "SMK");
+    assert_eq!(v["owner"], false);
+    assert_eq!(
+        muster(&fake, &["--team", "SMK", "member", "list"])
+            .lines()
+            .len(),
+        2
+    );
+    let again = muster(
+        &fake,
+        &["--team", "SMK", "member", "add", "--user", "other"],
+    );
+    assert_eq!(
+        again.code, 6,
+        "Linear refuses a second membership: {}",
+        again.stderr
+    );
+    assert!(again.error()["linear"]["message"].is_string());
+    let nobody = muster(
+        &fake,
+        &["--team", "SMK", "member", "add", "--user", "nobody"],
+    );
+    assert_eq!(nobody.code, 4, "{}", nobody.stderr);
+
+    let removed = muster(
+        &fake,
+        &["--team", "SMK", "member", "remove", "--user", "other"],
+    );
+    assert_eq!(removed.code, 0, "{}", removed.stderr);
+    assert_eq!(removed.one()["success"], true);
+    assert!(removed.one()["entityId"].is_string());
+    assert_eq!(
+        muster(&fake, &["--team", "SMK", "member", "list"])
+            .lines()
+            .len(),
+        1
+    );
+    let not_member = muster(
+        &fake,
+        &["--team", "SMK", "member", "remove", "--user", "other"],
+    );
+    assert_eq!(not_member.code, 4, "{}", not_member.stderr);
+    assert!(
+        not_member.error()["message"]
+            .as_str()
+            .unwrap()
+            .contains("not a member"),
+        "{}",
+        not_member.stderr
+    );
+    let deletes = fake
+        .operations()
+        .iter()
+        .filter(|o| *o == "TeamMembershipDelete")
+        .count();
+    assert_eq!(deletes, 1, "a non-member sends no mutation");
+
+    fake.fail_next("TeamMembershipCreate", Failure::Drop);
+    let run = muster(
+        &fake,
+        &["--team", "SMK", "member", "add", "--user", "other"],
+    );
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("TeamMembershipDelete", Failure::Drop);
+    let run = muster(&fake, &["member", "remove", "--user", "other", "--team", "APP"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("TeamMembers", Failure::Drop);
+    let run = muster(&fake, &["--team", "APP", "member", "list"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+    let nowhere = muster(&fake, &["member", "list"]);
+    assert_eq!(nowhere.code, 2, "two teams and none named: {}", nowhere.stderr);
+}
+
 #[test]
 fn workspace_update_changes_only_what_is_passed_and_reads_back() {
     let fake = Fake::start().unwrap();

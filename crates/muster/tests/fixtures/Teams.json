@@ -3,7 +3,7 @@
     "nodes": [
       {
         "cyclesEnabled": true,
-        "description": null,
+        "description": "<string>",
         "id": "<string>",
         "key": "<string>",
         "name": "<string>",

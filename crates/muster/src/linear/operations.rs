@@ -93,6 +93,13 @@ pub const TEAM_FIELDS: &str = "fragment TeamFields on Team {
   activeCycle { id number name }
 }";
 
+/// The fields every team membership answer carries (ADR 0014, group 3).
+pub const MEMBERSHIP_FIELDS: &str = "fragment MembershipFields on TeamMembership {
+  id owner sortOrder createdAt
+  user { id name displayName email active admin }
+  team { id key }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -212,6 +219,18 @@ op!(
 );
 
 op!(
+    TEAM_MEMBERS,
+    "TeamMembers",
+    Kind::Query,
+    "query TeamMembers($key: String!, $first: Int!) {
+  teams(first: 1, filter: { key: { eqIgnoreCase: $key } }) {
+    nodes { id key memberships(first: $first) { nodes { ...MembershipFields } pageInfo { hasNextPage } } }
+  }
+}",
+    &[MEMBERSHIP_FIELDS]
+);
+
+op!(
     WORKSPACE,
     "Workspace",
     Kind::Query,
@@ -321,6 +340,25 @@ op!(
     &[TEAM_FIELDS]
 );
 
+op!(
+    MEMBERSHIP_CREATE,
+    "TeamMembershipCreate",
+    Kind::Mutation,
+    "mutation TeamMembershipCreate($input: TeamMembershipCreateInput!) {
+  teamMembershipCreate(input: $input) { success teamMembership { ...MembershipFields } }
+}",
+    &[MEMBERSHIP_FIELDS]
+);
+
+op!(
+    MEMBERSHIP_DELETE,
+    "TeamMembershipDelete",
+    Kind::Mutation,
+    "mutation TeamMembershipDelete($id: String!) {
+  teamMembershipDelete(id: $id) { success entityId }
+}"
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -333,6 +371,7 @@ pub static READS: &[&Operation] = &[
     &ISSUES,
     &WORKSPACE,
     &TEAM_BY_KEY,
+    &TEAM_MEMBERS,
 ];
 
 /// Every write operation.
@@ -347,6 +386,8 @@ pub static WRITES: &[&Operation] = &[
     &TEAM_UPDATE,
     &TEAM_DELETE,
     &TEAM_UNARCHIVE,
+    &MEMBERSHIP_CREATE,
+    &MEMBERSHIP_DELETE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -393,6 +434,7 @@ mod tests {
                 "ProjectFields",
                 "OrganizationFields",
                 "TeamFields",
+                "MembershipFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));

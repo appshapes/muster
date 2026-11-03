@@ -54,6 +54,14 @@ echo "smoke: muster team update SMK --cycles-enabled true --cycle-enabled-start-
 "$bin" team update SMK --cycles-enabled true --cycle-enabled-start-date "$stamp" --cycle-duration 1 --upcoming-cycle-count 2 --description "The smoke test's own team (ADR 0014): its cycles, members and lifecycle are tested here, so that the house's team is never touched." | jq -c '{key, cyclesEnabled, cycleDuration, upcomingCycleCount, activeCycle}' | tee "$tmp/team-update.json"
 jq -e '.key == "SMK" and .cyclesEnabled == true and .cycleDuration == 1' "$tmp/team-update.json" >/dev/null
 echo
+echo "smoke: muster member list --team SMK, then remove me and add me back (ADR 0014)"
+"$bin" --team SMK member list | jq -c '{user: .user.displayName, owner}' | tee "$tmp/members.jsonl"
+jq -s -e 'length >= 1' "$tmp/members.jsonl" >/dev/null
+"$bin" --team SMK member remove --user me | tee "$tmp/member-remove.json"
+jq -e '.success == true' "$tmp/member-remove.json" >/dev/null
+"$bin" --team SMK member add --user me | jq -c '{user: .user.displayName, team: .team.key, owner}' | tee "$tmp/member-add.json"
+jq -e '.team == "SMK"' "$tmp/member-add.json" >/dev/null
+echo
 echo "smoke: muster team retire SMK, then unretire"
 "$bin" team retire SMK | jq -c '{key, retiredAt}' | tee "$tmp/retire.json"
 jq -e '.retiredAt != null' "$tmp/retire.json" >/dev/null

@@ -3,7 +3,7 @@
     "nodes": [
       {
         "color": "<string>",
-        "description": "<string>",
+        "description": null,
         "id": "<string>",
         "name": "<string>",
         "position": 0,
