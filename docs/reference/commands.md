@@ -90,7 +90,7 @@ Create a team: its creator becomes a member and Linear makes its default states 
 | `--key` | `<KEY>` | no |  | The key, the prefix of the team's identifiers (APP); Linear makes one from the name when absent |
 | `--description` | `<TEXT>` | no |  | The description, plain text |
 | `--timezone` | `<TZ>` | no |  | The team's timezone, an IANA name (Europe/London) |
-| `--cycles-enabled` | `<true|false>` | no |  | Whether the team uses cycles |
+| `--cycles-enabled` | `<true\|false>` | no |  | Whether the team uses cycles |
 | `--parent` | `<KEY>` | no |  | The parent team, by key, which makes this a sub-team |
 | `--copy-settings-from` | `<KEY>` | no |  | A team, by key, whose settings the new team copies |
 | `--allow-duplicate` |  | no |  | Create it even when a team has the same name |
