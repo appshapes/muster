@@ -207,11 +207,61 @@ List them, one JSON object per line.
 
 ### muster label list
 
-List them, one JSON object per line.
+List the labels of the team and of the workspace, one JSON object per line.
 
 | Argument or flag | Value | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
+### muster label create
+
+Create a label for the team, or for the workspace with --workspace; a name a label of the same scope has is refused unless --allow-duplicate.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--name` | `<TEXT>` | yes |  | The name |
+| `--workspace` |  | no |  | A workspace label, for every team, instead of one for the team |
+| `--color` | `<HEX>` | no |  | The colour, a hex string (#eb5757) |
+| `--description` | `<TEXT>` | no |  | The description, plain text |
+| `--parent` | `<NAME>` | no |  | The group this label goes in, by name |
+| `--group` |  | no |  | Make a group, which holds labels rather than going on issues |
+| `--allow-duplicate` |  | no |  | Create it even when a label of the same scope has the name |
+
+### muster label update
+
+Change a label's name, colour, description or parent.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The label, by name |
+| `--name` | `<TEXT>` | no |  | A new name |
+| `--color` | `<HEX>` | no |  | A new colour, a hex string (#eb5757) |
+| `--description` | `<TEXT>` | no |  | A new description, plain text |
+| `--parent` | `<NAME>` | no |  | A new group, by name, or `none` to take the label out of its group |
+
+### muster label retire
+
+Retire a label: it stays on its issues and cannot be applied to a new one.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The label, by name |
+
+### muster label restore
+
+Restore a retired label.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The label, by name |
+
+### muster label delete
+
+Delete a label, which removes it from every issue; no undo in Linear, so retire first where history matters.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The label, by name |
 
 ### muster project list
 
@@ -506,3 +556,8 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `UserSuspend` | mutation |
 | `UserUnsuspend` | mutation |
 | `UserRevokeAllSessions` | mutation |
+| `IssueLabelCreate` | mutation |
+| `IssueLabelUpdate` | mutation |
+| `IssueLabelRetire` | mutation |
+| `IssueLabelRestore` | mutation |
+| `IssueLabelDelete` | mutation |

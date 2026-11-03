@@ -474,7 +474,7 @@ impl Workspace {
             ("Improvement", "#4ea7fc"),
             ("Feature", "#bb87fc"),
         ] {
-            let label = json!({ "id": ws.id(), "name": name, "color": color, "description": null, "isGroup": false, "team": null, "parent": null });
+            let label = ws.new_label(name, color, None, None, false);
             ws.labels.push(label);
         }
         let team = ws.new_team("APP", "Fake Team");
@@ -483,7 +483,13 @@ impl Workspace {
         // group 3).
         ws.new_membership(&team["id"], &me["id"], true);
         ws.new_membership(&team["id"], &other["id"], false);
-        let team_label = json!({ "id": ws.id(), "name": "Release", "color": "#26b5ce", "description": "a team label", "isGroup": false, "team": { "id": team["id"], "key": "APP" }, "parent": null });
+        let team_label = ws.new_label(
+            "Release",
+            "#26b5ce",
+            Some("a team label"),
+            Some(&team),
+            false,
+        );
         ws.labels.push(team_label);
         let project = json!({ "id": ws.id(), "name": "Muster", "url": "https://linear.app/fake/project/muster", "description": "the fake project", "priority": 0, "startDate": null, "targetDate": null, "status": { "id": ws.id(), "name": "Planned", "type": "planned" }, "lead": { "id": me["id"], "name": me["name"], "displayName": me["displayName"] }, "teams": { "nodes": [ { "id": team["id"], "key": "APP" } ] } });
         ws.projects.push(project);
@@ -613,6 +619,23 @@ impl Workspace {
             }),
         );
         team
+    }
+
+    /// A label as `LabelFields` answers it (ADR 0014, group 6), not yet pushed.
+    fn new_label(
+        &mut self,
+        name: &str,
+        color: &str,
+        description: Option<&str>,
+        team: Option<&Value>,
+        group: bool,
+    ) -> Value {
+        let (id, now) = (self.id(), self.now());
+        json!({
+            "id": id, "name": name, "color": color, "description": description, "isGroup": group, "retiredAt": null, "createdAt": now,
+            "team": team.map(|t| json!({ "id": t["id"], "key": t["key"] })).unwrap_or(Value::Null),
+            "parent": null,
+        })
     }
 
     fn new_user(&mut self, name: &str, display: &str, email: &str, admin: bool, me: bool) -> Value {
@@ -1229,6 +1252,117 @@ impl Workspace {
                     json!({ "data": { "users": Workspace::page(users, first) } }),
                 )
             }
+            "IssueLabelCreate" => {
+                let input = &vars["input"];
+                let Some(name) = input["name"].as_str().filter(|n| !n.trim().is_empty()) else {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "name should not be empty" } } ], "data": null }),
+                    );
+                };
+                let team = match input["teamId"].as_str() {
+                    Some(tid) => match self.teams.iter().find(|t| t["id"] == tid).cloned() {
+                        Some(t) => Some(t),
+                        None => return not_found("Team"),
+                    },
+                    None => None,
+                };
+                let parent = match input["parentId"].as_str() {
+                    Some(pid) => match self.labels.iter().find(|l| l["id"] == pid) {
+                        Some(p) => json!({ "id": p["id"], "name": p["name"] }),
+                        None => return not_found("IssueLabel"),
+                    },
+                    None => Value::Null,
+                };
+                let mut label = self.new_label(
+                    name,
+                    input["color"].as_str().unwrap_or("#95a2b3"),
+                    input["description"].as_str(),
+                    team.as_ref(),
+                    input["isGroup"].as_bool().unwrap_or(false),
+                );
+                label["parent"] = parent;
+                self.labels.push(label.clone());
+                (
+                    200,
+                    json!({ "data": { "issueLabelCreate": { "success": true, "issueLabel": label } } }),
+                )
+            }
+            "IssueLabelUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "IssueLabelUpdateInput!");
+                };
+                let Some(index) = self.labels.iter().position(|l| l["id"] == id) else {
+                    return not_found("IssueLabel");
+                };
+                for (field, value) in input {
+                    if field == "parentId" {
+                        self.labels[index]["parent"] = match value.as_str() {
+                            Some(pid) => match self.labels.iter().find(|l| l["id"] == pid) {
+                                Some(p) => json!({ "id": p["id"], "name": p["name"] }),
+                                None => return not_found("IssueLabel"),
+                            },
+                            None => Value::Null,
+                        };
+                    } else {
+                        self.labels[index][&field] = value;
+                    }
+                }
+                // Issues carry the label's name, so a rename shows on them too.
+                let (lid, lname) = (
+                    self.labels[index]["id"].clone(),
+                    self.labels[index]["name"].clone(),
+                );
+                for issue in &mut self.issues {
+                    if let Some(nodes) = issue["labels"]["nodes"].as_array_mut() {
+                        for node in nodes.iter_mut() {
+                            if node["id"] == lid {
+                                node["name"] = lname.clone();
+                            }
+                        }
+                    }
+                }
+                (
+                    200,
+                    json!({ "data": { "issueLabelUpdate": { "success": true, "issueLabel": self.labels[index] } } }),
+                )
+            }
+            "IssueLabelRetire" | "IssueLabelRestore" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.labels.iter().position(|l| l["id"] == id) else {
+                    return not_found("IssueLabel");
+                };
+                let now = self.now();
+                let field = if op == "IssueLabelRetire" {
+                    self.labels[index]["retiredAt"] = json!(now);
+                    "issueLabelRetire"
+                } else {
+                    self.labels[index]["retiredAt"] = Value::Null;
+                    "issueLabelRestore"
+                };
+                (
+                    200,
+                    json!({ "data": { field: { "success": true, "issueLabel": self.labels[index] } } }),
+                )
+            }
+            "IssueLabelDelete" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.labels.iter().position(|l| l["id"] == id) else {
+                    return not_found("IssueLabel");
+                };
+                self.labels.remove(index);
+                // Linear removes a deleted label from every issue (its pages, 2026-11-03).
+                for issue in &mut self.issues {
+                    if let Some(nodes) = issue["labels"]["nodes"].as_array_mut() {
+                        nodes.retain(|n| n["id"] != id);
+                    }
+                }
+                (
+                    200,
+                    json!({ "data": { "issueLabelDelete": { "success": true, "entityId": id } } }),
+                )
+            }
             "UserById" => {
                 let id = vars["id"].as_str().unwrap_or("");
                 match self
@@ -1386,6 +1520,18 @@ impl Workspace {
                     .any(|l| !self.labels.iter().any(|x| &x["id"] == l))
                 {
                     return not_found("IssueLabel");
+                }
+                // A retired label cannot be applied to a new issue (Linear's
+                // description of `issueLabelRetire`).
+                if label_ids.iter().any(|l| {
+                    self.labels
+                        .iter()
+                        .any(|x| &x["id"] == l && !x["retiredAt"].is_null())
+                }) {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "A retired label cannot be applied." } } ], "data": null }),
+                    );
                 }
                 let project = match input["projectId"].as_str() {
                     Some(pid) => match self.projects.iter().find(|p| p["id"] == pid) {

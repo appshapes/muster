@@ -109,6 +109,13 @@ pub const USER_FIELDS: &str = "fragment UserFields on User {
   lastSeen createdAt updatedAt
 }";
 
+/// The fields every label answer carries (ADR 0014, group 6): what `label list`
+/// prints, with `retiredAt`, which `label retire` sets, and `createdAt`.
+pub const LABEL_FIELDS: &str = "fragment LabelFields on IssueLabel {
+  id name color description isGroup retiredAt createdAt
+  team { id key } parent { id name }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -175,11 +182,9 @@ op!(
     "IssueLabels",
     Kind::Query,
     "query IssueLabels($first: Int!, $filter: IssueLabelFilter) {
-  issueLabels(first: $first, filter: $filter) {
-    nodes { id name color description isGroup team { id key } parent { id name } }
-    pageInfo { hasNextPage }
-  }
-}"
+  issueLabels(first: $first, filter: $filter) { nodes { ...LabelFields } pageInfo { hasNextPage } }
+}",
+    &[LABEL_FIELDS]
 );
 
 op!(
@@ -424,6 +429,55 @@ op!(
 }"
 );
 
+op!(
+    LABEL_CREATE,
+    "IssueLabelCreate",
+    Kind::Mutation,
+    "mutation IssueLabelCreate($input: IssueLabelCreateInput!) {
+  issueLabelCreate(input: $input) { success issueLabel { ...LabelFields } }
+}",
+    &[LABEL_FIELDS]
+);
+
+op!(
+    LABEL_UPDATE,
+    "IssueLabelUpdate",
+    Kind::Mutation,
+    "mutation IssueLabelUpdate($id: String!, $input: IssueLabelUpdateInput!) {
+  issueLabelUpdate(id: $id, input: $input) { success issueLabel { ...LabelFields } }
+}",
+    &[LABEL_FIELDS]
+);
+
+op!(
+    LABEL_RETIRE,
+    "IssueLabelRetire",
+    Kind::Mutation,
+    "mutation IssueLabelRetire($id: String!) {
+  issueLabelRetire(id: $id) { success issueLabel { ...LabelFields } }
+}",
+    &[LABEL_FIELDS]
+);
+
+op!(
+    LABEL_RESTORE,
+    "IssueLabelRestore",
+    Kind::Mutation,
+    "mutation IssueLabelRestore($id: String!) {
+  issueLabelRestore(id: $id) { success issueLabel { ...LabelFields } }
+}",
+    &[LABEL_FIELDS]
+);
+
+op!(
+    LABEL_DELETE,
+    "IssueLabelDelete",
+    Kind::Mutation,
+    "mutation IssueLabelDelete($id: String!) {
+  issueLabelDelete(id: $id) { success entityId }
+}"
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -459,6 +513,11 @@ pub static WRITES: &[&Operation] = &[
     &USER_SUSPEND,
     &USER_UNSUSPEND,
     &USER_REVOKE_SESSIONS,
+    &LABEL_CREATE,
+    &LABEL_UPDATE,
+    &LABEL_RETIRE,
+    &LABEL_RESTORE,
+    &LABEL_DELETE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -507,6 +566,7 @@ mod tests {
                 "TeamFields",
                 "MembershipFields",
                 "UserFields",
+                "LabelFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));

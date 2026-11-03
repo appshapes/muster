@@ -1742,6 +1742,156 @@ fn user_get_update_role_suspension_and_sessions() {
     assert_eq!(run.code, 7, "{}", run.stderr);
 }
 
+// ---- labels (ADR 0014, group 6) ----------------------------------------------------------
+
+#[test]
+fn label_create_update_retire_restore_and_delete() {
+    let fake = Fake::start().unwrap();
+    let created = muster(
+        &fake,
+        &[
+            "label",
+            "create",
+            "--name",
+            "Smoke",
+            "--color",
+            "#26b5ce",
+            "--description",
+            "Made by the smoke test.",
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let v = created.one();
+    assert_eq!(v["name"], "Smoke");
+    assert_eq!(v["color"], "#26b5ce");
+    assert_eq!(v["team"]["key"], "APP", "a team label by the team rule");
+    assert_eq!(v["isGroup"], false);
+    assert!(v["retiredAt"].is_null() && v["parent"].is_null());
+    let listed = muster(&fake, &["label", "list"]);
+    assert_eq!(
+        listed.lines().len(),
+        5,
+        "three workspace labels, two of the team"
+    );
+    let again = muster(&fake, &["label", "create", "--name", "smoke"]);
+    assert_eq!(again.code, 6, "{}", again.stderr);
+    let for_workspace = muster(
+        &fake,
+        &["label", "create", "--name", "Smoke", "--workspace"],
+    );
+    assert_eq!(
+        for_workspace.code, 0,
+        "the guard is per scope: {}",
+        for_workspace.stderr
+    );
+    assert!(for_workspace.one()["team"].is_null());
+    let bug_again = muster(&fake, &["label", "create", "--name", "bug", "--workspace"]);
+    assert_eq!(bug_again.code, 6, "{}", bug_again.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "IssueLabelCreate")
+            .count(),
+        2,
+        "refused before any mutation"
+    );
+    let group = muster(&fake, &["label", "create", "--name", "Area", "--group"]);
+    assert_eq!(group.code, 0, "{}", group.stderr);
+    assert_eq!(group.one()["isGroup"], true);
+    let child = muster(
+        &fake,
+        &["label", "create", "--name", "Backend", "--parent", "Area"],
+    );
+    assert_eq!(child.code, 0, "{}", child.stderr);
+    assert_eq!(child.one()["parent"]["name"], "Area");
+    let orphan = muster(
+        &fake,
+        &["label", "create", "--name", "Lost", "--parent", "Nope"],
+    );
+    assert_eq!(orphan.code, 4, "{}", orphan.stderr);
+
+    let renamed = muster(
+        &fake,
+        &[
+            "label", "update", "Smoke", "--name", "Smoky", "--parent", "Area",
+        ],
+    );
+    assert_eq!(renamed.code, 0, "{}", renamed.stderr);
+    assert_eq!(renamed.one()["name"], "Smoky");
+    assert_eq!(renamed.one()["parent"]["name"], "Area");
+    assert_eq!(
+        renamed.one()["team"]["key"],
+        "APP",
+        "the team's own label is the one renamed"
+    );
+    let out = muster(&fake, &["label", "update", "Smoky", "--parent", "none"]);
+    assert!(out.one()["parent"].is_null());
+    let itself = muster(&fake, &["label", "update", "Area", "--parent", "area"]);
+    assert_eq!(itself.code, 2, "{}", itself.stderr);
+    let nothing = muster(&fake, &["label", "update", "Smoky"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+
+    let retired = muster(&fake, &["label", "retire", "Smoky"]);
+    assert_eq!(retired.code, 0, "{}", retired.stderr);
+    assert!(retired.one()["retiredAt"].is_string());
+    let refused = muster(
+        &fake,
+        &[
+            "issue",
+            "create",
+            "--title",
+            "With a retired label",
+            "--label",
+            "Smoky",
+        ],
+    );
+    assert_eq!(
+        refused.code, 6,
+        "a retired label goes on no new issue: {}",
+        refused.stderr
+    );
+    let restored = muster(&fake, &["label", "restore", "Smoky"]);
+    assert_eq!(restored.code, 0, "{}", restored.stderr);
+    assert!(restored.one()["retiredAt"].is_null());
+
+    let labelled = muster(
+        &fake,
+        &["issue", "create", "--title", "Labelled", "--label", "Smoky"],
+    );
+    assert_eq!(labelled.code, 0, "{}", labelled.stderr);
+    let id = labelled.one()["identifier"].as_str().unwrap().to_string();
+    let deleted = muster(&fake, &["label", "delete", "Smoky"]);
+    assert_eq!(deleted.code, 0, "{}", deleted.stderr);
+    assert_eq!(deleted.one()["success"], true);
+    assert!(deleted.one()["entityId"].is_string());
+    let after = muster(&fake, &["issue", "get", &id]).one();
+    assert_eq!(
+        after["labels"]["nodes"].as_array().unwrap().len(),
+        0,
+        "a deleted label leaves its issues"
+    );
+    let gone = muster(&fake, &["label", "delete", "Smoky"]);
+    assert_eq!(gone.code, 4, "{}", gone.stderr);
+
+    for (op, args) in [
+        (
+            "IssueLabelCreate",
+            vec!["label", "create", "--name", "Dropped"],
+        ),
+        (
+            "IssueLabelUpdate",
+            vec!["label", "update", "Bug", "--color", "#000000"],
+        ),
+        ("IssueLabelRetire", vec!["label", "retire", "Bug"]),
+        ("IssueLabelRestore", vec!["label", "restore", "Bug"]),
+        ("IssueLabelDelete", vec!["label", "delete", "Bug"]),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+}
+
 // ---- members (ADR 0014, group 3) ---------------------------------------------------------
 
 #[test]

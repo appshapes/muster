@@ -105,6 +105,15 @@ already has is exit 6 unless `--allow-duplicate`, so that `--project "Trying mus
 `muster issue list --project "Trying muster"` lists the team's open issues in it
 (`--project none` those in no project). `just quickstart` runs both against the fake.
 
+A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
+(`--workspace` makes one every team shares, `--group` one that holds other labels):
+one JSON line, the label with its `name`, `color`, `team` and `retiredAt`.
+`muster label update Smoke --name "Smoky"` changes it, `muster label retire Smoky`
+takes it out of use (it stays on its issues and goes on no new one, and
+`muster label restore Smoky` brings it back), and `muster label delete Smoky` removes
+it from every issue, which Linear cannot undo
+([ADR 0014](../decisions/0014-build-the-third-slice-administrative-commands.md)).
+
 A sub-issue is the same command with `--parent APP-12`: the new issue prints
 `parent.identifier` as `APP-12`, and it is created in the parent's team unless `--team`
 or `MUSTER_TEAM` names one. `muster issue update APP-13 --parent none` takes it out

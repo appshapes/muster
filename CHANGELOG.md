@@ -67,6 +67,17 @@ user-visible change, added in the same commit as the change. The format follows
   read back, two JSON lines; a suspended user is still found by email or name, so that
   `unsuspend` reaches them (ADR 0014, group 4;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `label create --name <TEXT> [--workspace] [--color <HEX>] [--description <TEXT>]
+  [--parent <NAME>] [--group]` makes a label for the team, or for every team with
+  `--workspace`, through Linear's `issueLabelCreate`; a name a label of the same
+  scope has is refused, exit 6, unless `--allow-duplicate`. `label update <NAME>`
+  changes the name, colour, description or group (`--parent none` takes it out of
+  its group); `label retire <NAME>` and `label restore <NAME>` take a label out of
+  use and back, a retired label staying on its issues and going on no new one;
+  `label delete <NAME>` removes it from every issue, with no undo in Linear, so the
+  reference names retire first. A label is named as `--label` names one, the team's
+  own before the workspace's; `label list` now prints `retiredAt` and `createdAt`
+  (ADR 0014, group 6; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.2.0 - 2026-11-03
 

@@ -93,6 +93,18 @@ case "$code" in
   *) echo "smoke: project create exited $code" >&2; cat "$tmp/project.err" >&2; exit 1 ;;
 esac
 echo
+echo "smoke: muster label create --name 'Smoke <stamp>', update, retire, restore, delete, in team $MUSTER_TEAM (ADR 0014)"
+"$bin" label create --name "Smoke $stamp" --color "#26b5ce" --description "Made by scripts/smoke.sh at $stamp and deleted by the same run." | jq -c '{name, color, team: .team.key, retiredAt}' | tee "$tmp/label.json"
+jq -e --arg n "Smoke $stamp" '.name == $n and .retiredAt == null' "$tmp/label.json" >/dev/null
+"$bin" label update "Smoke $stamp" --name "Smoky $stamp" | jq -c '{name}' | tee "$tmp/label-update.json"
+jq -e --arg n "Smoky $stamp" '.name == $n' "$tmp/label-update.json" >/dev/null
+"$bin" label retire "Smoky $stamp" | jq -c '{name, retiredAt}' | tee "$tmp/label-retire.json"
+jq -e '.retiredAt != null' "$tmp/label-retire.json" >/dev/null
+"$bin" label restore "Smoky $stamp" | jq -c '{name, retiredAt}' | tee "$tmp/label-restore.json"
+jq -e '.retiredAt == null' "$tmp/label-restore.json" >/dev/null
+"$bin" label delete "Smoky $stamp" | tee "$tmp/label-delete.json"
+jq -e '.success == true' "$tmp/label-delete.json" >/dev/null
+echo
 echo "smoke: muster issue create --project 'Smoke tests'"
 "$bin" issue create --title "Smoke test $stamp" --project "Smoke tests" --description "Created by scripts/smoke.sh at $stamp. It is canceled by the same run." | tee "$tmp/create.json"
 jq -e '.project.name == "Smoke tests"' "$tmp/create.json" >/dev/null
