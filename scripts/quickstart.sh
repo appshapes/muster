@@ -102,11 +102,12 @@ jq -e '.health == "onTrack" and .body == "Shipping on Friday." and .project.name
 "$bin" project-update list --project "Trying muster" | jq -s -e 'length == 1' >/dev/null
 
 step "muster initiative create, add-project and get"
-"$bin" initiative create --name "Launch" --owner me --status Active | tee "$tmp/initiative.json"
-jq -e '.name == "Launch" and .status == "Active" and .leadTeam == null' "$tmp/initiative.json" >/dev/null
-"$bin" initiative update Launch --lead-team APP | jq -e '.leadTeam.key == "APP"' >/dev/null
-"$bin" initiative add-project Launch --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
-"$bin" initiative get Launch | jq -e '.projects.nodes[0].name == "Trying muster"' >/dev/null
+# The fake seeds an initiative named "Launch", so the README's is "Growth".
+"$bin" initiative create --name "Growth" --owner me --status Active | tee "$tmp/initiative.json"
+jq -e '.name == "Growth" and .status == "Active" and .leadTeam == null' "$tmp/initiative.json" >/dev/null
+"$bin" initiative update Growth --lead-team APP | jq -e '.leadTeam.key == "APP"' >/dev/null
+"$bin" initiative add-project Growth --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
+"$bin" initiative get Growth | jq -e '.projects.nodes[0].name == "Trying muster"' >/dev/null
 
 step "muster issue close $id"
 "$bin" issue close "$id" --comment "Done from the README." | tee "$tmp/close.jsonl"
