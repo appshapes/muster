@@ -120,6 +120,9 @@ echo
 echo "smoke: muster project get 'Smoke tests', then a throwaway project updated, deleted, unarchived and deleted again (ADR 0014)"
 "$bin" project get "Smoke tests" | jq -c '{name, status: .status.name, members: (.members.nodes | length), milestones: (.projectMilestones.nodes | length), trashed}' | tee "$tmp/project-get.json"
 jq -e '.name == "Smoke tests"' "$tmp/project-get.json" >/dev/null
+# The key's owner stays a member of 'Smoke tests', so that just record-fixtures finds a
+# member node to record ProjectByName on (ADR 0014, "Where the fixtures come from").
+"$bin" project update "Smoke tests" --add-member me | jq -c '{name}' >/dev/null
 "$bin" project create --name "Smoke project $stamp" --description "A throwaway project made by scripts/smoke.sh at $stamp; it ends in the trash." | jq -c '{name}' >/dev/null
 "$bin" project update "Smoke project $stamp" --status "In Progress" --lead me --start-date "${stamp%%T*}" --priority 3 --add-member me | jq -c '{name, status: .status.name, lead: .lead.displayName, startDate, priority}' | tee "$tmp/project-update.json"
 jq -e '.status == "In Progress" and .priority == 3' "$tmp/project-update.json" >/dev/null

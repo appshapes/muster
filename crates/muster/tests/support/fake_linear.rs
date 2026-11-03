@@ -1430,10 +1430,20 @@ impl Workspace {
                 let Some(teams) = vars["teams"].as_u64().map(|n| n as usize) else {
                     return missing_variable("teams", "Int!");
                 };
+                // The filter is answered from the detail view, which carries the
+                // `members` and `projectMilestones` connections the recorder's sampler
+                // filters on, as Linear filters a project by its relations; the page
+                // prints `ProjectFields`.
                 let projects: Vec<Value> = self
                     .projects
                     .iter()
-                    .filter(|p| p["archivedAt"].is_null() && passes(p, filter))
+                    .filter(|p| {
+                        p["archivedAt"].is_null()
+                            && passes(
+                                &self.project_detail(p, teams, usize::MAX, usize::MAX),
+                                filter,
+                            )
+                    })
                     .map(|p| Workspace::project_view(p, teams))
                     .collect();
                 (

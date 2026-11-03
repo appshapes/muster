@@ -32,7 +32,7 @@ pub const NOTICES: &[(&str, &str)] = &[
     ),
     (
         "partial",
-        "`fixtures` recorded `IssueById` on an issue that lacks comments, attachments or sub-issues, so that node shape is not in the fixture",
+        "`fixtures` recorded `IssueById` on an issue that lacks comments, attachments or sub-issues, or `ProjectByName` on a project that lacks members or milestones, so that node shape is not in the fixture",
     ),
 ];
 
@@ -381,6 +381,18 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
             ));
         };
         let data = session.linear.run(op, variables)?;
+        if op.name == "ProjectByName"
+            && let Some(lack) = project_lack(&data)
+        {
+            out.notice(
+                "partial",
+                &format!(
+                    "ProjectByName: recorded on {:?}, which {lack}",
+                    project.as_deref().unwrap_or("")
+                ),
+                "add a member with `project update <NAME> --add-member me`, and a milestone in Linear's own page until `milestone create` ships, then run `just record-fixtures` again; the fixture test cannot hold the fake to a shape that was not recorded",
+            );
+        }
         let shape = shape_of(&data);
         let path = dir.join(format!("{}.json", op.name));
         let text = serde_json::to_string_pretty(&shape)?;
@@ -435,15 +447,44 @@ fn sample_team(session: &Session) -> Result<Option<String>, Error> {
 }
 
 /// The name of the project `ProjectByName` is recorded on: the first project
-/// `Projects` lists.
+/// `Projects` lists that has a member and a milestone, so that both node shapes are
+/// recorded; else the first with a member; else the first project. What the recorded
+/// project still lacks is read from the answer itself, by [`project_lack`].
 fn sample_project(session: &Session) -> Result<Option<String>, Error> {
-    let data = session.linear.run(
-        &ops::PROJECTS,
-        json!({ "first": 1, "filter": Value::Null, "teams": TEAMS_PER_PROJECT }),
-    )?;
-    Ok(nodes(&data, "projects")
-        .first()
-        .and_then(|p| str_at(p, "name").map(str::to_string)))
+    for filter in [
+        json!({ "members": { "length": { "gt": 0 } }, "projectMilestones": { "length": { "gt": 0 } } }),
+        json!({ "members": { "length": { "gt": 0 } } }),
+        Value::Null,
+    ] {
+        let data = session.linear.run(
+            &ops::PROJECTS,
+            json!({ "first": 1, "filter": filter, "teams": TEAMS_PER_PROJECT }),
+        )?;
+        if let Some(name) = nodes(&data, "projects")
+            .first()
+            .and_then(|p| str_at(p, "name").map(str::to_string))
+        {
+            return Ok(Some(name));
+        }
+    }
+    Ok(None)
+}
+
+/// What the project `ProjectByName` was recorded on lacks, read from the answer: a
+/// connection that came back empty leaves no node shape in the fixture, so the fake's
+/// node of that kind is held to nothing (ADR 0010; ADR 0014). `None` when the project
+/// has a member and a milestone.
+fn project_lack(data: &Value) -> Option<&'static str> {
+    let Some(project) = nodes(data, "projects").into_iter().next() else {
+        return Some("the query did not find, so the fixture holds no project");
+    };
+    let empty = |field: &str| nodes(&project, field).is_empty();
+    match (empty("members"), empty("projectMilestones")) {
+        (true, true) => Some("has no member and no milestone"),
+        (true, false) => Some("has no member"),
+        (false, true) => Some("has no milestone"),
+        (false, false) => None,
+    }
 }
 
 /// The variables each read operation is recorded with, and the fixture test replays

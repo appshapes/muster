@@ -559,7 +559,7 @@ A notice is one JSON object on stderr, `{"notice": {"code", "message", "hint"}}`
 | --- | --- |
 | `truncated` | a list was cut at its --limit, or an issue's comments, attachments or sub-issues at their bound; the printed items are complete, there are more |
 | `skipped` | `fixtures` found no issue to record `IssueById` on, so that file was not written |
-| `partial` | `fixtures` recorded `IssueById` on an issue that lacks comments, attachments or sub-issues, so that node shape is not in the fixture |
+| `partial` | `fixtures` recorded `IssueById` on an issue that lacks comments, attachments or sub-issues, or `ProjectByName` on a project that lacks members or milestones, so that node shape is not in the fixture |
 
 ## Bounds
 

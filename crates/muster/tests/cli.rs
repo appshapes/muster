@@ -865,6 +865,56 @@ fn fixtures_records_the_newest_issue_that_has_comments_attachments_and_sub_issue
         issues["issues"]["nodes"][0]["labels"]["nodes"][0]["name"], "<string>",
         "the Issues fixture is recorded on labelled issues"
     );
+    let project: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("ProjectByName.json")).unwrap())
+            .unwrap();
+    let node = &project["projects"]["nodes"][0];
+    assert_eq!(
+        node["members"]["nodes"][0]["email"], "<string>",
+        "the member node shape is recorded"
+    );
+    assert_eq!(
+        node["projectMilestones"]["nodes"][0]["name"], "<string>",
+        "the milestone node shape is recorded"
+    );
+
+    // The recorder prefers a project with a member and a milestone over a newer one
+    // with neither, and says in a `partial` notice what the project it had to settle
+    // for lacks (ADR 0014).
+    let empty = muster(&fake, &["project", "create", "--name", "Empty"]);
+    assert_eq!(empty.code, 0, "{}", empty.stderr);
+    let again = muster(&fake, &["fixtures", temp_dir().to_str().unwrap()]);
+    assert_eq!(again.code, 0, "{}", again.stderr);
+    assert!(
+        again.notices().is_empty(),
+        "Muster has both, so Empty is passed over: {}",
+        again.stderr
+    );
+    let fewer = muster(
+        &fake,
+        &["project", "update", "Muster", "--remove-member", "me"],
+    );
+    assert_eq!(fewer.code, 0, "{}", fewer.stderr);
+    let lacking = muster(&fake, &["fixtures", temp_dir().to_str().unwrap()]);
+    assert_eq!(lacking.code, 0, "{}", lacking.stderr);
+    let notices = lacking.notices();
+    assert_eq!(notices.len(), 1, "{}", lacking.stderr);
+    assert_eq!(notices[0]["code"], "partial");
+    let message = notices[0]["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("ProjectByName: recorded on \"Muster\"")
+            && message.contains("no member")
+            && !message.contains("milestone"),
+        "{message}"
+    );
+    assert!(
+        notices[0]["hint"]
+            .as_str()
+            .unwrap()
+            .contains("--add-member me"),
+        "{}",
+        lacking.stderr
+    );
 }
 
 #[test]
