@@ -351,6 +351,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
     let (sample, lack) = sample_issue(session)?;
     let team = sample_team(session)?;
     let project = sample_project(session)?;
+    let template = sample_template(session)?;
     match (&sample, lack) {
         (Some(id), Some(lack)) => out.notice(
             "partial",
@@ -371,6 +372,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
             sample.as_deref(),
             team.as_deref(),
             project.as_deref(),
+            template.as_deref(),
         ) else {
             if [
                 "IssueById",
@@ -379,6 +381,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
                 "ProjectByName",
                 "Milestones",
                 "ProjectUpdates",
+                "TemplateByName",
             ]
             .contains(&op.name)
             {
@@ -496,6 +499,19 @@ fn project_lack(data: &Value) -> Option<&'static str> {
     }
 }
 
+/// The name of the template `TemplateByName` is recorded on: the first one
+/// `Templates` lists.
+fn sample_template(session: &Session) -> Result<Option<String>, Error> {
+    let data = session.linear.run(
+        &ops::TEMPLATES,
+        json!({ "first": 1, "filter": Value::Null }),
+    )?;
+    Ok(data["templateSearch"]
+        .as_array()
+        .and_then(|list| list.first())
+        .and_then(|t| str_at(t, "name").map(str::to_string)))
+}
+
 /// The variables each read operation is recorded with, and the fixture test replays
 /// against the fake; `None` when `IssueById` has no issue, `TeamByKey` no team, or
 /// `ProjectByName` no project, to ask for.
@@ -504,6 +520,7 @@ pub fn fixture_variables(
     first_issue: Option<&str>,
     first_team: Option<&str>,
     first_project: Option<&str>,
+    first_template: Option<&str>,
 ) -> Option<Value> {
     Some(match op {
         "Viewer" | "Workspace" => json!({}),
@@ -515,6 +532,8 @@ pub fn fixture_variables(
         "UserById" => json!({ "id": "me" }),
         "ProjectStatuses" => json!({ "first": 5, "includeArchived": false }),
         "Milestones" | "ProjectUpdates" => json!({ "project": first_project?, "first": 5 }),
+        "Templates" => json!({ "first": 6, "filter": Value::Null }),
+        "TemplateByName" => json!({ "name": first_template?, "includeArchived": false }),
         "ProjectByName" => {
             json!({ "name": first_project?, "includeArchived": false, "teams": TEAMS_PER_PROJECT, "members": MEMBERS_PER_PROJECT, "milestones": MILESTONES_PER_PROJECT })
         }
@@ -640,6 +659,11 @@ mod tests {
             "milestone delete",
             "project-update list",
             "project-update create",
+            "template list",
+            "template get",
+            "template create",
+            "template update",
+            "template delete",
             "state list",
             "label list",
             "project list",

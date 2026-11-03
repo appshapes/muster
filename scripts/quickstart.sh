@@ -84,6 +84,13 @@ step "muster project get and update"
 "$bin" project get "Trying muster" | tee "$tmp/project-get.json"
 jq -e '.name == "Trying muster" and .status.name == "In Progress" and (.members.nodes | type) == "array"' "$tmp/project-get.json" >/dev/null
 
+step "muster template create --data-file, list --type and get"
+printf '{"title": "Feature: ", "priority": 3}\n' > "$tmp/feature.json"
+"$bin" template create --name "Feature" --type issue --data-file "$tmp/feature.json" --description "For a feature." | tee "$tmp/template.json"
+jq -e '.name == "Feature" and .type == "issue" and .team.key == "APP" and (.templateData | fromjson).priority == 3' "$tmp/template.json" >/dev/null
+"$bin" template list --type issue | jq -s -e 'map(.name) | index("Feature") != null' >/dev/null
+"$bin" template get Feature | jq -e '(.templateData | fromjson).title == "Feature: "' >/dev/null
+
 step "muster issue list --project"
 "$bin" issue update "$id" --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
 "$bin" issue list --project "Trying muster" | tee "$tmp/in-project.jsonl"

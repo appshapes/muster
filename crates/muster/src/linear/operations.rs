@@ -153,6 +153,15 @@ pub const PROJECT_UPDATE_FIELDS: &str = "fragment ProjectUpdateFields on Project
   project { id name }
 }";
 
+/// The fields every template answer carries (ADR 0014, group 15); `templateData` is
+/// Linear's JSON as it returns it.
+pub const TEMPLATE_FIELDS: &str = "fragment TemplateFields on Template {
+  id type name description icon color templateData sortOrder lastAppliedAt
+  createdAt updatedAt archivedAt
+  team { id key }
+  creator { id name displayName }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -333,6 +342,26 @@ op!(
   }
 }",
     &[PROJECT_UPDATE_FIELDS]
+);
+
+op!(
+    TEMPLATES,
+    "Templates",
+    Kind::Query,
+    "query Templates($first: Int!, $filter: TemplateFilter) {
+  templateSearch(first: $first, filter: $filter) { ...TemplateFields }
+}",
+    &[TEMPLATE_FIELDS]
+);
+
+op!(
+    TEMPLATE_BY_NAME,
+    "TemplateByName",
+    Kind::Query,
+    "query TemplateByName($name: String!, $includeArchived: Boolean) {
+  templateSearch(first: 1, filter: { name: { eqIgnoreCase: $name } }, includeArchived: $includeArchived) { ...TemplateFields }
+}",
+    &[TEMPLATE_FIELDS]
 );
 
 op!(
@@ -698,6 +727,35 @@ op!(
     &[PROJECT_UPDATE_FIELDS]
 );
 
+op!(
+    TEMPLATE_CREATE,
+    "TemplateCreate",
+    Kind::Mutation,
+    "mutation TemplateCreate($input: TemplateCreateInput!) {
+  templateCreate(input: $input) { success template { ...TemplateFields } }
+}",
+    &[TEMPLATE_FIELDS]
+);
+
+op!(
+    TEMPLATE_UPDATE,
+    "TemplateUpdate",
+    Kind::Mutation,
+    "mutation TemplateUpdate($id: String!, $input: TemplateUpdateInput!) {
+  templateUpdate(id: $id, input: $input) { success template { ...TemplateFields } }
+}",
+    &[TEMPLATE_FIELDS]
+);
+
+op!(
+    TEMPLATE_DELETE,
+    "TemplateDelete",
+    Kind::Mutation,
+    "mutation TemplateDelete($id: String!) {
+  templateDelete(id: $id) { success entityId }
+}"
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -716,6 +774,8 @@ pub static READS: &[&Operation] = &[
     &PROJECT_STATUSES,
     &MILESTONES,
     &PROJECT_UPDATES,
+    &TEMPLATES,
+    &TEMPLATE_BY_NAME,
 ];
 
 /// Every write operation.
@@ -756,6 +816,9 @@ pub static WRITES: &[&Operation] = &[
     &MILESTONE_UPDATE,
     &MILESTONE_DELETE,
     &PROJECT_UPDATE_CREATE,
+    &TEMPLATE_CREATE,
+    &TEMPLATE_UPDATE,
+    &TEMPLATE_DELETE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -810,6 +873,7 @@ mod tests {
                 "ProjectStatusFields",
                 "MilestoneFields",
                 "ProjectUpdateFields",
+                "TemplateFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));

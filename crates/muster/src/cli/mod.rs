@@ -75,6 +75,12 @@ pub enum Command {
         #[command(subcommand)]
         command: ProjectCommand,
     },
+    /// Templates for issues, projects and documents: list, get, create, update, delete
+    Template {
+        /// The template command.
+        #[command(subcommand)]
+        command: TemplateCommand,
+    },
     /// A project's milestones: list, create, update, delete
     Milestone {
         /// The milestone command.
@@ -993,6 +999,103 @@ impl ProjectStatusType {
             ProjectStatusType::Paused => "paused",
             ProjectStatusType::Completed => "completed",
             ProjectStatusType::Canceled => "canceled",
+        }
+    }
+}
+
+/// The template commands (ADR 0014, group 15).
+#[derive(Subcommand, Debug)]
+pub enum TemplateCommand {
+    /// List the team's and the workspace's templates, one JSON object per line
+    List(TemplateListArgs),
+    /// One template with its data, by name; `templateData` is a string of JSON, as Linear returns it
+    Get(TemplateRefArgs),
+    /// Create a template from a JSON data file; a name a template already has is refused unless --allow-duplicate
+    Create(Box<TemplateCreateArgs>),
+    /// Change a template's name, description or data
+    Update(Box<TemplateUpdateArgs>),
+    /// Delete a template; there is no undo
+    Delete(TemplateRefArgs),
+}
+
+/// `template list`.
+#[derive(Args, Debug)]
+pub struct TemplateListArgs {
+    /// Only templates of this kind
+    #[arg(long, value_name = "TYPE", value_enum)]
+    pub r#type: Option<TemplateType>,
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+}
+
+/// A template, by name.
+#[derive(Args, Debug)]
+pub struct TemplateRefArgs {
+    /// The template, by name
+    #[arg(value_name = "NAME")]
+    pub name: String,
+}
+
+/// `template create`.
+#[derive(Args, Debug, Default)]
+pub struct TemplateCreateArgs {
+    /// The name
+    #[arg(long, value_name = "TEXT")]
+    pub name: String,
+    /// What the template makes
+    #[arg(long, value_name = "TYPE", value_enum)]
+    pub r#type: TemplateType,
+    /// The template's data, JSON as Linear's `templateData`, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub data_file: String,
+    /// A template every team shares, rather than the team's own
+    #[arg(long)]
+    pub workspace: bool,
+    /// The description
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// Create it even when a template has the name
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `template update`.
+#[derive(Args, Debug, Default)]
+pub struct TemplateUpdateArgs {
+    /// The template, by name
+    #[arg(value_name = "NAME")]
+    pub template: String,
+    /// A new name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new description
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// New data, JSON as Linear's `templateData`, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub data_file: Option<String>,
+}
+
+/// What a template makes, as Linear's `type` spells it.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TemplateType {
+    /// An issue.
+    #[default]
+    Issue,
+    /// A project.
+    Project,
+    /// A document.
+    Document,
+}
+
+impl TemplateType {
+    /// The value Linear takes and returns.
+    pub fn linear(self) -> &'static str {
+        match self {
+            TemplateType::Issue => "issue",
+            TemplateType::Project => "project",
+            TemplateType::Document => "document",
         }
     }
 }

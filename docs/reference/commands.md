@@ -360,6 +360,55 @@ Bring a trashed or archived project back.
 | --- | --- | --- | --- | --- |
 | `<NAME>` | `<NAME>` | yes |  | The project, by name |
 
+### muster template list
+
+List the team's and the workspace's templates, one JSON object per line.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--type` | `<issue\|project\|document>` | no |  | Only templates of this kind |
+| `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
+### muster template get
+
+One template with its data, by name; `templateData` is a string of JSON, as Linear returns it.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The template, by name |
+
+### muster template create
+
+Create a template from a JSON data file; a name a template already has is refused unless --allow-duplicate.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--name` | `<TEXT>` | yes |  | The name |
+| `--type` | `<issue\|project\|document>` | yes |  | What the template makes |
+| `--data-file` | `<PATH>` | yes |  | The template's data, JSON as Linear's `templateData`, from a file, or from stdin when PATH is `-` |
+| `--workspace` |  | no |  | A template every team shares, rather than the team's own |
+| `--description` | `<TEXT>` | no |  | The description |
+| `--allow-duplicate` |  | no |  | Create it even when a template has the name |
+
+### muster template update
+
+Change a template's name, description or data.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The template, by name |
+| `--name` | `<TEXT>` | no |  | A new name |
+| `--description` | `<TEXT>` | no |  | A new description |
+| `--data-file` | `<PATH>` | no |  | New data, JSON as Linear's `templateData`, from a file, or from stdin when PATH is `-` |
+
+### muster template delete
+
+Delete a template; there is no undo.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The template, by name |
+
 ### muster milestone list
 
 List a project's milestones, one JSON object per line.
@@ -741,6 +790,8 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `ProjectStatuses` | query |
 | `Milestones` | query |
 | `ProjectUpdates` | query |
+| `Templates` | query |
+| `TemplateByName` | query |
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
@@ -777,3 +828,6 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `MilestoneUpdate` | mutation |
 | `MilestoneDelete` | mutation |
 | `ProjectUpdateCreate` | mutation |
+| `TemplateCreate` | mutation |
+| `TemplateUpdate` | mutation |
+| `TemplateDelete` | mutation |

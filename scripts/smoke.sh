@@ -133,6 +133,29 @@ jq -e --arg n "Smoky $short" '.name == $n' "$tmp/status-archive.json" >/dev/null
 jq -e --arg n "Smoky $short" '.name == $n' "$tmp/status-unarchive.json" >/dev/null
 "$bin" project-status archive "Smoky $short" | jq -c '{name}' >/dev/null
 echo
+echo "smoke: muster template create --name 'Smoke template' --type issue --workspace (exit 6 after the first run; it stays, for the fixture), get, list --type issue, then a throwaway team template updated and deleted (ADR 0014)"
+printf '{"title": "From the smoke template", "description": "Made by scripts/smoke.sh; the template stays so that the fixture has a node (ADR 0014)."}\n' > "$tmp/template-data.json"
+set +e
+"$bin" template create --name "Smoke template" --type issue --workspace --data-file "$tmp/template-data.json" --description "The smoke test's own issue template (ADR 0014)." > "$tmp/template.json" 2> "$tmp/template.err"
+code=$?
+set -e
+case "$code" in
+  0) jq -c '{name, type, team}' "$tmp/template.json" ;;
+  6) cat "$tmp/template.err"; jq -e '.error.code == "refused"' "$tmp/template.err" >/dev/null ;;
+  *) echo "smoke: template create exited $code" >&2; cat "$tmp/template.err" >&2; exit 1 ;;
+esac
+"$bin" template get "Smoke template" | jq -c '{name, type, team, title: (.templateData | fromjson).title}' | tee "$tmp/template-get.json"
+jq -e '.name == "Smoke template" and .type == "issue" and .team == null' "$tmp/template-get.json" >/dev/null
+"$bin" template list --type issue | jq -c '{name, type, team: .team.key}' | tee "$tmp/templates.jsonl"
+jq -s -e 'map(.name) | index("Smoke template") != null' "$tmp/templates.jsonl" >/dev/null
+"$bin" template create --name "Smoke template $stamp" --type issue --team SMK --data-file "$tmp/template-data.json" | jq -c '{name, team: .team.key}' | tee "$tmp/template-throwaway.json"
+jq -e --arg n "Smoke template $stamp" '.name == $n and .team == "SMK"' "$tmp/template-throwaway.json" >/dev/null
+printf '{"title": "Renamed at %s"}\n' "$stamp" > "$tmp/template-data-2.json"
+"$bin" template update "Smoke template $stamp" --name "Smoky template $stamp" --data-file "$tmp/template-data-2.json" | jq -c '{name, title: (.templateData | fromjson).title}' | tee "$tmp/template-update.json"
+jq -e --arg n "Smoky template $stamp" '.name == $n' "$tmp/template-update.json" >/dev/null
+"$bin" template delete "Smoky template $stamp" | jq -c '{success}' | tee "$tmp/template-delete.json"
+jq -e '.success == true' "$tmp/template-delete.json" >/dev/null
+echo
 echo "smoke: muster project get 'Smoke tests', then a throwaway project updated, deleted, unarchived and deleted again (ADR 0014)"
 "$bin" project get "Smoke tests" | jq -c '{name, status: .status.name, members: (.members.nodes | length), milestones: (.projectMilestones.nodes | length), trashed}' | tee "$tmp/project-get.json"
 jq -e '.name == "Smoke tests"' "$tmp/project-get.json" >/dev/null

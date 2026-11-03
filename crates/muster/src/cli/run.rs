@@ -16,8 +16,9 @@ use crate::cli::{
     ProjectStatusCommand, ProjectStatusCreateArgs, ProjectStatusRefArgs, ProjectStatusUpdateArgs,
     ProjectUpdateArgs, ProjectUpdateCommand, ProjectUpdateCreateArgs, ProjectUpdateListArgs,
     StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs,
-    TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs, UserRoleArgs,
-    UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
+    TeamRefArgs, TeamUpdateArgs, TemplateCommand, TemplateCreateArgs, TemplateListArgs,
+    TemplateRefArgs, TemplateUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs,
+    UserRoleArgs, UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -103,6 +104,16 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 ProjectCommand::Update(args) => project_update(&session, args, out),
                 ProjectCommand::Delete(args) => project_delete(&session, args, out),
                 ProjectCommand::Unarchive(args) => project_unarchive(&session, args, out),
+            }
+        }
+        Command::Template { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                TemplateCommand::List(args) => template_list(&session, args, out),
+                TemplateCommand::Get(args) => template_get(&session, args, out),
+                TemplateCommand::Create(args) => template_create(&session, args, out),
+                TemplateCommand::Update(args) => template_update(&session, args, out),
+                TemplateCommand::Delete(args) => template_delete(&session, args, out),
             }
         }
         Command::Milestone { command } => {
@@ -472,6 +483,26 @@ impl Session {
                     names(&stones, "name")
                 ),
                 "name one from `muster milestone list --project <NAME>`",
+            )),
+        }
+    }
+
+    /// One template by name, in one request; an archived one only when asked
+    /// (ADR 0014, group 15).
+    fn template_named(&self, name: &str, include_archived: bool) -> Result<Value, Error> {
+        let data = self.linear.run(
+            &ops::TEMPLATE_BY_NAME,
+            json!({ "name": name, "includeArchived": include_archived }),
+        )?;
+        match data["templateSearch"]
+            .as_array()
+            .and_then(|list| list.first().cloned())
+        {
+            Some(template) => Ok(template),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("no template named {name:?}"),
+                "name one from `muster template list`",
             )),
         }
     }
@@ -1745,6 +1776,148 @@ fn project_create(session: &Session, args: &ProjectCreateArgs, out: &Output) -> 
     // A project muster makes has the one team, so its `teams` page is never cut; the
     // `truncated` notice is `project list`'s, where a project may span many.
     out.emit(&payload(&data, "projectCreate", "project")?);
+    Ok(())
+}
+
+/// `template list`: the team's and the workspace's templates. Linear's
+/// `templateSearch` is a list with no page info, so one more than the limit is asked
+/// for, and a cut list is known from the extra one (ADR 0014, group 15).
+fn template_list(session: &Session, args: &TemplateListArgs, out: &Output) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let team_key = session.team_key()?;
+    let mut filter = Map::new();
+    filter.insert(
+        "or".into(),
+        json!([ { "team": { "key": { "eq": team_key } } }, { "team": { "null": true } } ]),
+    );
+    if let Some(kind) = args.r#type {
+        filter.insert("type".into(), json!({ "eq": kind.linear() }));
+    }
+    let data = session.linear.run(
+        &ops::TEMPLATES,
+        json!({ "first": n + 1, "filter": Value::Object(filter) }),
+    )?;
+    let mut templates = data["templateSearch"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let cut = templates.len() > n;
+    templates.truncate(n);
+    emit_list(out, templates, cut, "templates", n);
+    Ok(())
+}
+
+fn template_get(session: &Session, args: &TemplateRefArgs, out: &Output) -> Result<(), Error> {
+    out.emit(&session.template_named(&args.name, false)?);
+    Ok(())
+}
+
+/// A template's data from its file: JSON, checked against `BODY_MAX_BYTES` by
+/// `read_body` and parsed here, since Linear takes `templateData` as JSON.
+fn template_data(path: &str) -> Result<Value, Error> {
+    let text = read_body(path)?;
+    serde_json::from_str(&text).map_err(|e| {
+        Error::with_hint(
+            ErrorCode::Usage,
+            format!("the data file is not JSON: {e}"),
+            "`--data-file` takes Linear's `templateData` as JSON; `muster template get <NAME>` shows the shape of an existing one",
+        )
+    })
+}
+
+fn template_create(
+    session: &Session,
+    args: &TemplateCreateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    check_body(Text::Name, &args.name)?;
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+    }
+    let data = template_data(&args.data_file)?;
+    // The guard: `template get <NAME>` resolves a name to one template. Only a
+    // missing template lets the create go on; any other failure of the read is itself.
+    if !args.allow_duplicate {
+        match session.template_named(&args.name, false) {
+            Ok(existing) => {
+                return Err(Error::with_hint(
+                    ErrorCode::Refused,
+                    format!(
+                        "a template named {:?} exists ({})",
+                        str_at(&existing, "name").unwrap_or(&args.name),
+                        match str_at(&existing, "team.key") {
+                            Some(key) => format!("team {key}"),
+                            None => "the workspace".to_string(),
+                        }
+                    ),
+                    "use that template, or pass --allow-duplicate if a second one is wanted",
+                )
+                .at("muster-template-create"));
+            }
+            Err(error) if error.code == ErrorCode::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    let mut input = Map::new();
+    input.insert("name".into(), json!(args.name));
+    input.insert("type".into(), json!(args.r#type.linear()));
+    input.insert("templateData".into(), data);
+    if let Some(description) = &args.description {
+        input.insert("description".into(), json!(description));
+    }
+    if !args.workspace {
+        let (team, _) = session.team()?;
+        input.insert("teamId".into(), json!(need_str(&team, "id", "Teams")?));
+    }
+    let answer = session.linear.run(
+        &ops::TEMPLATE_CREATE,
+        json!({ "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&answer, "templateCreate", "template")?);
+    Ok(())
+}
+
+fn template_update(
+    session: &Session,
+    args: &TemplateUpdateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let mut input = Map::new();
+    if let Some(name) = &args.name {
+        check_body(Text::Name, name)?;
+        input.insert("name".into(), json!(name));
+    }
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if let Some(path) = &args.data_file {
+        input.insert("templateData".into(), template_data(path)?);
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --name, --description, --data-file",
+        ));
+    }
+    let template = session.template_named(&args.template, false)?;
+    let id = need_str(&template, "id", "TemplateByName")?;
+    let answer = session.linear.run(
+        &ops::TEMPLATE_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&answer, "templateUpdate", "template")?);
+    Ok(())
+}
+
+fn template_delete(session: &Session, args: &TemplateRefArgs, out: &Output) -> Result<(), Error> {
+    let template = session.template_named(&args.name, false)?;
+    let id = need_str(&template, "id", "TemplateByName")?;
+    let answer = session
+        .linear
+        .run(&ops::TEMPLATE_DELETE, json!({ "id": id }))?;
+    out.emit(&delete_payload(&answer, "templateDelete")?);
     Ok(())
 }
 

@@ -52,6 +52,8 @@ struct Workspace {
     milestones: Vec<Value>,
     /// The status posts of every project, each with its `projectId`, oldest first.
     project_updates: Vec<Value>,
+    /// The templates, the team's and the workspace's, newest first.
+    templates: Vec<Value>,
 }
 
 struct State {
@@ -519,6 +521,7 @@ impl Workspace {
             project_statuses: Vec::new(),
             milestones: Vec::new(),
             project_updates: Vec::new(),
+            templates: Vec::new(),
         };
         // Every field `Workspace` asks for, with the values a Free workspace shows; the
         // fixture holds this to the recorded shape (ADR 0010; ADR 0014, group 1).
@@ -588,6 +591,14 @@ impl Workspace {
             json!({ "id": me["id"], "name": me["name"], "displayName": me["displayName"] });
         project["memberIds"] = json!([me["id"]]);
         ws.projects.push(project.clone());
+        // One issue template the workspace shares, so that every template answer has a
+        // node and the recorder finds one (ADR 0014, group 15).
+        let _ = ws
+            .new_template(&json!({
+                "type": "issue", "name": "Bug report", "description": "For a bug.",
+                "templateData": { "title": "Bug: ", "description": "## Steps\n\n1. " },
+            }))
+            .expect("a workspace template needs no team");
         // One milestone, so that `project get` prints a node and the recorder finds
         // one (ADR 0014, group 8).
         ws.new_milestone(&project, "First cut", None, Some("2026-12-01"));
@@ -1008,6 +1019,39 @@ impl Workspace {
             json!({ "id": post["id"], "health": post["health"], "createdAt": post["createdAt"] });
         project["health"] = post["health"].clone();
         post
+    }
+
+    /// A template with every `TemplateFields` field (ADR 0014, group 15), newest first
+    /// in the store; `team` is `None` for one the workspace shares.
+    fn new_template(&mut self, input: &Value) -> Result<Value, (u16, Value)> {
+        let (id, now) = (self.id(), self.now());
+        let me = self.users[0].clone();
+        let team = match input["teamId"].as_str() {
+            Some(tid) => match self.teams.iter().find(|t| t["id"] == tid) {
+                Some(t) => json!({ "id": t["id"], "key": t["key"] }),
+                None => return Err(not_found("Team")),
+            },
+            None => Value::Null,
+        };
+        // Linear takes `templateData` as JSON and returns it as a string of JSON
+        // (read on 2026-11-03), so the store keeps the string.
+        let data = Workspace::template_data_string(&input["templateData"]);
+        let template = json!({
+            "id": id, "type": input["type"], "name": input["name"], "description": input["description"],
+            "icon": null, "color": null, "templateData": data, "sortOrder": 0.0,
+            "lastAppliedAt": null, "createdAt": now, "updatedAt": now, "archivedAt": null,
+            "team": team, "creator": { "id": me["id"], "name": me["name"], "displayName": me["displayName"] },
+        });
+        self.templates.insert(0, template.clone());
+        Ok(template)
+    }
+
+    /// `templateData` as Linear returns it: a string of JSON, whatever JSON came in.
+    fn template_data_string(data: &Value) -> Value {
+        match data {
+            Value::String(s) => Value::String(s.clone()),
+            other => Value::String(other.to_string()),
+        }
     }
 
     fn milestone_view(stone: &Value) -> Value {
@@ -1710,6 +1754,98 @@ impl Workspace {
                 (
                     200,
                     json!({ "data": { "projectUpdateCreate": { "success": true, "projectUpdate": Workspace::milestone_view(&post) } } }),
+                )
+            }
+            "Templates" => {
+                let include_archived = vars["includeArchived"].as_bool().unwrap_or(false);
+                let templates: Vec<Value> = self
+                    .templates
+                    .iter()
+                    .filter(|t| {
+                        (include_archived || t["archivedAt"].is_null()) && passes(t, filter)
+                    })
+                    .take(first)
+                    .cloned()
+                    .collect();
+                (200, json!({ "data": { "templateSearch": templates } }))
+            }
+            "TemplateByName" => {
+                let name = vars["name"].as_str().unwrap_or("");
+                let include_archived = vars["includeArchived"].as_bool().unwrap_or(false);
+                let found: Vec<Value> = self
+                    .templates
+                    .iter()
+                    .filter(|t| {
+                        (include_archived || t["archivedAt"].is_null())
+                            && t["name"]
+                                .as_str()
+                                .is_some_and(|n| n.eq_ignore_ascii_case(name))
+                    })
+                    .take(1)
+                    .cloned()
+                    .collect();
+                (200, json!({ "data": { "templateSearch": found } }))
+            }
+            "TemplateCreate" => {
+                let input = vars["input"].clone();
+                if input["name"].as_str().is_none_or(|n| n.trim().is_empty()) {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "name should not be empty" } } ], "data": null }),
+                    );
+                }
+                if !["issue", "project", "document"].contains(&input["type"].as_str().unwrap_or(""))
+                {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "type must be one of issue, project, document" } } ], "data": null }),
+                    );
+                }
+                match self.new_template(&input) {
+                    Ok(template) => (
+                        200,
+                        json!({ "data": { "templateCreate": { "success": true, "template": template } } }),
+                    ),
+                    Err(answer) => answer,
+                }
+            }
+            "TemplateUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "TemplateUpdateInput!");
+                };
+                let Some(index) = self
+                    .templates
+                    .iter()
+                    .position(|t| t["id"] == id && t["archivedAt"].is_null())
+                else {
+                    return not_found("Template");
+                };
+                let now = self.now();
+                for (field, value) in input {
+                    if field == "templateData" {
+                        self.templates[index][field] = Workspace::template_data_string(&value);
+                    } else if ["name", "description", "icon", "color", "sortOrder"]
+                        .contains(&field.as_str())
+                    {
+                        self.templates[index][field] = value;
+                    }
+                }
+                self.templates[index]["updatedAt"] = json!(now);
+                (
+                    200,
+                    json!({ "data": { "templateUpdate": { "success": true, "template": self.templates[index].clone() } } }),
+                )
+            }
+            "TemplateDelete" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.templates.iter().position(|t| t["id"] == id) else {
+                    return not_found("Template");
+                };
+                self.templates.remove(index);
+                (
+                    200,
+                    json!({ "data": { "templateDelete": { "success": true, "entityId": id } } }),
                 )
             }
             "ProjectStatusCreate" => {

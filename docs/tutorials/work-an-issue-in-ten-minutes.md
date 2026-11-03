@@ -130,7 +130,14 @@ doing is a status post: `muster project-update create --project "Trying muster"
 --body "Shipping on Friday." --health onTrack` (one JSON line with the post's `body`,
 `health`, `user` and `url`), and `muster project-update list --project "Trying
 muster"` shows them newest first; the project's own `health` and `lastUpdate` follow
-the latest post.
+the latest post. A template is a saved shape for a new issue, project or document:
+`muster template list` prints the team's and the workspace's, `muster template get
+"Bug report"` one with its `templateData` (a string of JSON, as Linear returns it;
+`jq '.templateData | fromjson'` reads it), and `muster template create
+--name "Feature" --type issue --data-file feature.json` makes one from a file holding
+that JSON (`--workspace` for one every team shares); `muster template update Feature
+--data-file feature.json` replaces the data, and `muster template delete Feature`
+deletes it, with no undo.
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):
