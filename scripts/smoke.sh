@@ -8,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 unset MUSTER_ENDPOINT
 
-cargo build --release -p muster --bin muster
+cargo build --release -p muster-cli --bin muster
 bin=target/release/muster
 stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 tmp=$(mktemp -d)

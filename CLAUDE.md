@@ -52,7 +52,7 @@ just tidy           # retire branches whose work is on master; `just tidy <branc
 ```
 docs/                 mdBook: tutorials/, how-to/, reference/ (generated), explanation/, decisions/ (ADRs), glossary.md
 crates/
-  muster/             the one crate: the `muster` binary and the `muster::Linear` client behind it; not published yet (ADR 0003)
+  muster/             the one crate, published as `muster-cli` (ADR 0011): the `muster` binary and the `muster::Linear` client behind it
     src/main.rs       the command tree (clap), the output and the exit codes
     src/linear/       the GraphQL client: transport, operations, types
     src/bounds.rs     every limit, named

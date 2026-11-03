@@ -16,6 +16,7 @@ under `docs/` is listed here; `just lint-docs` fails on one that is not.
 - [Ask the agent to make a change](how-to/ask-the-agent.md)
 - [Implement a feature, from issue to commit](how-to/implement-a-feature.md)
 - [Send the weekly release-notes email](how-to/send-the-release-notes.md)
+- [Cut a release](how-to/cut-a-release.md)
 
 # Reference
 
@@ -35,3 +36,4 @@ under `docs/` is listed here; `just lint-docs` fails on one that is not.
 - [0008. Speak to agents first: JSON Lines, exit codes, no prompt, the key from a file](decisions/0008-speak-to-agents-first.md)
 - [0009. Email the week's changes to a list, drafted by an agent and gated before it is sent](decisions/0009-email-the-weeks-changes.md)
 - [0010. Test against a fake Linear in process, held to recorded response shapes](decisions/0010-test-against-a-fake-linear-held-to-recorded-shapes.md)
+- [0011. Release as `muster-cli` on crates.io and as binaries on GitHub, from a tag](decisions/0011-release-as-muster-cli.md)

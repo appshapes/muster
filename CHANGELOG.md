@@ -6,7 +6,22 @@ user-visible change, added in the same commit as the change. The format follows
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.1.0 - 2026-11-03
+
+The first release: the five Trello operations as `muster` commands, for coding agents
+first. Install with `cargo install muster-cli`; the binary is `muster`.
+
 ### Added
+
+- Released as the crate `muster-cli` 0.1.0 on crates.io, because `muster` belongs to
+  another project, with the binary and the library both named `muster`; a GitHub
+  Release carries `muster-0.1.0-x86_64-unknown-linux-gnu.tar.gz` and
+  `muster-0.1.0-aarch64-apple-darwin.tar.gz` with their SHA-256 sums, built by
+  `.github/workflows/release.yml` from the tag `v0.1.0`
+  ([ADR 0011](docs/decisions/0011-release-as-muster-cli.md),
+  [how to cut a release](docs/how-to/cut-a-release.md)).
 
 - Repository scaffold ported from Cavalry: `CLAUDE.md` invariants and gates, the
   documentation rules, the ADR template, the glossary and the book.

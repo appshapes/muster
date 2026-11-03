@@ -1,9 +1,9 @@
 # muster
 
-The one crate (ADR 0003): `cargo install --path crates/muster` gives the `muster`
-binary, and the library behind it is `muster::Linear`, the client the binary is built
-on. The crate is not published yet, and its published name is decided at the first
-release (ADR 0003): the name `muster` on crates.io belongs to another project.
+The one crate (ADR 0003), published as `muster-cli` because `muster` on crates.io
+belongs to another project (ADR 0011): `cargo install muster-cli` gives the `muster`
+binary, and `cargo add muster-cli` gives the library, whose crate name is `muster`, with
+`muster::Linear`, the client the binary is built on.
 
 ## What this does
 
@@ -39,9 +39,37 @@ In Trello, this is the `trello` CLI the house's skills wrapped
 
 ## Example
 
-Not yet. The example lands with feature 1 of ADR 0007, in the same commit as the crate's
-first public item; until then this section says so instead of showing an API that does
-not exist (ADR 0003).
+The library behind the binary: resolve the key, the team and the endpoint as the binary
+does, run one named operation, read Linear's answer. This is the crate's doctest; it
+compiles on every `just docs` and is not run there, because it reaches Linear with the
+key of whoever runs it (`no_run`).
+
+```rust,no_run
+use muster::linear::operations::{ISSUES, VIEWER};
+use muster::{Config, Error, Linear};
+use serde_json::json;
+
+fn main() -> Result<(), Error> {
+    // LINEAR_API_KEY, else MUSTER_KEY_FILE, else ~/.config/muster/key (ADR 0008).
+    let config = Config::load(None, false);
+    let linear = Linear::connect(&config)?;
+
+    let me = linear.run(&VIEWER, json!({}))?;
+    println!("{} in {}", me["viewer"]["email"], me["organization"]["name"]);
+
+    // Linear's own filter objects and field names, as `muster issue list` sends them.
+    let filter = json!({ "state": { "type": { "in": ["unstarted", "started"] } } });
+    let open = linear.run(&ISSUES, json!({ "first": 5, "filter": filter, "orderBy": "updatedAt" }))?;
+    for issue in open["issues"]["nodes"].as_array().into_iter().flatten() {
+        println!("{} {} ({})", issue["identifier"], issue["title"], issue["state"]["name"]);
+    }
+    Ok(())
+}
+```
+
+Running it against a workspace prints the key's owner and up to five open issues, one a
+line, such as `"APP-5" "Try muster" ("Backlog")`; a missing key is an `Error` whose
+`code` is `Authentication` and whose `to_json()` is the object the binary prints.
 
 ## What to read next
 
@@ -50,6 +78,7 @@ not exist (ADR 0003).
 - [ADR 0007](../../docs/decisions/0007-build-the-trello-command-set-first.md), the first
   slice; [ADR 0008](../../docs/decisions/0008-speak-to-agents-first.md), the agent
   contract; [ADR 0010](../../docs/decisions/0010-test-against-a-fake-linear-held-to-recorded-shapes.md),
-  how it is tested.
+  how it is tested; [ADR 0011](../../docs/decisions/0011-release-as-muster-cli.md), how
+  it is released and why under this name.
 - [Work an issue in ten minutes](../../docs/tutorials/work-an-issue-in-ten-minutes.md),
   the tutorial.

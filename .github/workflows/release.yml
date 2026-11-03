@@ -1,0 +1,83 @@
+# Builds the release binaries when a version tag is pushed and attaches them to a GitHub
+# Release whose notes are the tag's section of CHANGELOG.md (ADR 0011;
+# docs/how-to/cut-a-release.md is the page). crates.io is not published from here: a
+# maintainer runs `cargo publish` with the house token once this run is green, so that
+# no publish token sits in the repository's secrets.
+#
+# Three jobs. `create` refuses a tag whose version is not the manifest's, then creates
+# the release with the changelog section as its body, so a tag with no notes makes no
+# release. `build`, one job per platform on the two runners ci.yml uses, builds `muster`
+# with `--locked`, packs the binary with README.md and LICENSE as
+# muster-X.Y.Z-<target>.tar.gz beside its SHA-256, and uploads both to the release with
+# the job token. Every action is pinned to a full commit SHA with its version in a
+# trailing comment, as in ci.yml; Dependabot moves them.
+name: release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: write
+
+jobs:
+  create:
+    name: create
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check the tag against the manifest
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          manifest=$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "muster-cli"))')
+          if [ "$version" != "$manifest" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match the manifest version $manifest (docs/how-to/cut-a-release.md)"
+            exit 1
+          fi
+      - name: Create the release with the changelog section as its notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          python3 scripts/changelog-section.py "$version" > notes.md
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "muster $version" --notes-file notes.md
+
+  build:
+    name: build (${{ matrix.name }})
+    needs: create
+    runs-on: ${{ matrix.runner }}
+    # A bound for a hung runner: the release build of the one crate took under two
+    # minutes cold on each label in the first release's run.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            runner: blacksmith-4vcpu-ubuntu-2404
+            target: x86_64-unknown-linux-gnu
+          - name: macos-aarch64
+            runner: blacksmith-6vcpu-macos-latest
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo build --release --locked -p muster-cli --bin muster --target ${{ matrix.target }}
+      - name: Pack the tarball and its sum
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          name="muster-${version}-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          cp "target/${{ matrix.target }}/release/muster" README.md LICENSE "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          (cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
+          "dist/$name/muster" --version
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.tar.gz.sha256 --clobber

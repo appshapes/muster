@@ -54,19 +54,19 @@ clippy:
 # docs/reference/commands.md is generated from the binary (CLAUDE.md, gates 2 to 5;
 # ADR 0008): the command tree, the exit codes, the bounds and the environment variables.
 gen-commands:
-    cargo run --quiet -p muster -- schema --format markdown > docs/reference/commands.md
+    cargo run --quiet -p muster-cli -- schema --format markdown > docs/reference/commands.md
 
 lint-commands:
     #!/usr/bin/env bash
     set -euo pipefail
-    diff -u docs/reference/commands.md <(cargo run --quiet -p muster -- schema --format markdown) \
+    diff -u docs/reference/commands.md <(cargo run --quiet -p muster-cli -- schema --format markdown) \
       || { echo "lint-commands: docs/reference/commands.md is stale; run just gen-commands" >&2; exit 1; }
 
 # Re-record the shapes the fake Linear is held to (ADR 0010): every read operation
 # against a real workspace with the key, values stripped to their JSON types, one file
 # per operation under crates/muster/tests/fixtures/. Needs the key; not in CI.
 record-fixtures:
-    cargo run --quiet -p muster -- fixtures crates/muster/tests/fixtures
+    cargo run --quiet -p muster-cli -- fixtures crates/muster/tests/fixtures
 
 # rustdoc with warnings denied; the mdBook under target/book with any warning denied;
 # the book's Rust code blocks; and every relative link and anchor in docs/ and the

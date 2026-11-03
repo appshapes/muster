@@ -10,11 +10,12 @@ on: `0` ok, `3` authentication, `4` not found, `5` rate limited, `6` refused, `7
 network, `8` unknown. It never prompts, never pages, never colours, and never takes the
 API key on the command line. A person adds `--human`.
 
-**Status:** the first slice is being built
-([ADR 0007](docs/decisions/0007-build-the-trello-command-set-first.md)): the five
+**Status:** 0.1.0 is released, as the crate `muster-cli`
+([ADR 0011](docs/decisions/0011-release-as-muster-cli.md)): the first slice
+([ADR 0007](docs/decisions/0007-build-the-trello-command-set-first.md)), the five
 operations the house's Trello skills use, as `muster` commands, each tested against a
-fake Linear held to recorded shapes. Not yet: a release on crates.io, cycles,
-sub-issues, attachments as uploads.
+fake Linear held to recorded shapes and smoke-tested against a real workspace. Not
+yet: cycles, sub-issues, attachments as uploads.
 
 ## Start here
 
@@ -31,6 +32,7 @@ sub-issues, attachments as uploads.
 | Implement a feature, from issue to commit | [`docs/how-to/implement-a-feature.md`](docs/how-to/implement-a-feature.md) |
 | Work an issue, in ten minutes | [`docs/tutorials/work-an-issue-in-ten-minutes.md`](docs/tutorials/work-an-issue-in-ten-minutes.md) |
 | Get the week's changes by email, or send them | [`docs/how-to/send-the-release-notes.md`](docs/how-to/send-the-release-notes.md) |
+| Cut a release | [`docs/how-to/cut-a-release.md`](docs/how-to/cut-a-release.md) |
 | Read the documentation as a book | `just docs`, then open `target/book/index.html` |
 
 ## The ten-minute path
@@ -42,7 +44,7 @@ shows. You need a Linear API key (Linear, Settings, Security & access, Personal 
 keys) and `jq`.
 
 ```sh
-cargo install --path crates/muster                    # the binary, from this checkout
+cargo install muster-cli                              # the binary is `muster`; from a checkout: cargo install --path crates/muster
 mkdir -p ~/.config/muster && (umask 077; cat > ~/.config/muster/key)   # paste the key, then Ctrl-D
 muster whoami                                         # the workspace, you, and the team muster will use
 muster issue create --title "Try muster" --description "Created from the README."   # prints the issue; note its identifier
