@@ -177,11 +177,21 @@ project is made of, 0.5.0 for the rest.
    `createdAt`), `members` and `projectMilestones`, the last two bounded by
    `MEMBERS_PER_PROJECT` and `MILESTONES_PER_PROJECT` with a `truncated` notice.
    `project update <NAME>` (`projectUpdate`): `--name`, `--description`,
-   `--content-file <PATH>`, `--status <NAME>`, `--lead <WHO|none>`,
+   `--content <TEXT>|--content-file <PATH>`, `--status <NAME>`, `--lead <WHO|none>`,
    `--start-date <DATE|none>`, `--target-date <DATE|none>`, `--priority <0-4>`,
-   `--team <KEY>...` (which replaces the teams), `--add-member <WHO>` and
-   `--remove-member <WHO>` (Linear replaces `memberIds`, so muster reads the members
-   first, as `issue update` does for labels), `--color` and `--icon`.
+   `--team <KEY>...` (which replaces the teams), `--add-member <WHO>`,
+   `--remove-member <WHO>`, `--color` and `--icon`. `ProjectUpdateInput` has
+   `memberIds`, the whole list, and no added or removed form; `IssueUpdateInput` has
+   `addedLabelIds` and `removedLabelIds`, which is why `issue update` sends the
+   change and never reads the labels back. So `--add-member` and `--remove-member`
+   read the project's `members` first, through the `project` query `project get`
+   sends, one page of `MEMBERS_PER_PROJECT` with `pageInfo.hasNextPage`, and send
+   that list with the one member added or taken out. When `hasNextPage` is true the
+   command refuses before any mutation, exit 6, a muster guard like the duplicate
+   title: the message says the project has more members than `MEMBERS_PER_PROJECT`,
+   and the hint names the browser as the way to change them. A `memberIds` shorter
+   than the project's members would drop every member past the bound, which
+   invariant 3 forbids.
    `project delete <NAME>` (`projectDelete`: the trash, thirty days) and
    `project unarchive <NAME>` (`projectUnarchive`); the deprecated `projectArchive` is
    not used.
