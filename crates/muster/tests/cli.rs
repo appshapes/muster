@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use muster::bounds::PAGE_CAP;
 use serde_json::{Value, json};
 use support::fake_linear::{Failure, Fake, KEY};
 
@@ -1512,6 +1513,17 @@ fn team_update_changes_only_what_is_passed_and_resolves_names() {
     let orphan = muster(&fake, &["team", "update", "SMK", "--parent", "none"]);
     assert_eq!(orphan.code, 0, "{}", orphan.stderr);
     assert!(orphan.one()["parent"].is_null());
+    let lowercase = muster(
+        &fake,
+        &["team", "update", "smk", "--default-issue-state", "Todo"],
+    );
+    assert_eq!(
+        lowercase.code, 0,
+        "the states are filtered by the key Linear returned, not the key as typed: {}",
+        lowercase.stderr
+    );
+    assert_eq!(lowercase.one()["key"], "SMK");
+    assert_eq!(lowercase.one()["defaultIssueState"]["name"], "Todo");
     let inferred = muster_with(
         &fake,
         &["team", "update", "--timezone", "Europe/London"],
@@ -1745,6 +1757,63 @@ fn user_get_update_role_suspension_and_sessions() {
 // ---- members (ADR 0014, group 3) ---------------------------------------------------------
 
 #[test]
+fn member_remove_past_the_bound_is_refused_rather_than_called_a_non_member() {
+    let fake = Fake::start().unwrap();
+    // APP has its two seeded members; PAGE_CAP - 1 more make PAGE_CAP + 1, and the
+    // last one added is past the one page of PAGE_CAP that `member remove` reads.
+    fake.add_members("APP", PAGE_CAP - 1);
+    let last = format!("member-{}@example.com", PAGE_CAP - 1);
+    let run = muster(&fake, &["member", "remove", "--user", &last]);
+    assert_eq!(run.code, 6, "{}", run.stderr);
+    let e = run.error();
+    assert_eq!(e["code"], "refused");
+    assert!(
+        e["message"]
+            .as_str()
+            .unwrap()
+            .contains("more than PAGE_CAP (250) members"),
+        "{e}"
+    );
+    assert!(e["hint"].as_str().unwrap().contains("browser"), "{e}");
+    assert!(e["docs"].as_str().unwrap().ends_with("#bounds"), "{e}");
+    assert!(
+        !fake
+            .operations()
+            .iter()
+            .any(|o| o == "TeamMembershipDelete"),
+        "refused before any mutation: {:?}",
+        fake.operations()
+    );
+    assert_eq!(
+        muster(&fake, &["member", "list", "--limit", "250"])
+            .lines()
+            .len(),
+        250,
+        "the member is still there"
+    );
+
+    // A member inside the first page still goes.
+    let run = muster(&fake, &["member", "remove", "--user", "other@example.com"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(run.one()["success"], true);
+
+    // At the bound is not over it: the team now has exactly PAGE_CAP members, the
+    // page is not cut, and a user who is not one of them is exit 4, as before.
+    let run = muster(&fake, &["member", "remove", "--user", "other@example.com"]);
+    assert_eq!(run.code, 4, "{}", run.stderr);
+    assert_eq!(run.error()["code"], "not_found");
+    let deletes = fake
+        .operations()
+        .iter()
+        .filter(|o| *o == "TeamMembershipDelete")
+        .count();
+    assert_eq!(
+        deletes, 1,
+        "the one removal, and nothing for the two refusals"
+    );
+}
+
+#[test]
 fn member_list_add_and_remove_work_on_the_teams_memberships() {
     let fake = Fake::start().unwrap();
     let run = muster(&fake, &["member", "list"]);
@@ -1959,6 +2028,21 @@ fn workspace_update_changes_only_what_is_passed_and_reads_back() {
         "the day is spelt as Linear's enum spells it: {}",
         someday.stderr
     );
+    for empty in ["", ","] {
+        let none = muster(
+            &fake,
+            &["workspace", "update", "--allowed-auth-services", empty],
+        );
+        assert_eq!(
+            none.code, 2,
+            "{empty:?} is the empty list too, which only `all` may send: {}",
+            none.stderr
+        );
+        assert_eq!(
+            none.error()["message"],
+            "--allowed-auth-services names no service"
+        );
+    }
     assert_eq!(
         fake.operations()
             .iter()

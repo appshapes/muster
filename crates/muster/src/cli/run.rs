@@ -523,8 +523,9 @@ fn workspace_get(session: &Session, out: &Output) -> Result<(), Error> {
 /// The input of `organizationUpdate` from `workspace update`'s flags: only what was
 /// passed, so that a flag left out leaves its setting alone; `none` clears the branch
 /// format; the roles go under `securitySettings` and the sign-in services under
-/// `authSettings`, as Linear nests them; `all` is Linear's empty list. No flag at all
-/// is a usage error before any request.
+/// `authSettings`, as Linear nests them; `all` is Linear's empty list, and the one way
+/// to send it, since a value that names no service is a usage error. No flag at all is
+/// a usage error too, before any request.
 fn workspace_input(args: &WorkspaceUpdateArgs) -> Result<Map<String, Value>, Error> {
     let mut input = Map::new();
     if let Some(name) = &args.name {
@@ -610,11 +611,22 @@ fn workspace_input(args: &WorkspaceUpdateArgs) -> Result<Map<String, Value>, Err
         let list: Vec<&str> = if services.trim().eq_ignore_ascii_case("all") {
             Vec::new()
         } else {
-            services
+            let named: Vec<&str> = services
                 .split(',')
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
-                .collect()
+                .collect();
+            // An empty value, or commas alone, would also be the empty list, which
+            // Linear reads as every service allowed: a security setting opened by an
+            // empty variable. Exit 2 rather than guess (CLAUDE.md, When in doubt).
+            if named.is_empty() {
+                return Err(Error::with_hint(
+                    ErrorCode::Usage,
+                    "--allowed-auth-services names no service",
+                    "name the services to allow, comma-separated (google,saml); `all`, which lets every service sign in, is the one spelling of Linear's empty list",
+                ));
+            }
+            named
         };
         auth.insert("allowedAuthServices".into(), json!(list));
     }
@@ -787,8 +799,12 @@ fn member_add(session: &Session, args: &MemberArgs, out: &Output) -> Result<(), 
     Ok(())
 }
 
-/// `member remove`: the membership is resolved from the team's list, up to
-/// `PAGE_CAP`, before the one mutation; a user who is not a member is exit 4.
+/// `member remove`: the membership is resolved from the team's list, one page of
+/// `PAGE_CAP`, before the one mutation. A user who is not in a page that holds the
+/// whole team is exit 4. When the page is cut (`pageInfo.hasNextPage`), a user who
+/// is not in it may be a member past the bound, so the command refuses before any
+/// mutation, exit 6, a muster guard, rather than call them a non-member (invariant 1;
+/// ADR 0014 settles the same case for `project update --remove-member`).
 fn member_remove(session: &Session, args: &MemberArgs, out: &Output) -> Result<(), Error> {
     let key = session.team_key()?;
     let user_id = session.user_id(&args.user)?;
@@ -797,6 +813,17 @@ fn member_remove(session: &Session, args: &MemberArgs, out: &Output) -> Result<(
         .into_iter()
         .find(|m| str_at(m, "user.id") == Some(user_id.as_str()));
     let Some(membership) = found else {
+        if has_next_page(&team, "memberships") {
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "team {key} has more than PAGE_CAP ({PAGE_CAP}) members and {:?} is not among the first {PAGE_CAP}",
+                    args.user
+                ),
+                "remove the member in the browser, on the team's members page in Linear; PAGE_CAP is the bound",
+            )
+            .at("bounds"));
+        }
         return Err(Error::with_hint(
             ErrorCode::NotFound,
             format!("{:?} is not a member of team {key}", args.user),
@@ -971,13 +998,22 @@ fn team_update_input(args: &TeamUpdateArgs) -> Result<Map<String, Value>, Error>
         let value = if is_none(period) {
             Value::Null
         } else {
-            let months: f64 = period.trim().parse().map_err(|_| {
-                Error::with_hint(
-                    ErrorCode::Usage,
-                    format!("--auto-close-period {period:?} is not a number of months"),
-                    "pass a number of months, or `none` to never close an idle issue",
-                )
-            })?;
+            // `f64::from_str` accepts `nan`, `inf` and a sign, and serde_json turns a
+            // number that is not finite into `null`, the `none` sentinel: only a
+            // finite, non-negative number is sent, and anything else is refused before
+            // any request (CLAUDE.md, When in doubt: exit non-zero rather than guess).
+            let months = period
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|months| months.is_finite() && *months >= 0.0)
+                .ok_or_else(|| {
+                    Error::with_hint(
+                        ErrorCode::Usage,
+                        format!("--auto-close-period {period:?} is not a number of months"),
+                        "pass a non-negative number of months, or `none` to never close idle issues",
+                    )
+                })?;
             json!(months)
         };
         input.insert("autoClosePeriod".into(), value);
@@ -1006,9 +1042,12 @@ fn team_update_input(args: &TeamUpdateArgs) -> Result<Map<String, Value>, Error>
 /// is exit 6 with its message.
 fn team_update(session: &Session, args: &TeamUpdateArgs, out: &Output) -> Result<(), Error> {
     let mut input = team_update_input(args)?;
-    let key = session.team_key_of(&args.key_of)?;
-    let team = session.team_full(&key, false)?;
+    let team = session.team_full(&session.team_key_of(&args.key_of)?, false)?;
     let id = need_str(&team, "id", "TeamByKey")?;
+    // The key as Linear spells it, not as typed: `TeamByKey` matches a key in any
+    // case, but the states are filtered with `eq`, which is case-sensitive, so a
+    // lowercase key would report a state that exists as matching nothing.
+    let key = need_str(&team, "key", "TeamByKey")?;
     if let Some(parent) = &args.parent {
         let value = if is_none(parent) {
             Value::Null
@@ -1294,8 +1333,8 @@ fn issue_get(session: &Session, args: &GetArgs, out: &Output) -> Result<(), Erro
     Ok(())
 }
 
-/// Whether a flag's value is the `none` sentinel of `--assignee`, `--project` and
-/// `--parent`.
+/// Whether a flag's value is the `none` sentinel of `--assignee`, `--project`,
+/// `--parent` and `team update`'s `--auto-close-period`.
 fn is_none(value: &str) -> bool {
     value.trim().eq_ignore_ascii_case("none")
 }
@@ -1926,6 +1965,22 @@ mod tests {
             at(&Value::Object(input), "authSettings.allowedAuthServices"),
             &json!(["google", "saml"])
         );
+        for empty in ["", " ", ",", " , ,"] {
+            let none = WorkspaceUpdateArgs {
+                allowed_auth_services: Some(empty.into()),
+                ..WorkspaceUpdateArgs::default()
+            };
+            let e = workspace_input(&none).err();
+            assert_eq!(
+                e.as_ref().map(|e| e.code),
+                Some(ErrorCode::Usage),
+                "{empty:?} is not `all`: {e:?}"
+            );
+            assert!(
+                e.is_some_and(|e| e.message == "--allowed-auth-services names no service"),
+                "{empty:?}"
+            );
+        }
         let long = WorkspaceUpdateArgs {
             name: Some("n".repeat(BODY_MAX_BYTES + 1)),
             ..WorkspaceUpdateArgs::default()
@@ -2042,14 +2097,18 @@ mod tests {
                 .get("autoClosePeriod"),
             Some(&json!(3.0))
         );
-        let bad = TeamUpdateArgs {
-            auto_close_period: Some("soon".into()),
-            ..TeamUpdateArgs::default()
-        };
-        assert_eq!(
-            team_update_input(&bad).err().map(|e| e.code),
-            Some(ErrorCode::Usage)
-        );
+        for period in ["soon", "nan", "inf", "-inf", "infinity", "-1"] {
+            let bad = TeamUpdateArgs {
+                auto_close_period: Some(period.into()),
+                ..TeamUpdateArgs::default()
+            };
+            assert_eq!(
+                team_update_input(&bad).err().map(|e| e.code),
+                Some(ErrorCode::Usage),
+                "--auto-close-period {period:?} is refused before any request, \
+                 never sent as `null` or as a negative number"
+            );
+        }
         let blank = TeamUpdateArgs {
             key: Some(" ".into()),
             ..TeamUpdateArgs::default()

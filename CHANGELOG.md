@@ -8,6 +8,12 @@ user-visible change, added in the same commit as the change. The format follows
 
 ### Added
 
+- ADR 0014 decides the third slice: Linear's administrative operations as eighty-one
+  `muster` commands in twenty groups, landed one group per pull request in three
+  release blocks (0.3.0 the workspace and its people, 0.4.0 the things a project is
+  made of, 0.5.0 the rest), with the fixtures of the empty kinds recorded from a smoke
+  team and an invite to the house's own address
+  ([ADR 0014](docs/decisions/0014-build-the-third-slice-administrative-commands.md)).
 - `workspace get` prints the workspace as Linear returns it, one JSON line and no team
   needed: its `name` and `urlKey`, its settings, `securitySettings` and
   `authSettings`, `userCount`, `createdIssueCount`, `previousUrlKeys` and
@@ -20,9 +26,11 @@ user-visible change, added in the same commit as the change. The format follows
   switches, the project update reminders, the fiscal year, the upload content types,
   the ten security roles and the sign-in services. A flag left out leaves its setting
   alone, a boolean takes `true` or `false`, `none` clears the branch format, `all`
-  allows every sign-in service, and no flag at all is a usage error, exit 2, before any
-  request; most settings need a workspace admin, and Linear's refusal is exit 6 (ADR
-  0014, group 1; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+  allows every sign-in service and is the one spelling of that empty list (a value
+  that names no service is exit 2), and no flag at all is a usage error, exit 2,
+  before any request; most settings need a workspace admin, and Linear's refusal is
+  exit 6 (ADR 0014, group 1;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 - `team get [<KEY>]` prints a team with every setting, read in one request by key, or
   the team muster would use; `team list` now prints `visibility`, `cyclesEnabled`,
   `retiredAt` and `timezone` with each team. `team create --name <TEXT> [--key <KEY>]
@@ -51,9 +59,11 @@ user-visible change, added in the same commit as the change. The format follows
   `owner` and `sortOrder`, bounded by `--limit` with a `truncated` notice past it;
   `member add --user <WHO>` adds a user to the team through Linear's
   `teamMembershipCreate` (a second membership is Linear's refusal, exit 6), and
-  `member remove --user <WHO>` removes one, the membership found in the team's list
-  first, so that a user who is not a member is exit 4 before any mutation; the team
-  is the usual rule, `--team`, `MUSTER_TEAM` or the only one (ADR 0014, group 3;
+  `member remove --user <WHO>` removes one, the membership found in the team's first
+  `PAGE_CAP` members first, so that a user who is not a member is exit 4 before any
+  mutation, and a user who is not among them in a team with more is refused, exit 6,
+  a muster guard, rather than called a non-member; the team is the usual rule,
+  `--team`, `MUSTER_TEAM` or the only one (ADR 0014, group 3;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 - `user get <WHO>` prints one user with their role flags (`admin`, `owner`, `guest`,
   `app`), `active` and `disableReason`, profile, status and `lastSeen`; `user list`
@@ -67,6 +77,13 @@ user-visible change, added in the same commit as the change. The format follows
   read back, two JSON lines; a suspended user is still found by email or name, so that
   `unsuspend` reaches them (ADR 0014, group 4;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+
+### Changed
+
+- `muster schema` and the reference it generates spell out the values an enumerated
+  flag takes, `<owner|admin|user|guest>` and `<Sunday|Monday|...|Saturday>` rather than
+  `<ROLE>` and `<DAY>`, for every flag whose values `clap` knows, so a flag added later
+  cannot leave them out ([the reference](docs/reference/commands.md)).
 
 ## 0.2.0 - 2026-11-03
 

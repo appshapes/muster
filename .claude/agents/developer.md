@@ -18,8 +18,9 @@ access. Everything below is a rule, not a preference.
 
 Read `CLAUDE.md` first, every time. The invariants are in priority order and decide every
 conflict. Then read `crates/muster/README.md` and
-`docs/decisions/0007-build-the-trello-command-set-first.md` and
-`docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md` before the code, and
+`docs/decisions/0007-build-the-trello-command-set-first.md`,
+`docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md` and
+`docs/decisions/0014-build-the-third-slice-administrative-commands.md` before the code, and
 `docs/decisions/0008-speak-to-agents-first.md` before touching anything a user sees: an
 output field, an exit code, a flag, a key source.
 
