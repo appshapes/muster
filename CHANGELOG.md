@@ -72,7 +72,10 @@ user-visible change, added in the same commit as the change. The format follows
 - `issue archive <ISSUE>` and `issue unarchive <ISSUE>` take an issue out of the lists
   and bring it back; `issue delete <ISSUE>` puts one in Linear's trash, with its
   sub-issues, for Linear's thirty days, and never sends `permanentlyDelete`; each
-  prints the issue as Linear returns it. `issue batch-update --issue <ISSUE>...
+  prints the issue as Linear returns it. An archived or trashed issue is reached by
+  its identifier, its number alone or its id, in every command that takes an issue:
+  the number lookup now asks Linear's `issues` with `includeArchived`. `issue
+  batch-update --issue <ISSUE>...
   [--state] [--priority] [--assignee <WHO|none>] [--add-label <NAME>] [--project
   <NAME|none>] [--cycle <NUMBER|active|next|none>] [--milestone <NAME|none>]` changes
   the same fields on up to `ISSUES_PER_BATCH` issues of one team in one request,

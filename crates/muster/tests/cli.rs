@@ -3662,8 +3662,11 @@ fn issue_archive_unarchive_delete_and_batch_update() {
     );
     let still = muster(&fake, &["issue", "get", "APP-2"]);
     assert_eq!(still.code, 0, "reached by its identifier: {}", still.stderr);
-    let back = muster(&fake, &["issue", "unarchive", "APP-2"]);
-    assert_eq!(back.code, 0, "{}", back.stderr);
+    // The number alone reaches an archived issue too: the lookup asks `issues` with
+    // `includeArchived`, which otherwise leaves archived issues out.
+    let back = muster(&fake, &["issue", "unarchive", "2"]);
+    assert_eq!(back.code, 0, "reached by its number: {}", back.stderr);
+    assert_eq!(back.one()["identifier"], "APP-2");
     assert!(back.one()["archivedAt"].is_null());
     assert!(
         muster(&fake, &["issue", "list", "--all"])

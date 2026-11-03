@@ -145,7 +145,8 @@ up to `ISSUES_PER_BATCH` issues of one team per run). `muster issue archive APP-
 takes an issue out of the lists and `muster issue unarchive APP-5` brings it back;
 `muster issue delete APP-5` puts it in Linear's trash, with its sub-issues, for
 thirty days, and `unarchive` brings that back too; muster never deletes an issue for
-good.
+good. An archived or trashed issue is reached by its identifier, its number alone
+(`muster issue unarchive 5`) or its id, though `issue list` leaves it out.
 A team that uses cycles (`team update --cycles-enabled true`) has
 them made by Linear: `muster cycle list` prints them newest first with their `number`
 and the `isActive` flag, `muster cycle list --active` the one running now, `muster

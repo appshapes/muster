@@ -312,8 +312,8 @@ op!(ISSUE_BY_ID, "IssueById", Kind::Query, "query IssueById($id: String!, $comme
   }
 }", &[ISSUE_FIELDS, COMMENT_FIELDS]);
 
-op!(ISSUES, "Issues", Kind::Query, "query Issues($first: Int!, $filter: IssueFilter, $orderBy: PaginationOrderBy) {
-  issues(first: $first, filter: $filter, orderBy: $orderBy) { nodes { ...IssueFields } pageInfo { hasNextPage } }
+op!(ISSUES, "Issues", Kind::Query, "query Issues($first: Int!, $filter: IssueFilter, $orderBy: PaginationOrderBy, $includeArchived: Boolean) {
+  issues(first: $first, filter: $filter, orderBy: $orderBy, includeArchived: $includeArchived) { nodes { ...IssueFields } pageInfo { hasNextPage } }
 }", &[ISSUE_FIELDS]);
 
 op!(

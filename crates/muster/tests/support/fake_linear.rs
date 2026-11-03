@@ -3259,11 +3259,17 @@ impl Workspace {
             "Issues" => {
                 // Filtered with their comments, attachments and children attached, so
                 // that a collection filter (`children: { length: { gt: 0 } }`) sees
-                // them; answered as Linear answers `issues`, without them.
+                // them; answered as Linear answers `issues`, without them. Archived
+                // issues are left out unless `includeArchived` is true, as Linear
+                // leaves them out (the number lookup of `issue unarchive 12` asks).
+                let include_archived = vars["includeArchived"].as_bool().unwrap_or(false);
                 let mut issues: Vec<Value> = self
                     .issues
                     .iter()
-                    .filter(|i| i["archivedAt"].is_null() && passes(&self.filter_view(i), filter))
+                    .filter(|i| {
+                        (include_archived || i["archivedAt"].is_null())
+                            && passes(&self.filter_view(i), filter)
+                    })
                     .cloned()
                     .collect();
                 match vars["orderBy"].as_str() {

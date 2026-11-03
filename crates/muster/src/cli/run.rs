@@ -839,7 +839,9 @@ impl Session {
 
     /// One issue by identifier, number or id, with `comments` comments, `attachments`
     /// attachments and `children` sub-issues fetched (at least one of each; the shape is
-    /// the same).
+    /// the same). An archived or trashed issue is reached by every form: Linear's `issue`
+    /// query answers for one by id or identifier, and the number lookup asks `issues`
+    /// with `includeArchived`, which otherwise leaves archived issues out.
     fn issue(
         &self,
         reference: &str,
@@ -859,9 +861,11 @@ impl Session {
                 .team(&team_key)
                 .with("number", json!({ "eq": number }))
                 .build();
+            // `includeArchived`, so that the number reaches an archived or trashed issue
+            // as the identifier and the id do; `issue unarchive 12` depends on it.
             let data = self.linear.run(
                 &ops::ISSUES,
-                json!({ "first": 1, "filter": filter, "orderBy": "createdAt" }),
+                json!({ "first": 1, "filter": filter, "orderBy": "createdAt", "includeArchived": true }),
             )?;
             match nodes(&data, "issues").first() {
                 Some(issue) => need_str(issue, "identifier", "Issues")?,
@@ -2888,9 +2892,9 @@ fn audit_list(session: &Session, args: &AuditListArgs, out: &Output) -> Result<(
 }
 
 /// `issue archive`, `issue unarchive` and `issue delete`: the issue resolved as
-/// `issue get` resolves one (an archived issue is reached by its identifier or id, as
-/// Linear's `issue` query does), one mutation, Linear's entity printed. `issue delete`
-/// is Linear's trash, never `permanentlyDelete` (ADR 0014, group 18).
+/// `issue get` resolves one (an archived issue is reached by its identifier, its number
+/// or its id; see [`Session::issue`]), one mutation, Linear's entity printed. `issue
+/// delete` is Linear's trash, never `permanentlyDelete` (ADR 0014, group 18).
 fn issue_lifecycle(
     session: &Session,
     args: &IssueRefArgs,
