@@ -30,6 +30,13 @@ user-visible change, added in the same commit as the change. The format follows
   split over several comments. Linux refuses one argv string over 128 KiB before
   muster runs, so from a flag's value the bound is reached only where the OS allows
   the argument, as macOS does; from a file or stdin it is reached everywhere.
+- `just lint-docs` and `just docs` check the glossary: every command group and every
+  flag noun the reference introduces has a row in `docs/glossary.md`, and a flag that
+  is a switch or a mode is listed in the script with its reason (ADR 0006's Revisit;
+  output fields are not checked, since `muster schema` does not list them, so their
+  rows stay by hand).
+  Ten rows join the glossary: `user`, `title`, `description`, `body`, `parent`, `name`,
+  `url`, `subtitle`, `search` and `limit`.
 - `muster fixtures` records `IssueById` on an issue that has comments, attachments and
   sub-issues when the workspace has one, and writes a `partial` notice saying what the
   recording lacks; `skipped` and `partial` join the notices table of the reference.
