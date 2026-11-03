@@ -183,6 +183,22 @@ impl Fake {
         st.ws.projects[index]["memberIds"] = json!(ids);
     }
 
+    /// Add `n` milestones to a project, for the bound tests.
+    pub fn add_project_milestones(&self, project: &str, n: usize) {
+        let mut st = self.state.lock().unwrap();
+        let id = st
+            .ws
+            .projects
+            .iter()
+            .find(|p| p["name"] == project)
+            .map(|p| p["id"].clone())
+            .expect("the project exists");
+        for k in 1..=n {
+            st.ws
+                .new_milestone(&id, &format!("Milestone {k}"), Some("2026-12-01"));
+        }
+    }
+
     /// Add `n` links to an issue, for the bound tests.
     pub fn add_attachments(&self, issue: &str, n: usize) {
         let mut st = self.state.lock().unwrap();
@@ -564,7 +580,11 @@ impl Workspace {
         project["lead"] =
             json!({ "id": me["id"], "name": me["name"], "displayName": me["displayName"] });
         project["memberIds"] = json!([me["id"]]);
+        let project_id = project["id"].clone();
         ws.projects.push(project);
+        // One milestone, so that `project get` prints a node and the recorder finds
+        // one (ADR 0014, group 8).
+        ws.new_milestone(&project_id, "First cut", Some("2026-12-01"));
         let a = ws.new_issue(
             "APP",
             "Get familiar with Linear",
@@ -721,6 +741,17 @@ impl Workspace {
             "creator": { "id": me["id"], "name": me["name"], "displayName": me["displayName"] },
             "lastUpdate": null, "memberIds": [],
         })
+    }
+
+    /// A milestone of a project, with every field `ProjectDetailFields` asks for under
+    /// `projectMilestones` (ADR 0014, group 8), pushed; `projectId` is the fake's own
+    /// and the view leaves it out.
+    fn new_milestone(&mut self, project_id: &Value, name: &str, target_date: Option<&str>) {
+        let id = self.id();
+        self.milestones.push(json!({
+            "id": id, "projectId": project_id, "name": name, "targetDate": target_date,
+            "status": "unstarted", "progress": 0.0,
+        }));
     }
 
     /// A project as `ProjectByName` answers it: the detail fields with `members` and

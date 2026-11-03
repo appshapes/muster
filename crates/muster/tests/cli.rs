@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use muster::bounds::PAGE_CAP;
+use muster::bounds::{MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, PAGE_CAP};
 use serde_json::{Value, json};
 use support::fake_linear::{Failure, Fake, KEY};
 
@@ -1802,7 +1802,11 @@ fn project_get_prints_the_detail_and_bounds_the_members_and_milestones() {
     assert_eq!(v["lead"]["displayName"], "fake");
     assert_eq!(v["teams"]["nodes"][0]["key"], "APP");
     assert_eq!(v["members"]["nodes"][0]["displayName"], "fake");
-    assert_eq!(v["projectMilestones"]["nodes"].as_array().unwrap().len(), 0);
+    let milestone = &v["projectMilestones"]["nodes"][0];
+    assert_eq!(milestone["name"], "First cut");
+    assert_eq!(milestone["targetDate"], "2026-12-01");
+    assert!(milestone["status"].is_string() && milestone["progress"].is_number());
+    assert_eq!(v["projectMilestones"]["nodes"].as_array().unwrap().len(), 1);
     assert!(v["slugId"].is_string() && v["progress"].is_number() && v["createdAt"].is_string());
     assert!(v["content"].is_null() && v["trashed"].is_null() && v["archivedAt"].is_null());
     assert!(v["creator"]["id"].is_string());
@@ -1811,13 +1815,49 @@ fn project_get_prints_the_detail_and_bounds_the_members_and_milestones() {
     let nope = muster(&fake, &["project", "get", "Nope"]);
     assert_eq!(nope.code, 4, "{}", nope.stderr);
 
-    fake.add_project_members("Muster", 50);
+    // MILESTONES_PER_PROJECT at the bound: the seeded milestone and fifty more make
+    // fifty-one, the page holds fifty, and the notice says so.
+    fake.add_project_milestones("Muster", MILESTONES_PER_PROJECT);
+    let stones = muster(&fake, &["project", "get", "Muster"]);
+    assert_eq!(stones.code, 0, "{}", stones.stderr);
+    assert_eq!(
+        stones.one()["projectMilestones"]["nodes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        MILESTONES_PER_PROJECT
+    );
+    assert_eq!(
+        stones.one()["projectMilestones"]["pageInfo"]["hasNextPage"],
+        true
+    );
+    let notices = stones.notices();
+    assert_eq!(notices.len(), 1, "{}", stones.stderr);
+    assert!(
+        notices[0]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("projectMilestones:")
+            && notices[0]["hint"]
+                .as_str()
+                .unwrap()
+                .contains("MILESTONES_PER_PROJECT"),
+        "{}",
+        stones.stderr
+    );
+
+    // MEMBERS_PER_PROJECT at the bound, the same way; both connections are now cut, so
+    // there is one notice per connection, in the order the fields are printed.
+    fake.add_project_members("Muster", MEMBERS_PER_PROJECT);
     let cut = muster(&fake, &["project", "get", "Muster"]);
     assert_eq!(cut.code, 0, "{}", cut.stderr);
-    assert_eq!(cut.one()["members"]["nodes"].as_array().unwrap().len(), 50);
+    assert_eq!(
+        cut.one()["members"]["nodes"].as_array().unwrap().len(),
+        MEMBERS_PER_PROJECT
+    );
     assert_eq!(cut.one()["members"]["pageInfo"]["hasNextPage"], true);
     let notices = cut.notices();
-    assert_eq!(notices.len(), 1, "{}", cut.stderr);
+    assert_eq!(notices.len(), 2, "{}", cut.stderr);
     assert!(
         notices[0]["message"]
             .as_str()
@@ -1827,6 +1867,14 @@ fn project_get_prints_the_detail_and_bounds_the_members_and_milestones() {
                 .as_str()
                 .unwrap()
                 .contains("MEMBERS_PER_PROJECT"),
+        "{}",
+        cut.stderr
+    );
+    assert!(
+        notices[1]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("projectMilestones:"),
         "{}",
         cut.stderr
     );
