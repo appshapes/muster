@@ -96,6 +96,11 @@ jq -e '.name == "Alpha" and .project.name == "Trying muster" and .targetDate == 
 "$bin" issue update "$id" --milestone Alpha | jq -e '.projectMilestone.name == "Alpha"' >/dev/null
 "$bin" issue list --milestone Alpha | jq -s -e --arg id "$id" 'map(.identifier) == [$id]' >/dev/null
 
+step "muster project-update create and list"
+"$bin" project-update create --project "Trying muster" --body "Shipping on Friday." --health onTrack | tee "$tmp/project-update.json"
+jq -e '.health == "onTrack" and .body == "Shipping on Friday." and .project.name == "Trying muster"' "$tmp/project-update.json" >/dev/null
+"$bin" project-update list --project "Trying muster" | jq -s -e 'length == 1' >/dev/null
+
 step "muster issue close $id"
 "$bin" issue close "$id" --comment "Done from the README." | tee "$tmp/close.jsonl"
 jq -s -e 'length == 2 and .[0].body == "Done from the README." and .[1].state.type == "completed" and .[1].identifier == "'"$id"'"' "$tmp/close.jsonl" >/dev/null

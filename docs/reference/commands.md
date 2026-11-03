@@ -402,6 +402,26 @@ Delete a milestone; no undo in Linear.
 | `<NAME>` | `<NAME>` | yes |  | The milestone, by name |
 | `--project` | `<NAME>` | yes |  | The project, by name |
 
+### muster project-update list
+
+List a project's status posts, newest first, one JSON object per line.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--project` | `<NAME>` | yes |  | The project, by name |
+| `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
+### muster project-update create
+
+Post a status on a project, with a body, a health, or both.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--project` | `<NAME>` | yes |  | The project, by name |
+| `--body` | `<TEXT>` | no |  | The post, markdown |
+| `--body-file` | `<PATH>` | no |  | The post from a file, or from stdin when PATH is `-` |
+| `--health` | `<onTrack\|atRisk\|offTrack>` | no |  | The project's health as of this post |
+
 ### muster project-status list
 
 List the workspace's project statuses by position, one JSON object per line.
@@ -720,6 +740,7 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `ProjectByName` | query |
 | `ProjectStatuses` | query |
 | `Milestones` | query |
+| `ProjectUpdates` | query |
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
@@ -755,3 +776,4 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `MilestoneCreate` | mutation |
 | `MilestoneUpdate` | mutation |
 | `MilestoneDelete` | mutation |
+| `ProjectUpdateCreate` | mutation |

@@ -81,6 +81,12 @@ pub enum Command {
         #[command(subcommand)]
         command: MilestoneCommand,
     },
+    /// A project's status posts, which Linear calls project updates: list, create
+    ProjectUpdate {
+        /// The project update command.
+        #[command(subcommand)]
+        command: ProjectUpdateCommand,
+    },
     /// The workspace's project statuses: list, create, update, archive, unarchive
     ProjectStatus {
         /// The project status command.
@@ -1064,6 +1070,69 @@ pub struct MilestoneUpdateArgs {
     /// A new planned date, a date (2026-12-01), or `none`
     #[arg(long, value_name = "DATE")]
     pub target_date: Option<String>,
+}
+
+/// The project update commands (ADR 0014, group 11): the status posts on a project,
+/// which `project update` does not touch.
+#[derive(Subcommand, Debug)]
+pub enum ProjectUpdateCommand {
+    /// List a project's status posts, newest first, one JSON object per line
+    List(ProjectUpdateListArgs),
+    /// Post a status on a project, with a body, a health, or both
+    Create(ProjectUpdateCreateArgs),
+}
+
+/// `project-update list`.
+#[derive(Args, Debug)]
+pub struct ProjectUpdateListArgs {
+    /// The project, by name
+    #[arg(long, value_name = "NAME")]
+    pub project: String,
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+}
+
+/// `project-update create`.
+#[derive(Args, Debug, Default)]
+pub struct ProjectUpdateCreateArgs {
+    /// The project, by name
+    #[arg(long, value_name = "NAME")]
+    pub project: String,
+    /// The post, markdown
+    #[arg(long, value_name = "TEXT", conflicts_with = "body_file")]
+    pub body: Option<String>,
+    /// The post from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub body_file: Option<String>,
+    /// The project's health as of this post
+    #[arg(long, value_name = "HEALTH", value_enum)]
+    pub health: Option<Health>,
+}
+
+/// A project's health, as Linear's `ProjectUpdateHealthType` spells it.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Health {
+    /// Going to plan.
+    #[value(name = "onTrack")]
+    OnTrack,
+    /// In danger of slipping.
+    #[value(name = "atRisk")]
+    AtRisk,
+    /// Slipped.
+    #[value(name = "offTrack")]
+    OffTrack,
+}
+
+impl Health {
+    /// The value Linear takes.
+    pub fn linear(self) -> &'static str {
+        match self {
+            Health::OnTrack => "onTrack",
+            Health::AtRisk => "atRisk",
+            Health::OffTrack => "offTrack",
+        }
+    }
 }
 
 /// `project create`.

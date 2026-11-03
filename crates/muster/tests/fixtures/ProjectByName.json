@@ -14,10 +14,14 @@
           "name": "<string>"
         },
         "description": "<string>",
-        "health": null,
+        "health": "<string>",
         "icon": null,
         "id": "<string>",
-        "lastUpdate": null,
+        "lastUpdate": {
+          "createdAt": "<string>",
+          "health": "<string>",
+          "id": "<string>"
+        },
         "lead": null,
         "members": {
           "nodes": [],

@@ -1863,6 +1863,180 @@ fn user_get_update_role_suspension_and_sessions() {
     assert_eq!(run.code, 7, "{}", run.stderr);
 }
 
+// ---- project updates (ADR 0014, group 11) ------------------------------------------------
+
+#[test]
+fn project_update_list_and_create() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds one post on Muster, "Kicked off.", so that the project carries
+    // `lastUpdate` and `health` as the fixture records them.
+    let seeded = muster(&fake, &["project-update", "list", "--project", "Muster"]);
+    assert_eq!(seeded.code, 0, "{}", seeded.stderr);
+    assert_eq!(seeded.lines().len(), 1);
+    assert_eq!(seeded.lines()[0]["body"], "Kicked off.");
+    assert_eq!(seeded.lines()[0]["health"], "onTrack");
+    let before = muster(&fake, &["project", "get", "Muster"]).one();
+    assert_eq!(before["health"], "onTrack");
+    assert_eq!(before["lastUpdate"]["health"], "onTrack");
+    // A project with no posts lists nothing and exits 0.
+    let quiet = muster(&fake, &["project", "create", "--name", "Quiet"]);
+    assert_eq!(quiet.code, 0, "{}", quiet.stderr);
+    let none = muster(&fake, &["project-update", "list", "--project", "Quiet"]);
+    assert_eq!(none.code, 0, "{}", none.stderr);
+    assert_eq!(none.lines().len(), 0);
+    let posted = muster(
+        &fake,
+        &[
+            "project-update",
+            "create",
+            "--project",
+            "muster",
+            "--body",
+            "Shipping on Friday.",
+            "--health",
+            "atRisk",
+        ],
+    );
+    assert_eq!(posted.code, 0, "{}", posted.stderr);
+    let v = posted.one();
+    assert_eq!(v["body"], "Shipping on Friday.");
+    assert_eq!(v["health"], "atRisk");
+    assert_eq!(v["project"]["name"], "Muster");
+    assert_eq!(v["user"]["displayName"], "fake");
+    assert!(v["url"].is_string() && v["createdAt"].is_string() && v["editedAt"].is_null());
+    let moved = muster(&fake, &["project", "get", "Muster"]).one();
+    assert_eq!(
+        moved["health"], "atRisk",
+        "the project's health moves with its latest update"
+    );
+    assert_eq!(moved["lastUpdate"]["id"], v["id"]);
+    let dir = temp_dir();
+    let file = write(
+        &dir,
+        "update.md",
+        "# Week 2
+
+All green.
+",
+    );
+    let from_file = muster(
+        &fake,
+        &[
+            "project-update",
+            "create",
+            "--project",
+            "Muster",
+            "--body-file",
+            &file,
+            "--health",
+            "onTrack",
+        ],
+    );
+    assert_eq!(from_file.code, 0, "{}", from_file.stderr);
+    assert_eq!(
+        from_file.one()["body"],
+        "# Week 2
+
+All green.
+"
+    );
+    let listed = muster(&fake, &["project-update", "list", "--project", "Muster"]);
+    assert_eq!(listed.lines().len(), 3);
+    assert_eq!(
+        listed.lines()[0]["body"].as_str().unwrap().lines().next(),
+        Some("# Week 2"),
+        "newest first"
+    );
+    assert_eq!(listed.lines()[1]["health"], "atRisk");
+    assert_eq!(
+        listed.lines()[2]["body"],
+        "Kicked off.",
+        "the seeded post last"
+    );
+    let detail = muster(&fake, &["project", "get", "Muster"]).one();
+    assert_eq!(
+        detail["health"], "onTrack",
+        "the project's health follows its last update"
+    );
+    assert_eq!(detail["lastUpdate"]["health"], "onTrack");
+    assert_eq!(detail["lastUpdate"]["id"], from_file.one()["id"]);
+    let cut = muster(
+        &fake,
+        &[
+            "project-update",
+            "list",
+            "--project",
+            "Muster",
+            "--limit",
+            "1",
+        ],
+    );
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(cut.notices()[0]["code"], "truncated");
+    let health_only = muster(
+        &fake,
+        &[
+            "project-update",
+            "create",
+            "--project",
+            "Muster",
+            "--health",
+            "offTrack",
+        ],
+    );
+    assert_eq!(health_only.code, 0, "{}", health_only.stderr);
+    let nothing = muster(&fake, &["project-update", "create", "--project", "Muster"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    let bad = muster(
+        &fake,
+        &[
+            "project-update",
+            "create",
+            "--project",
+            "Muster",
+            "--health",
+            "fine",
+        ],
+    );
+    assert_eq!(bad.code, 2, "Linear's three spellings: {}", bad.stderr);
+    let nowhere = muster(
+        &fake,
+        &[
+            "project-update",
+            "create",
+            "--project",
+            "Nope",
+            "--body",
+            "x",
+        ],
+    );
+    assert_eq!(nowhere.code, 4, "{}", nowhere.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "ProjectUpdateCreate")
+            .count(),
+        3,
+        "the refusals sent nothing"
+    );
+    fake.fail_next("ProjectUpdateCreate", Failure::Drop);
+    let run = muster(
+        &fake,
+        &[
+            "project-update",
+            "create",
+            "--project",
+            "Muster",
+            "--body",
+            "x",
+        ],
+    );
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("ProjectUpdates", Failure::Drop);
+    let run = muster(&fake, &["project-update", "list", "--project", "Muster"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+}
+
 // ---- milestones (ADR 0014, group 10) -----------------------------------------------------
 
 #[test]

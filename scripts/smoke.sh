@@ -172,6 +172,12 @@ jq -e --arg n "Smoky $stamp" '.name == $n and .targetDate == null' "$tmp/milesto
 "$bin" milestone delete "Smoky $stamp" --project "Smoke tests" | tee "$tmp/milestone-delete.json"
 jq -e '.success == true' "$tmp/milestone-delete.json" >/dev/null
 echo
+echo "smoke: muster project-update create --project 'Smoke tests' --health onTrack, then list (one post per run; ADR 0014)"
+"$bin" project-update create --project "Smoke tests" --body "Smoke test at $stamp: the admin commands ran against this workspace (ADR 0014)." --health onTrack | jq -c '{health, user: .user.displayName, project: .project.name}' | tee "$tmp/project-update.json"
+jq -e '.health == "onTrack" and .project == "Smoke tests"' "$tmp/project-update.json" >/dev/null
+"$bin" project-update list --project "Smoke tests" --limit 3 | jq -c '{health, createdAt}' | tee "$tmp/project-updates.jsonl"
+jq -s -e 'length >= 1 and .[0].health == "onTrack"' "$tmp/project-updates.jsonl" >/dev/null
+echo
 echo "smoke: muster issue create --project 'Smoke tests' --milestone 'Smoke milestone'"
 "$bin" issue create --title "Smoke test $stamp" --project "Smoke tests" --milestone "Smoke milestone" --description "Created by scripts/smoke.sh at $stamp. It is canceled by the same run." | tee "$tmp/create.json"
 jq -e '.project.name == "Smoke tests" and .projectMilestone.name == "Smoke milestone"' "$tmp/create.json" >/dev/null

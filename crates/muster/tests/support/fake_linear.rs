@@ -50,6 +50,8 @@ struct Workspace {
     project_statuses: Vec<Value>,
     /// The milestones of every project, each with its `projectId`.
     milestones: Vec<Value>,
+    /// The status posts of every project, each with its `projectId`, oldest first.
+    project_updates: Vec<Value>,
 }
 
 struct State {
@@ -516,6 +518,7 @@ impl Workspace {
             memberships: Vec::new(),
             project_statuses: Vec::new(),
             milestones: Vec::new(),
+            project_updates: Vec::new(),
         };
         // Every field `Workspace` asks for, with the values a Free workspace shows; the
         // fixture holds this to the recorded shape (ADR 0010; ADR 0014, group 1).
@@ -588,6 +591,11 @@ impl Workspace {
         // One milestone, so that `project get` prints a node and the recorder finds
         // one (ADR 0014, group 8).
         ws.new_milestone(&project, "First cut", None, Some("2026-12-01"));
+        // One project update, so that the project carries `lastUpdate` and `health` as
+        // the fixture records them, `project-update list` prints a node and the
+        // recorder finds one (ADR 0014, group 11).
+        let muster = ws.projects.len() - 1;
+        ws.new_project_update(muster, Some("Kicked off."), Some("onTrack"));
         let a = ws.new_issue(
             "APP",
             "Get familiar with Linear",
@@ -973,6 +981,33 @@ impl Workspace {
         });
         self.milestones.push(stone.clone());
         stone
+    }
+
+    /// A project update as `ProjectUpdateFields` answers it; the fake keeps
+    /// `projectId` beside and sets the project's `lastUpdate` and `health` from it,
+    /// as Linear derives them.
+    fn new_project_update(
+        &mut self,
+        project_index: usize,
+        body: Option<&str>,
+        health: Option<&str>,
+    ) -> Value {
+        let (id, now) = (self.id(), self.now());
+        let me = self.users[0].clone();
+        let project = &self.projects[project_index];
+        let post = json!({
+            "id": id, "body": body.unwrap_or(""), "health": health.unwrap_or("onTrack"),
+            "url": format!("https://linear.app/fake/project/{}/updates/{id}", project["slugId"].as_str().unwrap_or("p")),
+            "createdAt": now, "editedAt": null,
+            "user": { "id": me["id"], "name": me["name"], "displayName": me["displayName"] },
+            "project": { "id": project["id"], "name": project["name"] }, "projectId": project["id"],
+        });
+        self.project_updates.push(post.clone());
+        let project = &mut self.projects[project_index];
+        project["lastUpdate"] =
+            json!({ "id": post["id"], "health": post["health"], "createdAt": post["createdAt"] });
+        project["health"] = post["health"].clone();
+        post
     }
 
     fn milestone_view(stone: &Value) -> Value {
@@ -1630,6 +1665,51 @@ impl Workspace {
                 (
                     200,
                     json!({ "data": { "projectMilestoneDelete": { "success": true, "entityId": id } } }),
+                )
+            }
+            "ProjectUpdates" => {
+                let name = vars["project"].as_str().unwrap_or("");
+                let mut posts: Vec<Value> = self
+                    .project_updates
+                    .iter()
+                    .filter(|p| {
+                        p["project"]["name"]
+                            .as_str()
+                            .is_some_and(|n| n.eq_ignore_ascii_case(name))
+                    })
+                    .map(Workspace::milestone_view)
+                    .collect();
+                posts.reverse();
+                (
+                    200,
+                    json!({ "data": { "projectUpdates": Workspace::page(posts, first) } }),
+                )
+            }
+            "ProjectUpdateCreate" => {
+                let input = &vars["input"];
+                let Some(index) = self
+                    .projects
+                    .iter()
+                    .position(|p| p["id"] == input["projectId"] && p["archivedAt"].is_null())
+                else {
+                    return not_found("Project");
+                };
+                if let Some(h) = input["health"].as_str()
+                    && !["onTrack", "atRisk", "offTrack"].contains(&h)
+                {
+                    return (
+                        400,
+                        json!({ "errors": [ { "message": format!("Variable \"$input\" got invalid value {h:?} at \"input.health\""), "extensions": { "code": "GRAPHQL_VALIDATION_FAILED", "type": "graphql error", "userError": true } } ] }),
+                    );
+                }
+                let post = self.new_project_update(
+                    index,
+                    input["body"].as_str(),
+                    input["health"].as_str(),
+                );
+                (
+                    200,
+                    json!({ "data": { "projectUpdateCreate": { "success": true, "projectUpdate": Workspace::milestone_view(&post) } } }),
                 )
             }
             "ProjectStatusCreate" => {

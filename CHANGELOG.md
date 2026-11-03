@@ -76,6 +76,14 @@ user-visible change, added in the same commit as the change. The format follows
   project's milestones (or the project `--project` names), and `issue list
   --milestone <NAME|none>` filters by one (ADR 0014, group 10;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `project-update list --project <NAME>` prints a project's status posts, newest
+  first, each with its `body`, `health`, `user`, `url` and times; `project-update
+  create --project <NAME> [--body <TEXT>|--body-file <PATH>] [--health
+  <onTrack|atRisk|offTrack>]` posts one through Linear's `projectUpdateCreate`, and
+  needs a body, a health, or both; the project's `health` and `lastUpdate` follow it.
+  A project update is Linear's name for a status post; `project update`, two words,
+  changes the project itself (ADR 0014, group 11;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.3.0 - 2026-11-03
 

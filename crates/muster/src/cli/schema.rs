@@ -378,6 +378,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
                 "TeamMembers",
                 "ProjectByName",
                 "Milestones",
+                "ProjectUpdates",
             ]
             .contains(&op.name)
             {
@@ -513,7 +514,7 @@ pub fn fixture_variables(
         "Users" => json!({ "first": 5, "filter": Value::Null, "includeDisabled": true }),
         "UserById" => json!({ "id": "me" }),
         "ProjectStatuses" => json!({ "first": 5, "includeArchived": false }),
-        "Milestones" => json!({ "project": first_project?, "first": 5 }),
+        "Milestones" | "ProjectUpdates" => json!({ "project": first_project?, "first": 5 }),
         "ProjectByName" => {
             json!({ "name": first_project?, "includeArchived": false, "teams": TEAMS_PER_PROJECT, "members": MEMBERS_PER_PROJECT, "milestones": MILESTONES_PER_PROJECT })
         }
@@ -637,6 +638,8 @@ mod tests {
             "milestone create",
             "milestone update",
             "milestone delete",
+            "project-update list",
+            "project-update create",
             "state list",
             "label list",
             "project list",

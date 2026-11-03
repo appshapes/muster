@@ -1,0 +1,26 @@
+{
+  "projectUpdates": {
+    "nodes": [
+      {
+        "body": "<string>",
+        "createdAt": "<string>",
+        "editedAt": null,
+        "health": "<string>",
+        "id": "<string>",
+        "project": {
+          "id": "<string>",
+          "name": "<string>"
+        },
+        "url": "<string>",
+        "user": {
+          "displayName": "<string>",
+          "id": "<string>",
+          "name": "<string>"
+        }
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": true
+    }
+  }
+}

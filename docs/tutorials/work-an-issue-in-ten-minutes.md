@@ -125,7 +125,12 @@ Inside a project, `muster milestone create --project "Trying muster" --name "Alp
 `targetDate`, `status` and `progress`), `muster milestone list --project "Trying
 muster"` shows them, and an issue joins one with `--milestone Alpha` on `issue
 create` (with `--project`) or `issue update`, and leaves it with `--milestone none`;
-`muster issue list --milestone Alpha` lists the issues in it.
+`muster issue list --milestone Alpha` lists the issues in it. How the project is
+doing is a status post: `muster project-update create --project "Trying muster"
+--body "Shipping on Friday." --health onTrack` (one JSON line with the post's `body`,
+`health`, `user` and `url`), and `muster project-update list --project "Trying
+muster"` shows them newest first; the project's own `health` and `lastUpdate` follow
+the latest post.
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):
