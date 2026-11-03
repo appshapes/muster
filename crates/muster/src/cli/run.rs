@@ -10,6 +10,7 @@ use crate::bounds::{
 use crate::cli::{
     AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
     IssueListArgs, ListArgs, ListCommand, ProjectCommand, ProjectCreateArgs, UpdateArgs,
+    WorkspaceCommand,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -30,6 +31,9 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
             super::schema::record_fixtures(&Session::open(&config)?, &args.dir, out)
         }
         Command::Whoami => whoami(&Session::open(&config)?, out),
+        Command::Workspace {
+            command: WorkspaceCommand::Get,
+        } => workspace_get(&Session::open(&config)?, out),
         Command::Team {
             command: ListCommand::List(args),
         } => list_teams(&Session::open(&config)?, args, out),
@@ -410,6 +414,21 @@ fn whoami(session: &Session, out: &Output) -> Result<(), Error> {
     match failure {
         Some(e) => Err(e),
         None => Ok(()),
+    }
+}
+
+/// `workspace get`: the `organization` as Linear returns it, one line (ADR 0014, group 1).
+fn workspace_get(session: &Session, out: &Output) -> Result<(), Error> {
+    let data = session.linear.run(&ops::WORKSPACE, json!({}))?;
+    match data.get("organization") {
+        Some(organization) if !organization.is_null() => {
+            out.emit(organization);
+            Ok(())
+        }
+        _ => Err(Error::new(
+            ErrorCode::Failed,
+            "Linear's answer to Workspace has no organization",
+        )),
     }
 }
 

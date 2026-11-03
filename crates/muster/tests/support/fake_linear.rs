@@ -446,7 +446,23 @@ impl Workspace {
             comments: Vec::new(),
             attachments: Vec::new(),
         };
-        ws.organization = json!({ "id": ws.id(), "name": "Fake Workspace", "urlKey": "fake" });
+        // Every field `Workspace` asks for, with the values a Free workspace shows; the
+        // fixture holds this to the recorded shape (ADR 0010; ADR 0014, group 1).
+        ws.organization = json!({
+            "id": ws.id(), "name": "Fake Workspace", "urlKey": "fake", "logoUrl": "https://example.com/logo.png",
+            "createdAt": "2026-11-02T10:00:00.000Z", "updatedAt": "2026-11-02T10:00:00.000Z",
+            "gitBranchFormat": null, "gitLinkbackMessagesEnabled": true, "gitPublicLinkbackMessagesEnabled": true,
+            "gitLinkbackDescriptionsEnabled": false, "suggestedBranchNameEnabled": true,
+            "roadmapEnabled": false, "feedEnabled": false, "pullRequestTourEnabled": false, "pullRequestIssueMode": "suggest",
+            "aiThreadSummariesEnabled": false, "aiDiscussionSummariesEnabled": false,
+            "projectUpdateReminderFrequencyInWeeks": null, "projectUpdateRemindersDay": "Friday", "projectUpdateRemindersHour": 14,
+            "initiativeUpdateReminderFrequencyInWeeks": null, "initiativeUpdateRemindersDay": "Friday", "initiativeUpdateRemindersHour": 14,
+            "fiscalYearStartMonth": 0, "defaultHomeView": null,
+            "samlEnabled": false, "scimEnabled": false, "hipaaComplianceEnabled": false, "releaseChannel": "public",
+            "securitySettings": {}, "authSettings": {}, "allowedFileUploadContentTypes": null,
+            "previousUrlKeys": [], "deletionRequestedAt": null, "trialStartsAt": null, "trialEndsAt": null,
+            "userCount": 2, "createdIssueCount": 4, "subscription": null,
+        });
         let me = json!({ "id": ws.id(), "name": "Fake Person", "displayName": "fake", "email": "fake@example.com", "active": true, "admin": true, "isMe": true });
         let other = json!({ "id": ws.id(), "name": "Other Person", "displayName": "other", "email": "other@example.com", "active": true, "admin": false, "isMe": false });
         ws.users = vec![me.clone(), other.clone()];
@@ -750,11 +766,16 @@ impl Workspace {
         match op {
             "Viewer" => {
                 let me = &self.users[0];
+                let org = &self.organization;
                 (
                     200,
-                    json!({ "data": { "viewer": { "id": me["id"], "name": me["name"], "displayName": me["displayName"], "email": me["email"], "admin": me["admin"], "active": me["active"] }, "organization": self.organization } }),
+                    json!({ "data": { "viewer": { "id": me["id"], "name": me["name"], "displayName": me["displayName"], "email": me["email"], "admin": me["admin"], "active": me["active"] }, "organization": { "id": org["id"], "name": org["name"], "urlKey": org["urlKey"] } } }),
                 )
             }
+            "Workspace" => (
+                200,
+                json!({ "data": { "organization": self.organization } }),
+            ),
             "Teams" => (
                 200,
                 json!({ "data": { "teams": Workspace::page(self.teams.clone(), first) } }),

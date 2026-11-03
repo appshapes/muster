@@ -40,6 +40,12 @@ One JSON line: your `viewer`, the `organization`, and under `muster` the key's
 `source` (`file`), the `endpoint`, the `team` with its `source` (`inferred` when the
 workspace has one team) and a list of `checks`, every one at level `ok`. Exit 0.
 
+`muster workspace get` prints the whole workspace on one line: its `name` and `urlKey`,
+its settings (the git branch format, the reminder days and hours, the feature
+switches), `securitySettings` and `authSettings` as Linear returns them, `userCount`,
+`createdIssueCount`, `previousUrlKeys` and `subscription` (`null` on the Free plan). It
+needs no team ([ADR 0014](../decisions/0014-build-the-third-slice-administrative-commands.md)).
+
 If you see `"code":"authentication"` on stderr and exit 3, the key was not found or
 was refused; the `hint` says where to put it. If the `team` is `null` with a `warn`
 check, the workspace has several teams: add `--team <KEY>` to the commands below, or

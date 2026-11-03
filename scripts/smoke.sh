@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The README's ten-minute path against a REAL workspace (CLAUDE.md, gate 1; ADR 0010),
-# then the second slice's commands (ADR 0013): the key from its usual sources, the team
+# then the second slice's commands (ADR 0013) and the third's, group by group (ADR
+# 0014): the key from its usual sources, the team
 # inferred or from MUSTER_TEAM, and one issue created, commented, read, given a
 # sub-issue, and then canceled with it (not completed, so that a smoke test never counts
 # as work done). Not in CI; run it by hand before a release and put its output in the
@@ -17,6 +18,10 @@ trap 'rm -rf "$tmp"' EXIT
 
 echo "smoke: muster whoami"
 "$bin" whoami | tee "$tmp/whoami.json"
+echo
+echo "smoke: muster workspace get"
+"$bin" workspace get | jq -c '{name, urlKey, userCount, createdIssueCount, subscription}' | tee "$tmp/workspace.json"
+jq -e --slurpfile who "$tmp/whoami.json" '.urlKey == $who[0].organization.urlKey and (.userCount | type) == "number"' "$tmp/workspace.json" >/dev/null
 echo
 echo "smoke: muster project create --name 'Smoke tests' (exit 6 after the first run: the duplicate guard)"
 set +e

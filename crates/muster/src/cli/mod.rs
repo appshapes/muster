@@ -39,6 +39,12 @@ pub struct Cli {
 pub enum Command {
     /// Who the key belongs to, the workspace, the team muster will use, and checks on what was read
     Whoami,
+    /// The workspace: get
+    Workspace {
+        /// The workspace command.
+        #[command(subcommand)]
+        command: WorkspaceCommand,
+    },
     /// Teams of the workspace
     Team {
         /// `list`.
@@ -79,6 +85,13 @@ pub enum Command {
     Schema(SchemaArgs),
     /// Record the shape of every read operation's answer from the configured endpoint into a directory, values stripped (maintainers; ADR 0010)
     Fixtures(FixturesArgs),
+}
+
+/// The workspace commands (ADR 0014, group 1).
+#[derive(Subcommand, Debug)]
+pub enum WorkspaceCommand {
+    /// The workspace's settings, its security and auth settings, its counts and its subscription, as Linear returns them
+    Get,
 }
 
 /// `list` under `team`, `state`, `label`, `project` and `user`.

@@ -20,6 +20,12 @@ Who the key belongs to, the workspace, the team muster will use, and checks on w
 
 No arguments beyond the global flags.
 
+### muster workspace get
+
+The workspace's settings, its security and auth settings, its counts and its subscription, as Linear returns them.
+
+No arguments beyond the global flags.
+
 ### muster team list
 
 List them, one JSON object per line.
@@ -257,6 +263,7 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `Users` | query |
 | `IssueById` | query |
 | `Issues` | query |
+| `Workspace` | query |
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
