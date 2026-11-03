@@ -18,8 +18,20 @@ trap 'rm -rf "$tmp"' EXIT
 echo "smoke: muster whoami"
 "$bin" whoami | tee "$tmp/whoami.json"
 echo
-echo "smoke: muster issue create"
-"$bin" issue create --title "Smoke test $stamp" --description "Created by scripts/smoke.sh at $stamp. It is canceled by the same run." | tee "$tmp/create.json"
+echo "smoke: muster project create --name 'Smoke tests' (exit 6 after the first run: the duplicate guard)"
+set +e
+"$bin" project create --name "Smoke tests" --description "Where the smoke test's issues go; each is canceled by the run that made it." > "$tmp/project.json" 2> "$tmp/project.err"
+code=$?
+set -e
+case "$code" in
+  0) cat "$tmp/project.json" ;;
+  6) cat "$tmp/project.err"; jq -e '.error.code == "refused"' "$tmp/project.err" >/dev/null ;;
+  *) echo "smoke: project create exited $code" >&2; cat "$tmp/project.err" >&2; exit 1 ;;
+esac
+echo
+echo "smoke: muster issue create --project 'Smoke tests'"
+"$bin" issue create --title "Smoke test $stamp" --project "Smoke tests" --description "Created by scripts/smoke.sh at $stamp. It is canceled by the same run." | tee "$tmp/create.json"
+jq -e '.project.name == "Smoke tests"' "$tmp/create.json" >/dev/null
 id=$(jq -r .identifier "$tmp/create.json")
 echo
 echo "smoke: muster issue comment $id"
@@ -48,6 +60,10 @@ echo
 echo "smoke: muster issue get $id (attachments)"
 "$bin" issue get "$id" | jq -c '{identifier, attachments: [.attachments.nodes[] | {title, url}]}' | tee "$tmp/attachments.json"
 jq -e '(.attachments | length) == 1 and .attachments[0].title == "The smoke script, renamed"' "$tmp/attachments.json" >/dev/null
+echo
+echo "smoke: muster issue list --project 'Smoke tests'"
+"$bin" issue list --project "Smoke tests" | jq -c '{identifier, project: .project.name}' | tee "$tmp/in-project.jsonl"
+jq -s -e --arg id "$id" 'map(.identifier) | index($id) != null' "$tmp/in-project.jsonl" >/dev/null
 echo
 echo "smoke: muster issue list --parent $id"
 "$bin" issue list --parent "$id" | jq -c '{identifier, parent: .parent.identifier}'

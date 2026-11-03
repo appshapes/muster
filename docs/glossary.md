@@ -16,7 +16,7 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 | state | Where an issue is in its team's workflow; each state has a type: backlog, unstarted, started, completed, canceled or duplicate. | `workflowState`, `state` | list | `docs/reference/commands.md#muster-state-list` |
 | completed state | The team's first state of type `completed`, where `issue close` puts an issue. | `WorkflowState.type == "completed"` | mark complete and archive | `docs/reference/commands.md#muster-issue-close` |
 | label | A named tag on an issue; an issue can carry several. | `issueLabel`, `labels` | label | `docs/reference/commands.md#muster-label-list` |
-| project | A named group of issues across teams, with a state of its own. | `project` | none | `docs/reference/commands.md#muster-project-list` |
+| project | A named group of issues across teams, with a status of its own; `project create` makes one, `--project` on `issue create`, `issue update` and `issue list` names one. | `project` | none | `docs/reference/commands.md#muster-project-create` |
 | comment | A markdown note on an issue, by a user; `issue get` prints them newest first, as Linear orders them. | `comment` | comment | `docs/reference/commands.md#muster-issue-comment` |
 | attachment | A link on an issue, with a title and a URL; `issue attach` adds one and `issue get` prints them, newest first. | `attachment` | attachment | `docs/reference/commands.md#muster-issue-attach` |
 | sub-issue | An issue whose `parent` is another issue; the parent prints its `children`, and `--parent` on `issue create`, `issue update` and `issue list` names one. | `parent`, `children`, `parentId` | checklist item (the nearest) | `docs/reference/commands.md#muster-issue-get` |

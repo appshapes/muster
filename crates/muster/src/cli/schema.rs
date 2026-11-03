@@ -492,6 +492,7 @@ mod tests {
             "state list",
             "label list",
             "project list",
+            "project create",
             "user list",
             "issue get",
             "issue list",

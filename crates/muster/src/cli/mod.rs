@@ -57,11 +57,11 @@ pub enum Command {
         #[command(subcommand)]
         command: ListCommand,
     },
-    /// Projects
+    /// Projects: list, create
     Project {
-        /// `list`.
+        /// The project command.
         #[command(subcommand)]
-        command: ListCommand,
+        command: ProjectCommand,
     },
     /// Users of the workspace
     User {
@@ -94,6 +94,29 @@ pub struct ListArgs {
     /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
     #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
     pub limit: usize,
+}
+
+/// The project commands.
+#[derive(Subcommand, Debug)]
+pub enum ProjectCommand {
+    /// List them, one JSON object per line
+    List(ListArgs),
+    /// Create a project for the team; a name an existing project already has is refused unless --allow-duplicate
+    Create(ProjectCreateArgs),
+}
+
+/// `project create`.
+#[derive(Args, Debug)]
+pub struct ProjectCreateArgs {
+    /// The name
+    #[arg(long, value_name = "TEXT")]
+    pub name: String,
+    /// The description, plain text
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// Create it even when a project with the same name exists
+    #[arg(long)]
+    pub allow_duplicate: bool,
 }
 
 /// The issue commands. The two with many flags are boxed so that the enum stays small
@@ -148,6 +171,9 @@ pub struct IssueListArgs {
     /// Only the sub-issues of this issue: the identifier (APP-12), the number alone (12, in the team) or the id; or `none` for issues with no parent
     #[arg(long, value_name = "ISSUE")]
     pub parent: Option<String>,
+    /// Only issues in this project, by name, or `none` for issues in no project
+    #[arg(long, value_name = "NAME")]
+    pub project: Option<String>,
     /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
     #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
     pub limit: usize,

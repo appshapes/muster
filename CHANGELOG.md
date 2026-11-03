@@ -23,6 +23,12 @@ user-visible change, added in the same commit as the change. The format follows
   it, with its `issue.identifier`; `issue get` lists it under `attachments.nodes`, newest
   first. A URL the issue already has is updated in place, same id, as Linear does
   (ADR 0013, feature 2; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `project create --name <TEXT> [--description <TEXT>]` makes a project for the team
+  through Linear's `projectCreate` and prints it as `project list` prints one; a name an
+  existing project already has is refused, exit 6, unless `--allow-duplicate`, so that
+  `--project <NAME>` keeps resolving to one project. `issue list --project <NAME>` lists
+  the team's issues in a project and `--project none` those in no project (ADR 0013,
+  feature 3; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 - `muster fixtures` records `IssueById` on an issue that has comments, attachments and
   sub-issues when the workspace has one, and writes a `partial` notice saying what the
   recording lacks; `skipped` and `partial` join the notices table of the reference.

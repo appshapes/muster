@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use crate::bounds::{ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, PAGE_CAP};
 use crate::cli::{
     AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
-    IssueListArgs, ListArgs, ListCommand, UpdateArgs,
+    IssueListArgs, ListArgs, ListCommand, ProjectCommand, ProjectCreateArgs, UpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -37,9 +37,13 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
         Command::Label {
             command: ListCommand::List(args),
         } => list_labels(&Session::open(&config)?, args, out),
-        Command::Project {
-            command: ListCommand::List(args),
-        } => list_projects(&Session::open(&config)?, args, out),
+        Command::Project { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                ProjectCommand::List(args) => list_projects(&session, args, out),
+                ProjectCommand::Create(args) => project_create(&session, args, out),
+            }
+        }
         Command::User {
             command: ListCommand::List(args),
         } => list_users(&Session::open(&config)?, args, out),
@@ -474,6 +478,37 @@ fn list_users(session: &Session, args: &ListArgs, out: &Output) -> Result<(), Er
     Ok(())
 }
 
+fn project_create(session: &Session, args: &ProjectCreateArgs, out: &Output) -> Result<(), Error> {
+    let (team, _) = session.team()?;
+    let team_id = need_str(&team, "id", "Teams")?;
+    if !args.allow_duplicate {
+        let data = session.linear.run(
+            &ops::PROJECTS,
+            json!({ "first": 1, "filter": { "name": { "eqIgnoreCase": args.name } } }),
+        )?;
+        if let Some(existing) = nodes(&data, "projects").first() {
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "a project named {:?} exists: {}",
+                    str_at(existing, "name").unwrap_or(&args.name),
+                    str_at(existing, "url").unwrap_or("?")
+                ),
+                "use that project, or pass --allow-duplicate if a second one is wanted; `--project <NAME>` resolves a name to the first match",
+            ));
+        }
+    }
+    let mut input = json!({ "name": args.name, "teamIds": [team_id] });
+    if let (Some(description), Some(map)) = (&args.description, input.as_object_mut()) {
+        map.insert("description".into(), json!(description));
+    }
+    let data = session
+        .linear
+        .run(&ops::PROJECT_CREATE, json!({ "input": input }))?;
+    out.emit(&payload(&data, "projectCreate", "project")?);
+    Ok(())
+}
+
 fn issue_get(session: &Session, args: &GetArgs, out: &Output) -> Result<(), Error> {
     let (comments, attachments) = if args.no_comments {
         (1, 1)
@@ -606,6 +641,14 @@ fn issue_list(session: &Session, args: &IssueListArgs, out: &Output) -> Result<(
     }
     if let Some(parent) = &args.parent {
         filter = filter.with("parent", parent_clause(parent, &team_key)?);
+    }
+    if let Some(project) = &args.project {
+        let clause = if is_none(project) {
+            json!({ "null": true })
+        } else {
+            json!({ "name": { "eqIgnoreCase": project } })
+        };
+        filter = filter.with("project", clause);
     }
     let data = session.linear.run(
         &ops::ISSUES,

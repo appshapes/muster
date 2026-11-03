@@ -970,6 +970,47 @@ impl Workspace {
                     json!({ "data": { "issueUpdate": { "success": true, "issue": issue } } }),
                 )
             }
+            "ProjectCreate" => {
+                let input = &vars["input"];
+                let Some(name) = input["name"].as_str().filter(|n| !n.is_empty()) else {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "name should not be empty" } } ], "data": null }),
+                    );
+                };
+                let team_ids: Vec<Value> = input["teamIds"].as_array().cloned().unwrap_or_default();
+                let teams: Vec<Value> = team_ids
+                    .iter()
+                    .map(|id| {
+                        self.teams
+                            .iter()
+                            .find(|t| &t["id"] == id)
+                            .map(|t| json!({ "id": t["id"], "key": t["key"] }))
+                    })
+                    .collect::<Option<Vec<Value>>>()
+                    .unwrap_or_default();
+                if teams.is_empty() || teams.len() != team_ids.len() {
+                    return not_found("Team");
+                }
+                let slug: String = name
+                    .to_ascii_lowercase()
+                    .chars()
+                    .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+                    .collect();
+                let (id, status_id) = (self.id(), self.id());
+                let project = json!({
+                    "id": id, "name": name, "url": format!("https://linear.app/fake/project/{slug}"),
+                    "description": input["description"].as_str().unwrap_or(""), "priority": 0,
+                    "startDate": null, "targetDate": null,
+                    "status": { "id": status_id, "name": "Backlog", "type": "backlog" },
+                    "lead": null, "teams": { "nodes": teams },
+                });
+                self.projects.push(project.clone());
+                (
+                    200,
+                    json!({ "data": { "projectCreate": { "success": true, "project": project } } }),
+                )
+            }
             "AttachmentCreate" => {
                 let input = &vars["input"];
                 let issue_id = input["issueId"].clone();
