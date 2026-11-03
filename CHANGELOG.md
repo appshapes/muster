@@ -53,7 +53,8 @@ user-visible change, added in the same commit as the change. The format follows
   `--allow-duplicate`); `project-status update <NAME>` changes it; `project-status
   archive <NAME>` takes it out, which Linear refuses, exit 6, for a status with
   active projects or the last of its type, and `project-status unarchive <NAME>`
-  brings it back (ADR 0014, group 9;
+  brings it back. `--position` takes a finite number, as on `state create`: `nan`,
+  `inf` and `1e400` are usage errors, exit 2, before any request (ADR 0014, group 9;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ### Changed

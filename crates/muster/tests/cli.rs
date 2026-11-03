@@ -1951,6 +1951,47 @@ fn project_status_list_create_update_archive_and_unarchive() {
         &["project-status", "update", "Nope", "--color", "#000000"],
     );
     assert_eq!(nope.code, 4, "{}", nope.stderr);
+    // `f64::from_str`, which `clap` parses `--position` with, takes `nan`, `inf` and
+    // `1e400` (which overflows to infinity), and serde_json would write each as `null`:
+    // a position the caller never typed. Each is muster's usage error, before any
+    // request, as on `state create` and `state update`; the hint names this group's
+    // list. The `=` form, since `clap` reads a bare `-inf` as flags.
+    let sent = fake.operations().len();
+    for position in ["nan", "inf", "-inf", "1e400"] {
+        let flag = format!("--position={position}");
+        let create = muster(
+            &fake,
+            &[
+                "project-status",
+                "create",
+                "--name",
+                "Nowhere",
+                "--type",
+                "backlog",
+                "--color",
+                "#000000",
+                &flag,
+            ],
+        );
+        assert_eq!(create.code, 2, "{flag}: {}", create.stderr);
+        assert_eq!(create.error()["code"], "usage", "{flag}: {}", create.stderr);
+        assert!(
+            create.error()["hint"]
+                .as_str()
+                .unwrap()
+                .contains("muster project-status list"),
+            "{flag}: {}",
+            create.stderr
+        );
+        let update = muster(&fake, &["project-status", "update", "On hold", &flag]);
+        assert_eq!(update.code, 2, "{flag}: {}", update.stderr);
+        assert_eq!(update.error()["code"], "usage", "{flag}: {}", update.stderr);
+    }
+    assert_eq!(
+        fake.operations().len(),
+        sent,
+        "refused before any request: no ProjectStatusCreate, no ProjectStatusUpdate"
+    );
 
     let held = muster(&fake, &["project-status", "archive", "On hold"]);
     assert_eq!(

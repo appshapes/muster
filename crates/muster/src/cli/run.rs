@@ -806,15 +806,17 @@ fn workspace_update(
 /// flag with `f64::from_str`, which accepts `nan`, `inf`, `-inf` and `1e400` (which
 /// overflows to infinity), and `serde_json` writes a number that is not finite as
 /// `null`: a value the caller never typed, which Linear would read as its own default.
-/// Exit 2 rather than guess (CLAUDE.md, When in doubt).
-fn check_position(position: f64) -> Result<(), Error> {
+/// Exit 2 rather than guess (CLAUDE.md, When in doubt). `list` is the command that
+/// shows the positions the number sits among: `muster state list` for a state,
+/// `muster project-status list` for a project status.
+fn check_position(position: f64, list: &str) -> Result<(), Error> {
     if position.is_finite() {
         return Ok(());
     }
     Err(Error::with_hint(
         ErrorCode::Usage,
         format!("--position {position} is not a finite number"),
-        "pass a finite number, such as 2.5; `muster state list` shows each state's position",
+        format!("pass a finite number, such as 2.5; `{list}` shows each one's position"),
     ))
 }
 
@@ -831,7 +833,7 @@ fn state_input(args: &StateCreateArgs) -> Result<Map<String, Value>, Error> {
         input.insert("description".into(), json!(description));
     }
     if let Some(position) = args.position {
-        check_position(position)?;
+        check_position(position, "muster state list")?;
         input.insert("position".into(), json!(position));
     }
     Ok(input)
@@ -882,7 +884,7 @@ fn state_update_input(args: &StateUpdateArgs) -> Result<Map<String, Value>, Erro
         input.insert("description".into(), json!(description));
     }
     if let Some(position) = args.position {
-        check_position(position)?;
+        check_position(position, "muster state list")?;
         input.insert("position".into(), json!(position));
     }
     if input.is_empty() {
@@ -1720,9 +1722,11 @@ fn project_status_list(session: &Session, args: &ListArgs, out: &Output) -> Resu
     Ok(())
 }
 
-/// The input of `projectStatusCreate`: the flags, checked before any request.
+/// The input of `projectStatusCreate`: the flags, checked before any request, the
+/// position by [`check_position`] since Linear requires one here.
 fn project_status_input(args: &ProjectStatusCreateArgs) -> Result<Map<String, Value>, Error> {
     check_body(Text::Name, &args.name)?;
+    check_position(args.position, "muster project-status list")?;
     let mut input = Map::new();
     input.insert("name".into(), json!(args.name));
     input.insert("type".into(), json!(args.r#type.linear()));
@@ -1785,6 +1789,7 @@ fn project_status_update(
         input.insert("description".into(), json!(description));
     }
     if let Some(position) = args.position {
+        check_position(position, "muster project-status list")?;
         input.insert("position".into(), json!(position));
     }
     if let Some(kind) = args.r#type {
