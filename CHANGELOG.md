@@ -26,9 +26,11 @@ user-visible change, added in the same commit as the change. The format follows
   switches, the project update reminders, the fiscal year, the upload content types,
   the ten security roles and the sign-in services. A flag left out leaves its setting
   alone, a boolean takes `true` or `false`, `none` clears the branch format, `all`
-  allows every sign-in service, and no flag at all is a usage error, exit 2, before any
-  request; most settings need a workspace admin, and Linear's refusal is exit 6 (ADR
-  0014, group 1; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+  allows every sign-in service and is the one spelling of that empty list (a value
+  that names no service is exit 2), and no flag at all is a usage error, exit 2,
+  before any request; most settings need a workspace admin, and Linear's refusal is
+  exit 6 (ADR 0014, group 1;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.2.0 - 2026-11-03
 

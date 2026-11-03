@@ -61,7 +61,7 @@ Change the workspace's settings; a flag left out leaves its setting alone, a boo
 | `--import-role` | `<ROLE>` | no |  | The least role that may import data |
 | `--api-settings-role` | `<ROLE>` | no |  | The least role that may manage API settings |
 | `--workspace-initiatives-role` | `<ROLE>` | no |  | The least role that may create a workspace-wide initiative |
-| `--allowed-auth-services` | `<SERVICE,...|all>` | no |  | The sign-in services allowed, comma-separated (google,saml), or `all` |
+| `--allowed-auth-services` | `<SERVICE,...|all>` | no |  | The sign-in services allowed, comma-separated (google,saml), or `all` for every one; a value that names none is a usage error, exit 2 |
 | `--hide-non-primary-organizations` | `<true|false>` | no |  | Whether a new user whose email domain this workspace claims is shown no other workspace at sign-up |
 
 ### muster team list
