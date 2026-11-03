@@ -6,6 +6,20 @@ user-visible change, added in the same commit as the change. The format follows
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.3.0 - 2026-11-03
+
+The first block of the third slice ([ADR 0014](docs/decisions/0014-build-the-third-slice-administrative-commands.md)),
+for an agent that administers a workspace: `workspace get` and `workspace update`;
+`team get`, `create`, `update`, `retire`, `unretire`, `delete` and `unarchive`;
+`member list`, `add` and `remove`; `user get`, `update`, `change-role`, `suspend`,
+`unsuspend` and `revoke-sessions`, with `user list --all`. Every setting is one typed
+flag, a boolean takes `true` or `false`, `none` clears, and a flag left out leaves its
+setting alone. Linear's plan and role refusals are exit 6, and the reference spells
+out every enumerated flag's values. Invites wait on a paid plan. The crate is
+`muster-linear`: `cargo install muster-linear`.
+
 ### Added
 
 - ADR 0014 decides the third slice: Linear's administrative operations as eighty-one

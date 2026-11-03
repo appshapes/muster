@@ -10,7 +10,7 @@ on: `0` ok, `3` authentication, `4` not found, `5` rate limited, `6` refused, `7
 network, `8` unknown. It never prompts, never pages, never colours, and never takes the
 API key on the command line. A person adds `--human`.
 
-**Status:** 0.2.0 is released, as the crate `muster-linear`
+**Status:** 0.3.0 is released, as the crate `muster-linear`
 ([ADR 0011](docs/decisions/0011-release-as-muster-cli.md),
 [ADR 0012](docs/decisions/0012-publish-as-muster-linear.md)): the first slice
 ([ADR 0007](docs/decisions/0007-build-the-trello-command-set-first.md)), the five
@@ -20,9 +20,11 @@ second slice ([ADR 0013](docs/decisions/0013-build-the-second-slice-sub-issues-a
 sub-issues, attachments and projects, as `--parent`, `issue attach`, `project create`
 and `issue list --project`. In progress: the third slice
 ([ADR 0014](docs/decisions/0014-build-the-third-slice-administrative-commands.md)),
-Linear's administrative operations as commands, group by group, from the workspace and
-its teams, members and invites to cycles, templates, webhooks and the audit log. Not
-yet: attachments as uploads.
+Linear's administrative operations as commands, group by group; its first block is
+released, the workspace, its teams, members and users, as `workspace get` and
+`update`, `team`, `member` and `user` commands, and the rest follows, from labels,
+states and projects to cycles, templates, webhooks and the audit log. Not yet:
+invites (they wait on a paid plan), attachments as uploads.
 
 ## Start here
 
