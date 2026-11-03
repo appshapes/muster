@@ -292,7 +292,7 @@ pub enum TeamCommand {
     List(ListArgs),
     /// One team with every setting, by key; without a key, the team muster would use
     Get(TeamRefArgs),
-    /// Create a team: its creator becomes a member and owner and Linear makes its default states and labels; a name a team already has is refused unless --allow-duplicate
+    /// Create a team: its creator becomes a member and Linear makes its default states and labels; a name a team already has is refused unless --allow-duplicate
     Create(Box<TeamCreateArgs>),
     /// Change a team's settings; a flag left out leaves its setting alone, a boolean takes true or false, and most need a team owner or a workspace admin
     Update(Box<TeamUpdateArgs>),
