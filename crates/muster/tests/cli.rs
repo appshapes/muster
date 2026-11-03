@@ -1512,6 +1512,17 @@ fn team_update_changes_only_what_is_passed_and_resolves_names() {
     let orphan = muster(&fake, &["team", "update", "SMK", "--parent", "none"]);
     assert_eq!(orphan.code, 0, "{}", orphan.stderr);
     assert!(orphan.one()["parent"].is_null());
+    let lowercase = muster(
+        &fake,
+        &["team", "update", "smk", "--default-issue-state", "Todo"],
+    );
+    assert_eq!(
+        lowercase.code, 0,
+        "the states are filtered by the key Linear returned, not the key as typed: {}",
+        lowercase.stderr
+    );
+    assert_eq!(lowercase.one()["key"], "SMK");
+    assert_eq!(lowercase.one()["defaultIssueState"]["name"], "Todo");
     let inferred = muster_with(
         &fake,
         &["team", "update", "--timezone", "Europe/London"],

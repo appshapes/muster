@@ -818,9 +818,12 @@ fn team_update_input(args: &TeamUpdateArgs) -> Result<Map<String, Value>, Error>
 /// is exit 6 with its message.
 fn team_update(session: &Session, args: &TeamUpdateArgs, out: &Output) -> Result<(), Error> {
     let mut input = team_update_input(args)?;
-    let key = session.team_key_of(&args.key_of)?;
-    let team = session.team_full(&key, false)?;
+    let team = session.team_full(&session.team_key_of(&args.key_of)?, false)?;
     let id = need_str(&team, "id", "TeamByKey")?;
+    // The key as Linear spells it, not as typed: `TeamByKey` matches a key in any
+    // case, but the states are filtered with `eq`, which is case-sensitive, so a
+    // lowercase key would report a state that exists as matching nothing.
+    let key = need_str(&team, "key", "TeamByKey")?;
     if let Some(parent) = &args.parent {
         let value = if is_none(parent) {
             Value::Null
@@ -1105,8 +1108,8 @@ fn issue_get(session: &Session, args: &GetArgs, out: &Output) -> Result<(), Erro
     Ok(())
 }
 
-/// Whether a flag's value is the `none` sentinel of `--assignee`, `--project` and
-/// `--parent`.
+/// Whether a flag's value is the `none` sentinel of `--assignee`, `--project`,
+/// `--parent` and `team update`'s `--auto-close-period`.
 fn is_none(value: &str) -> bool {
     value.trim().eq_ignore_ascii_case("none")
 }
