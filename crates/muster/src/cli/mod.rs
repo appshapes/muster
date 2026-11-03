@@ -63,11 +63,11 @@ pub enum Command {
         #[command(subcommand)]
         command: ListCommand,
     },
-    /// Labels of the team and of the workspace
+    /// Labels: list, create, update, retire, restore, delete
     Label {
-        /// `list`.
+        /// The label command.
         #[command(subcommand)]
-        command: ListCommand,
+        command: LabelCommand,
     },
     /// Projects: list, create
     Project {
@@ -624,7 +624,78 @@ pub struct UserUpdateArgs {
     pub avatar_url: Option<String>,
 }
 
-/// `list` under `state` and `label`.
+/// The label commands (ADR 0007; ADR 0014, group 6).
+#[derive(Subcommand, Debug)]
+pub enum LabelCommand {
+    /// List the labels of the team and of the workspace, one JSON object per line
+    List(ListArgs),
+    /// Create a label for the team, or for the workspace with --workspace; a name a label of the same scope has is refused unless --allow-duplicate
+    Create(LabelCreateArgs),
+    /// Change a label's name, colour, description or parent
+    Update(LabelUpdateArgs),
+    /// Retire a label: it stays on its issues and cannot be applied to a new one
+    Retire(LabelRefArgs),
+    /// Restore a retired label
+    Restore(LabelRefArgs),
+    /// Delete a label, which removes it from every issue; no undo in Linear, so retire first where history matters
+    Delete(LabelRefArgs),
+}
+
+/// A label named as `--label` names one: in the team or the workspace.
+#[derive(Args, Debug)]
+pub struct LabelRefArgs {
+    /// The label, by name
+    #[arg(value_name = "NAME")]
+    pub name: String,
+}
+
+/// `label create`.
+#[derive(Args, Debug, Default)]
+pub struct LabelCreateArgs {
+    /// The name
+    #[arg(long, value_name = "TEXT")]
+    pub name: String,
+    /// A workspace label, for every team, instead of one for the team
+    #[arg(long)]
+    pub workspace: bool,
+    /// The colour, a hex string (#eb5757)
+    #[arg(long, value_name = "HEX")]
+    pub color: Option<String>,
+    /// The description, plain text
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// The group this label goes in, by name
+    #[arg(long, value_name = "NAME")]
+    pub parent: Option<String>,
+    /// Make a group, which holds labels rather than going on issues
+    #[arg(long)]
+    pub group: bool,
+    /// Create it even when a label of the same scope has the name
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `label update`.
+#[derive(Args, Debug, Default)]
+pub struct LabelUpdateArgs {
+    /// The label, by name
+    #[arg(value_name = "NAME")]
+    pub label: String,
+    /// A new name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new colour, a hex string (#eb5757)
+    #[arg(long, value_name = "HEX")]
+    pub color: Option<String>,
+    /// A new description, plain text
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// A new group, by name, or `none` to take the label out of its group
+    #[arg(long, value_name = "NAME")]
+    pub parent: Option<String>,
+}
+
+/// `list` under `state`.
 #[derive(Subcommand, Debug)]
 pub enum ListCommand {
     /// List them, one JSON object per line

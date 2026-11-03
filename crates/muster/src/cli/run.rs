@@ -9,10 +9,10 @@ use crate::bounds::{
 };
 use crate::cli::{
     AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
-    IssueListArgs, ListArgs, ListCommand, MemberArgs, MemberCommand, ProjectCommand,
-    ProjectCreateArgs, TeamCommand, TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs,
-    UserCommand, UserListArgs, UserRefArgs, UserRoleArgs, UserUpdateArgs, WorkspaceCommand,
-    WorkspaceUpdateArgs,
+    IssueListArgs, LabelCommand, LabelCreateArgs, LabelRefArgs, LabelUpdateArgs, ListArgs,
+    ListCommand, MemberArgs, MemberCommand, ProjectCommand, ProjectCreateArgs, TeamCommand,
+    TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs,
+    UserRefArgs, UserRoleArgs, UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -64,9 +64,25 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
         Command::State {
             command: ListCommand::List(args),
         } => list_states(&Session::open(&config)?, args, out),
-        Command::Label {
-            command: ListCommand::List(args),
-        } => list_labels(&Session::open(&config)?, args, out),
+        Command::Label { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                LabelCommand::List(args) => list_labels(&session, args, out),
+                LabelCommand::Create(args) => label_create(&session, args, out),
+                LabelCommand::Update(args) => label_update(&session, args, out),
+                LabelCommand::Retire(args) => {
+                    label_lifecycle(&session, args, &ops::LABEL_RETIRE, "issueLabelRetire", out)
+                }
+                LabelCommand::Restore(args) => label_lifecycle(
+                    &session,
+                    args,
+                    &ops::LABEL_RESTORE,
+                    "issueLabelRestore",
+                    out,
+                ),
+                LabelCommand::Delete(args) => label_delete(&session, args, out),
+            }
+        }
         Command::Project { command } => {
             let session = Session::open(&config)?;
             match command {
@@ -268,6 +284,27 @@ impl Session {
             json!({ "first": PAGE_CAP, "filter": filter }),
         )?;
         Ok(nodes(&data, "issueLabels"))
+    }
+
+    /// One label by name among the team's and the workspace's, as `--label` resolves
+    /// one: the team's own first, then the workspace's (ADR 0014, group 6).
+    fn label_named(&self, team_key: &str, name: &str) -> Result<Value, Error> {
+        let labels = self.labels(Some(team_key))?;
+        let own = labels.iter().find(|l| {
+            !at(l, "team").is_null()
+                && str_at(l, "name").is_some_and(|n| n.eq_ignore_ascii_case(name))
+        });
+        match own.or_else(|| find_by(&labels, "name", name)) {
+            Some(label) => Ok(label.clone()),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!(
+                    "no label named {name:?} for team {team_key} or the workspace (labels: {})",
+                    names(&labels, "name")
+                ),
+                "name one from `muster label list`",
+            )),
+        }
     }
 
     fn label_ids(&self, team_key: &str, wanted: &[String]) -> Result<Vec<String>, Error> {
@@ -660,6 +697,147 @@ fn workspace_update(
         json!({ "input": Value::Object(input) }),
     )?;
     out.emit(&payload(&data, "organizationUpdate", "organization")?);
+    Ok(())
+}
+
+/// The input of `issueLabelCreate` but its `teamId` and `parentId`: the flags, checked
+/// before any request.
+fn label_input(args: &LabelCreateArgs) -> Result<Map<String, Value>, Error> {
+    check_body(Text::Name, &args.name)?;
+    let mut input = Map::new();
+    input.insert("name".into(), json!(args.name));
+    if let Some(color) = &args.color {
+        input.insert("color".into(), json!(color));
+    }
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if args.group {
+        input.insert("isGroup".into(), json!(true));
+    }
+    Ok(input)
+}
+
+fn label_create(session: &Session, args: &LabelCreateArgs, out: &Output) -> Result<(), Error> {
+    let mut input = label_input(args)?;
+    let (team, _) = session.team()?;
+    let team_key = need_str(&team, "key", "Teams")?;
+    // The guard is on the name in the label's own scope, the team's labels or the
+    // workspace's, since `--label <NAME>` resolves a name to one label.
+    if !args.allow_duplicate {
+        let labels = session.labels(Some(&team_key))?;
+        let same_scope = labels.iter().find(|l| {
+            str_at(l, "name").is_some_and(|n| n.eq_ignore_ascii_case(&args.name))
+                && at(l, "team").is_null() == args.workspace
+        });
+        if let Some(existing) = same_scope {
+            let scope = if args.workspace {
+                "the workspace".to_string()
+            } else {
+                format!("team {team_key}")
+            };
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "a label named {:?} exists for {scope}",
+                    str_at(existing, "name").unwrap_or(&args.name)
+                ),
+                "use that label, or pass --allow-duplicate if a second one is wanted",
+            )
+            .at("muster-label-create"));
+        }
+    }
+    if !args.workspace {
+        input.insert("teamId".into(), json!(need_str(&team, "id", "Teams")?));
+    }
+    if let Some(parent) = &args.parent {
+        let group = session.label_named(&team_key, parent)?;
+        input.insert(
+            "parentId".into(),
+            json!(need_str(&group, "id", "IssueLabels")?),
+        );
+    }
+    let data = session
+        .linear
+        .run(&ops::LABEL_CREATE, json!({ "input": Value::Object(input) }))?;
+    out.emit(&payload(&data, "issueLabelCreate", "issueLabel")?);
+    Ok(())
+}
+
+fn label_update(session: &Session, args: &LabelUpdateArgs, out: &Output) -> Result<(), Error> {
+    let mut input = Map::new();
+    if let Some(name) = &args.name {
+        check_body(Text::Name, name)?;
+        input.insert("name".into(), json!(name));
+    }
+    if let Some(color) = &args.color {
+        input.insert("color".into(), json!(color));
+    }
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    let team_key = session.team_key()?;
+    let label = session.label_named(&team_key, &args.label)?;
+    let id = need_str(&label, "id", "IssueLabels")?;
+    if let Some(parent) = &args.parent {
+        let value = if is_none(parent) {
+            Value::Null
+        } else {
+            let group = session.label_named(&team_key, parent)?;
+            let group_id = need_str(&group, "id", "IssueLabels")?;
+            if group_id == id {
+                return Err(Error::with_hint(
+                    ErrorCode::Usage,
+                    format!("{:?} cannot be its own group", args.label),
+                    "name another label, or `none` to take it out of its group",
+                ));
+            }
+            json!(group_id)
+        };
+        input.insert("parentId".into(), value);
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --name, --color, --description, --parent",
+        ));
+    }
+    let data = session.linear.run(
+        &ops::LABEL_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "issueLabelUpdate", "issueLabel")?);
+    Ok(())
+}
+
+/// `label retire` and `label restore`: one mutation with the label's id, and the
+/// label as Linear returns it.
+fn label_lifecycle(
+    session: &Session,
+    args: &LabelRefArgs,
+    op: &ops::Operation,
+    field: &str,
+    out: &Output,
+) -> Result<(), Error> {
+    let team_key = session.team_key()?;
+    let label = session.label_named(&team_key, &args.name)?;
+    let id = need_str(&label, "id", "IssueLabels")?;
+    let data = session.linear.run(op, json!({ "id": id }))?;
+    out.emit(&payload(&data, field, "issueLabel")?);
+    Ok(())
+}
+
+fn label_delete(session: &Session, args: &LabelRefArgs, out: &Output) -> Result<(), Error> {
+    let team_key = session.team_key()?;
+    let label = session.label_named(&team_key, &args.name)?;
+    let id = need_str(&label, "id", "IssueLabels")?;
+    let data = session
+        .linear
+        .run(&ops::LABEL_DELETE, json!({ "id": id }))?;
+    out.emit(&delete_payload(&data, "issueLabelDelete")?);
     Ok(())
 }
 

@@ -3,11 +3,13 @@
     "nodes": [
       {
         "color": "<string>",
+        "createdAt": "<string>",
         "description": null,
         "id": "<string>",
         "isGroup": true,
         "name": "<string>",
         "parent": null,
+        "retiredAt": null,
         "team": null
       }
     ],

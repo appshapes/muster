@@ -45,7 +45,7 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 | cycles enabled | Whether a team uses cycles, Linear's time-boxed sprints; `--cycles-enabled` on `team create`; cycles are made by Linear from the team's cycle settings. | `cyclesEnabled` | none | `docs/reference/commands.md#muster-team-create` |
 | copy settings from | A team, by key, whose settings a new team starts from; `--copy-settings-from` on `team create`. | `copySettingsFromTeamId` | none | `docs/reference/commands.md#muster-team-create` |
 | icon | A team's icon, as Linear names it; `--icon` on `team update`. | `icon` | none | `docs/reference/commands.md#muster-team-update` |
-| color | A team's colour, a hex string (`#4ea7fc`); `--color` on `team update`. | `color` | none | `docs/reference/commands.md#muster-team-update` |
+| color | A colour, a hex string (`#4ea7fc`): a team's on `team update`, a label's on `label create` and `label update`. | `color` | label color | `docs/reference/commands.md#muster-team-update` |
 | private | Whether a team is visible to its members alone; `--private` on `team update`, read back as `visibility`. | `private`, `visibility` | private board | `docs/reference/commands.md#muster-team-update` |
 | cycle start day | The weekday a team's cycles start, 0 for Sunday to 6 for Saturday; `--cycle-start-day`. | `cycleStartDay` | none | `docs/reference/commands.md#muster-team-update` |
 | cycle duration | How many weeks a team's cycle lasts; `--cycle-duration`. | `cycleDuration` | none | `docs/reference/commands.md#muster-team-update` |
@@ -80,7 +80,9 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 | number | The integer part of an identifier, unique inside a team. | `number` | `idShort` | `docs/reference/commands.md#muster-issue-get` |
 | state | Where an issue is in its team's workflow; each state has a type: backlog, unstarted, started, completed, canceled or duplicate. | `workflowState`, `state` | list | `docs/reference/commands.md#muster-state-list` |
 | completed state | The team's first state of type `completed`, where `issue close` puts an issue. | `WorkflowState.type == "completed"` | mark complete and archive | `docs/reference/commands.md#muster-issue-close` |
-| label | A named tag on an issue; an issue can carry several. | `issueLabel`, `labels` | label | `docs/reference/commands.md#muster-label-list` |
+| label | A named tag on an issue, the team's own or the workspace's; an issue can carry several. `label list` shows them, `label create` makes one (`--workspace` for every team), `label update` changes it, `label retire` and `label restore` take it out of use and back, and `label delete` removes it from every issue, with no undo. | `issueLabel`, `labels` | label | `docs/reference/commands.md#muster-label-create` |
+| group | A label that holds other labels rather than going on issues, made with `--group`; a label's `--parent` names the group it is in. | `isGroup`, `parent`, `parentId` | none | `docs/reference/commands.md#muster-label-create` |
+| workspace label | A label every team shares, made with `--workspace` on `label create`; the other kind is the team's own. | `issueLabel` with no `team` | label | `docs/reference/commands.md#muster-label-create` |
 | project | A named group of issues across teams, with a status of its own; `project create` makes one, `--project` on `issue create`, `issue update` and `issue list` names one. | `project` | none | `docs/reference/commands.md#muster-project-create` |
 | comment | A markdown note on an issue, by a user; `issue get` prints them newest first, as Linear orders them. | `comment` | comment | `docs/reference/commands.md#muster-issue-comment` |
 | attachment | A link on an issue, with a title and a URL; `issue attach` adds one and `issue get` prints them, newest first. | `attachment` | attachment | `docs/reference/commands.md#muster-issue-attach` |
@@ -96,7 +98,7 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 | title | An issue's one-line name, or an attachment's; `--title` on `issue create`, `issue update` and `issue attach`. | `title` | name | `docs/reference/commands.md#muster-issue-create` |
 | description | An issue's text, markdown; `--description` or `--description-file`. | `description` | desc | `docs/reference/commands.md#muster-issue-create` |
 | body | A comment's text, markdown; `--body` or `--body-file`. | `body` | text | `docs/reference/commands.md#muster-issue-comment` |
-| parent | The issue a sub-issue belongs to; `--parent` on `issue create`, `issue update` and `issue list`. | `parent`, `parentId` | the card that holds the checklist (the nearest) | `docs/reference/commands.md#muster-issue-get` |
+| parent | The issue a sub-issue belongs to, `--parent` on `issue create`, `issue update` and `issue list`; a team's parent team on `team update`; the group a label is in on `label create` and `label update`. | `parent`, `parentId` | the card that holds the checklist (the nearest) | `docs/reference/commands.md#muster-issue-get` |
 | name | What a team, state, label or project is called; the value of `--state`, `--label` and `--project`. | `name` | name | `docs/reference/commands.md#muster-state-list` |
 | url | A link's address, on an attachment; `url` is also every issue's own web address. | `url` | attachment URL | `docs/reference/commands.md#muster-issue-get` |
 | subtitle | A link's second line, under its title, on an attachment. | `subtitle` | none | `docs/reference/commands.md#muster-issue-get` |
