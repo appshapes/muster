@@ -75,6 +75,18 @@ pub enum Command {
         #[command(subcommand)]
         command: ProjectCommand,
     },
+    /// Initiatives, the workspace's strategic objectives: list, get, create, update, archive, unarchive, add-project, remove-project
+    Initiative {
+        /// The initiative command.
+        #[command(subcommand)]
+        command: InitiativeCommand,
+    },
+    /// A team's cycles, Linear's time-boxed sprints: list, get, update
+    Cycle {
+        /// The cycle command.
+        #[command(subcommand)]
+        command: CycleCommand,
+    },
     /// Documents, Linear's pages of markdown on a project or an issue: list, get, create, update, delete, unarchive
     Document {
         /// The document command.
@@ -154,7 +166,7 @@ pub struct WorkspaceUpdateArgs {
     /// Whether copying an issue, or opening it in a coding tool, suggests a branch name
     #[arg(long, value_name = "true|false")]
     pub suggested_branch_name: Option<bool>,
-    /// Whether the roadmap is on
+    /// Whether initiatives are on (Linear's `roadmapEnabled`, the switch under Settings > Initiatives); `initiative create` is refused while off
     #[arg(long, value_name = "true|false")]
     pub roadmap: Option<bool>,
     /// How many weeks apart Linear asks for project updates
@@ -1003,6 +1015,218 @@ impl ProjectStatusType {
     }
 }
 
+/// The initiative commands (ADR 0014, group 12).
+#[derive(Subcommand, Debug)]
+pub enum InitiativeCommand {
+    /// List the workspace's initiatives, one JSON object per line
+    List(InitiativeListArgs),
+    /// One initiative with its content and its projects, by name
+    Get(InitiativeRefArgs),
+    /// Create an initiative; a name an initiative already has is refused unless --allow-duplicate, and so is a workspace with initiatives off (`workspace update --roadmap true` switches them on)
+    Create(Box<InitiativeCreateArgs>),
+    /// Change an initiative's name, description, owner, lead team, status, target date, priority or content
+    Update(Box<InitiativeUpdateArgs>),
+    /// Archive an initiative
+    Archive(InitiativeRefArgs),
+    /// Bring an archived initiative back
+    Unarchive(InitiativeRefArgs),
+    /// Put a project in an initiative
+    AddProject(InitiativeProjectArgs),
+    /// Take a project out of an initiative
+    RemoveProject(InitiativeProjectArgs),
+}
+
+/// `initiative list`.
+#[derive(Args, Debug)]
+pub struct InitiativeListArgs {
+    /// Only initiatives in this status
+    #[arg(long, value_name = "STATUS", value_enum)]
+    pub status: Option<InitiativeStatus>,
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+}
+
+/// An initiative, by name.
+#[derive(Args, Debug)]
+pub struct InitiativeRefArgs {
+    /// The initiative, by name
+    #[arg(value_name = "NAME")]
+    pub name: String,
+}
+
+/// `initiative add-project` and `initiative remove-project`.
+#[derive(Args, Debug)]
+pub struct InitiativeProjectArgs {
+    /// The initiative, by name
+    #[arg(value_name = "NAME")]
+    pub name: String,
+    /// The project, by name
+    #[arg(long, value_name = "NAME")]
+    pub project: String,
+}
+
+/// `initiative create`.
+#[derive(Args, Debug, Default)]
+pub struct InitiativeCreateArgs {
+    /// The name
+    #[arg(long, value_name = "TEXT")]
+    pub name: String,
+    /// The description, plain text
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// The owner: `me`, an email address or a name
+    #[arg(long, value_name = "WHO")]
+    pub owner: Option<String>,
+    /// The team that leads it, by key; a team initiative is a Linear Business plan feature, refused, exit 6, below it
+    #[arg(long, value_name = "KEY")]
+    pub lead_team: Option<String>,
+    /// The status; Linear's default when absent
+    #[arg(long, value_name = "STATUS", value_enum)]
+    pub status: Option<InitiativeStatus>,
+    /// The planned end, a date (2026-12-01)
+    #[arg(long, value_name = "DATE")]
+    pub target_date: Option<String>,
+    /// The priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low
+    #[arg(long, value_name = "0-4", value_parser = clap::value_parser!(u8).range(0..=4))]
+    pub priority: Option<u8>,
+    /// The content, markdown
+    #[arg(long, value_name = "TEXT", conflicts_with = "content_file")]
+    pub content: Option<String>,
+    /// The content from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub content_file: Option<String>,
+    /// Create it even when an initiative has the name
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `initiative update`.
+#[derive(Args, Debug, Default)]
+pub struct InitiativeUpdateArgs {
+    /// The initiative, by name
+    #[arg(value_name = "NAME")]
+    pub initiative: String,
+    /// A new name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new description, plain text
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// A new owner: `me`, an email address, a name, or `none`
+    #[arg(long, value_name = "WHO")]
+    pub owner: Option<String>,
+    /// A new lead team, by key, or `none`; a team initiative is a Linear Business plan feature, refused, exit 6, below it
+    #[arg(long, value_name = "KEY")]
+    pub lead_team: Option<String>,
+    /// A new status
+    #[arg(long, value_name = "STATUS", value_enum)]
+    pub status: Option<InitiativeStatus>,
+    /// A new planned end, a date (2026-12-01), or `none`
+    #[arg(long, value_name = "DATE")]
+    pub target_date: Option<String>,
+    /// A new priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low
+    #[arg(long, value_name = "0-4", value_parser = clap::value_parser!(u8).range(0..=4))]
+    pub priority: Option<u8>,
+    /// A new content, markdown
+    #[arg(long, value_name = "TEXT", conflicts_with = "content_file")]
+    pub content: Option<String>,
+    /// The content from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub content_file: Option<String>,
+}
+
+/// An initiative's lifecycle status, as Linear's `InitiativeStatus` spells it.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InitiativeStatus {
+    /// Proposed.
+    #[value(name = "Proposed")]
+    Proposed,
+    /// Planned.
+    #[value(name = "Planned")]
+    Planned,
+    /// Active.
+    #[value(name = "Active")]
+    Active,
+    /// Completed.
+    #[value(name = "Completed")]
+    Completed,
+    /// Canceled.
+    #[value(name = "Canceled")]
+    Canceled,
+}
+
+impl InitiativeStatus {
+    /// The value Linear takes.
+    pub fn linear(self) -> &'static str {
+        match self {
+            InitiativeStatus::Proposed => "Proposed",
+            InitiativeStatus::Planned => "Planned",
+            InitiativeStatus::Active => "Active",
+            InitiativeStatus::Completed => "Completed",
+            InitiativeStatus::Canceled => "Canceled",
+        }
+    }
+}
+
+/// The cycle commands (ADR 0014, group 13). Linear makes a team's cycles from its
+/// settings (`team update --cycles-enabled true`), so there is no create; `cycleArchive`
+/// unlinks every issue with no inverse and stays out.
+#[derive(Subcommand, Debug)]
+pub enum CycleCommand {
+    /// List the team's cycles, one JSON object per line, newest first
+    List(CycleListArgs),
+    /// One cycle with its issues, by number
+    Get(CycleRefArgs),
+    /// Change a cycle's name, description, start or end
+    Update(Box<CycleUpdateArgs>),
+}
+
+/// `cycle list`.
+#[derive(Args, Debug)]
+pub struct CycleListArgs {
+    /// Only the active cycle
+    #[arg(long, conflicts_with_all = ["upcoming", "past"])]
+    pub active: bool,
+    /// Only the cycles still to come
+    #[arg(long, conflicts_with_all = ["active", "past"])]
+    pub upcoming: bool,
+    /// Only the cycles that have ended
+    #[arg(long, conflicts_with_all = ["active", "upcoming"])]
+    pub past: bool,
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+}
+
+/// A cycle of the team, by number.
+#[derive(Args, Debug)]
+pub struct CycleRefArgs {
+    /// The cycle's number in its team
+    #[arg(value_name = "NUMBER")]
+    pub number: u64,
+}
+
+/// `cycle update`.
+#[derive(Args, Debug, Default)]
+pub struct CycleUpdateArgs {
+    /// The cycle's number in its team
+    #[arg(value_name = "NUMBER")]
+    pub number: u64,
+    /// A new name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new description
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// A new start, a time (2026-11-10T00:00:00Z)
+    #[arg(long, value_name = "TIME")]
+    pub starts_at: Option<String>,
+    /// A new end, a time (2026-11-24T00:00:00Z)
+    #[arg(long, value_name = "TIME")]
+    pub ends_at: Option<String>,
+}
+
 /// The document commands (ADR 0014, group 14).
 #[derive(Subcommand, Debug)]
 pub enum DocumentCommand {
@@ -1298,6 +1522,9 @@ pub struct IssueListArgs {
     /// Only issues in this milestone, by name, or `none` for issues in no milestone
     #[arg(long, value_name = "NAME")]
     pub milestone: Option<String>,
+    /// Only issues in this cycle of the team: a number, `active`, `next`, or `none` for issues in no cycle
+    #[arg(long, value_name = "NUMBER|active|next|none")]
+    pub cycle: Option<String>,
     /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
     #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
     pub limit: usize,
@@ -1330,6 +1557,9 @@ pub struct CreateArgs {
     /// The milestone, by name, in the project --project names
     #[arg(long, value_name = "NAME", requires = "project")]
     pub milestone: Option<String>,
+    /// The cycle of the team to put it in: a number, `active` or `next`
+    #[arg(long, value_name = "NUMBER|active|next")]
+    pub cycle: Option<String>,
     /// The assignee: `me`, an email address or a name
     #[arg(long, value_name = "WHO")]
     pub assignee: Option<String>,
@@ -1427,6 +1657,9 @@ pub struct UpdateArgs {
     /// A new milestone, by name, in the issue's project (or the one --project names), or `none` to remove it
     #[arg(long, value_name = "NAME")]
     pub milestone: Option<String>,
+    /// A new cycle, in the issue's team: a number, `active`, `next`, or `none` to take it out of its cycle
+    #[arg(long, value_name = "NUMBER|active|next|none")]
+    pub cycle: Option<String>,
     /// A new parent, which makes this a sub-issue, or `none` to take it out from under its parent
     #[arg(long, value_name = "ISSUE")]
     pub parent: Option<String>,

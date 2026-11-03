@@ -56,9 +56,35 @@ echo "smoke: muster team get SMK"
 "$bin" team get SMK | jq -c '{key, name, cyclesEnabled, retiredAt, archivedAt, issueCount}' | tee "$tmp/team-get.json"
 jq -e '.key == "SMK" and .archivedAt == null' "$tmp/team-get.json" >/dev/null
 echo
-echo "smoke: muster team update SMK --cycles-enabled true --cycle-enabled-start-date $stamp (the smoke team's cycles; ADR 0014)"
-"$bin" team update SMK --cycles-enabled true --cycle-enabled-start-date "$stamp" --cycle-duration 1 --upcoming-cycle-count 2 --description "The smoke test's own team (ADR 0014): its cycles, members and lifecycle are tested here, so that the house's team is never touched." | jq -c '{key, cyclesEnabled, cycleDuration, upcomingCycleCount, activeCycle}' | tee "$tmp/team-update.json"
+# The start date is set once: setting it again on a team whose cycles run would shift
+# its cycles on every run (seen on 2026-11-03, one new cycle per run).
+if [ "$(jq -r '.cyclesEnabled' "$tmp/team-get.json")" = "true" ]; then cycle_start=""; else cycle_start="--cycle-enabled-start-date $stamp"; fi
+echo "smoke: muster team update SMK --cycles-enabled true ${cycle_start:-(the start date was set by an earlier run)} (the smoke team's cycles; ADR 0014)"
+"$bin" team update SMK --cycles-enabled true $cycle_start --cycle-duration 1 --upcoming-cycle-count 2 --description "The smoke test's own team (ADR 0014): its cycles, members and lifecycle are tested here, so that the house's team is never touched." | jq -c '{key, cyclesEnabled, cycleDuration, upcomingCycleCount, activeCycle}' | tee "$tmp/team-update.json"
 jq -e '.key == "SMK" and .cyclesEnabled == true and .cycleDuration == 1' "$tmp/team-update.json" >/dev/null
+echo
+echo "smoke: muster cycle list --team SMK, --active, get, update --name, then an SMK issue through --cycle active, next and none (ADR 0014)"
+"$bin" cycle list --team SMK | jq -c '{number, name, isActive, isNext, isPast}' | tee "$tmp/cycles.jsonl"
+jq -s -e 'length >= 1' "$tmp/cycles.jsonl" >/dev/null
+"$bin" cycle list --team SMK --active | jq -c '{number, isActive}' | tee "$tmp/cycle-active.json"
+jq -e '.isActive == true' "$tmp/cycle-active.json" >/dev/null
+active_cycle=$(jq -r '.number' "$tmp/cycle-active.json")
+"$bin" cycle get "$active_cycle" --team SMK | jq -c '{number, issues: (.issues.nodes | length)}' | tee "$tmp/cycle-get.json"
+jq -e --argjson n "$active_cycle" '.number == $n' "$tmp/cycle-get.json" >/dev/null
+"$bin" cycle update "$active_cycle" --team SMK --name "Smoke cycle" --description "Named by scripts/smoke.sh at $stamp." | jq -c '{number, name}' | tee "$tmp/cycle-update.json"
+jq -e '.name == "Smoke cycle"' "$tmp/cycle-update.json" >/dev/null
+"$bin" issue create --team SMK --title "Smoke cycle issue $stamp" --cycle active --description "Created by scripts/smoke.sh at $stamp in the smoke team's active cycle; canceled by the same run." | jq -c '{identifier, cycle: .cycle.number}' | tee "$tmp/cycle-issue.json"
+jq -e --argjson n "$active_cycle" '.cycle == $n' "$tmp/cycle-issue.json" >/dev/null
+cycle_issue=$(jq -r '.identifier' "$tmp/cycle-issue.json")
+"$bin" issue list --team SMK --cycle active | jq -c '{identifier, cycle: .cycle.number}' | tee "$tmp/cycle-issues.jsonl"
+jq -s -e --arg id "$cycle_issue" 'map(.identifier) | index($id) != null' "$tmp/cycle-issues.jsonl" >/dev/null
+"$bin" issue update "$cycle_issue" --cycle next | jq -c '{identifier, cycle: .cycle.number}' | tee "$tmp/cycle-next.json"
+jq -e --argjson n "$active_cycle" '.cycle > $n' "$tmp/cycle-next.json" >/dev/null
+"$bin" issue update "$cycle_issue" --cycle none | jq -c '{identifier, cycle}' | tee "$tmp/cycle-none.json"
+jq -e '.cycle == null' "$tmp/cycle-none.json" >/dev/null
+# Back into the active cycle, then canceled, so that the cycle fixture records an issue node.
+"$bin" issue update "$cycle_issue" --cycle active | jq -e --argjson n "$active_cycle" '.cycle.number == $n' >/dev/null
+"$bin" issue close "$cycle_issue" --cancel --comment "Smoke cycle issue done at $stamp; canceled so that it never counts as work." | jq -c 'select(.identifier != null) | {identifier, state: .state.name}'
 echo
 echo "smoke: muster member list --team SMK, then remove me and add me back (ADR 0014)"
 "$bin" --team SMK member list | jq -c '{user: .user.displayName, owner}' | tee "$tmp/members.jsonl"
@@ -132,6 +158,54 @@ jq -e --arg n "Smoky $short" '.name == $n' "$tmp/status-archive.json" >/dev/null
 "$bin" project-status unarchive "Smoky $short" | jq -c '{name}' | tee "$tmp/status-unarchive.json"
 jq -e --arg n "Smoky $short" '.name == $n' "$tmp/status-unarchive.json" >/dev/null
 "$bin" project-status archive "Smoky $short" | jq -c '{name}' >/dev/null
+echo
+echo "smoke: muster initiative create --name 'Smoke initiative' (exit 6 after the first run; it stays, for the fixture), add-project, get, remove-project, then a throwaway initiative updated, archived and unarchived (ADR 0014)"
+if [ "$("$bin" workspace get | jq -r '.roadmapEnabled')" != "true" ]; then
+  echo "smoke: initiatives are off in this workspace; muster workspace update --roadmap true switches them on, and they stay on"
+  "$bin" workspace update --roadmap true | jq -c '{name, roadmapEnabled}'
+fi
+set +e
+"$bin" initiative create --name "Smoke initiative" --description "The initiative the smoke project goes in; it stays so that the fixture has a node (ADR 0014)." --owner me --status Active > "$tmp/initiative.json" 2> "$tmp/initiative.err"
+code=$?
+set -e
+case "$code" in
+  0) jq -c '{name, status, owner: .owner.displayName}' "$tmp/initiative.json" ;;
+  6) cat "$tmp/initiative.err"; jq -e '.error.code == "refused"' "$tmp/initiative.err" >/dev/null ;;
+  *) echo "smoke: initiative create exited $code" >&2; cat "$tmp/initiative.err" >&2; exit 1 ;;
+esac
+if jq -e '.error.linear.code == "FORBIDDEN" or .error.linear.code == "FEATURE_NOT_ACCESSIBLE"' "$tmp/initiative.err" >/dev/null 2>&1; then
+  echo "smoke: the plan does not allow initiatives through the API; the initiative steps are skipped"
+else
+  "$bin" initiative add-project "Smoke initiative" --project "Smoke tests" > "$tmp/initiative-link.json" 2> "$tmp/initiative-link.err" || { cat "$tmp/initiative-link.err"; jq -e '.error.code == "refused"' "$tmp/initiative-link.err" >/dev/null; }
+  "$bin" initiative get "Smoke initiative" | jq -c '{name, status, projects: [.projects.nodes[].name]}' | tee "$tmp/initiative-get.json"
+  jq -e '.projects | index("Smoke tests") != null' "$tmp/initiative-get.json" >/dev/null
+  "$bin" initiative remove-project "Smoke initiative" --project "Smoke tests" | jq -c '{success}' | tee "$tmp/initiative-unlink.json"
+  jq -e '.success == true' "$tmp/initiative-unlink.json" >/dev/null
+  "$bin" initiative get "Smoke initiative" | jq -e '.projects.nodes | length == 0' >/dev/null
+  "$bin" initiative add-project "Smoke initiative" --project "Smoke tests" | jq -c '{project: .project.name, initiative: .initiative.name}' | tee "$tmp/initiative-relink.json"
+  jq -e '.project == "Smoke tests"' "$tmp/initiative-relink.json" >/dev/null
+  "$bin" initiative list --status Active | jq -c '{name, status}' | tee "$tmp/initiatives.jsonl"
+  jq -s -e 'map(.name) | index("Smoke initiative") != null' "$tmp/initiatives.jsonl" >/dev/null
+  "$bin" initiative create --name "Smoke $stamp" --status Planned --priority 4 | jq -c '{name, status, priority}' | tee "$tmp/initiative-throwaway.json"
+  jq -e --arg n "Smoke $stamp" '.name == $n' "$tmp/initiative-throwaway.json" >/dev/null
+  "$bin" initiative update "Smoke $stamp" --name "Smoky $stamp" --status Canceled --target-date none | jq -c '{name, status}' | tee "$tmp/initiative-update.json"
+  jq -e --arg n "Smoky $stamp" '.name == $n and .status == "Canceled"' "$tmp/initiative-update.json" >/dev/null
+  "$bin" initiative archive "Smoky $stamp" | jq -c '{name, archivedAt}' | tee "$tmp/initiative-archive.json"
+  jq -e '.archivedAt != null' "$tmp/initiative-archive.json" >/dev/null
+  "$bin" initiative unarchive "Smoky $stamp" | jq -c '{name, archivedAt}' | tee "$tmp/initiative-unarchive.json"
+  jq -e '.archivedAt == null' "$tmp/initiative-unarchive.json" >/dev/null
+  "$bin" initiative archive "Smoky $stamp" | jq -c '{name}' >/dev/null
+  echo "smoke: muster initiative update --lead-team SMK (a team initiative; exit 6 with FEATURE_NOT_ACCESSIBLE below the Business plan)"
+  set +e
+  "$bin" initiative update "Smoke initiative" --lead-team SMK > "$tmp/initiative-lead.json" 2> "$tmp/initiative-lead.err"
+  code=$?
+  set -e
+  case "$code" in
+    0) jq -c '{name, leadTeam: .leadTeam.key}' "$tmp/initiative-lead.json" ;;
+    6) cat "$tmp/initiative-lead.err"; jq -e '.error.linear.code == "FEATURE_NOT_ACCESSIBLE"' "$tmp/initiative-lead.err" >/dev/null; echo "smoke: the plan does not sell team initiatives; --lead-team is refused as documented" ;;
+    *) echo "smoke: initiative update --lead-team exited $code" >&2; cat "$tmp/initiative-lead.err" >&2; exit 1 ;;
+  esac
+fi
 echo
 echo "smoke: muster document create --title 'Smoke document' --project 'Smoke tests' (exit 6 after the first run; it stays, for the fixture), get, list, then a throwaway document updated, deleted, unarchived and deleted again (ADR 0014)"
 set +e

@@ -40,7 +40,7 @@ jq -e '.urlKey == "fake" and (.userCount | type) == "number" and .subscription =
 
 step "muster team get"
 "$bin" team get | tee "$tmp/team.json"
-jq -e '.key == "APP" and .cyclesEnabled == false and .defaultIssueState.name == "Backlog"' "$tmp/team.json" >/dev/null
+jq -e '.key == "APP" and .cyclesEnabled == true and .defaultIssueState.name == "Backlog"' "$tmp/team.json" >/dev/null
 
 step "muster user get me"
 "$bin" user get me | tee "$tmp/user.json"
@@ -84,6 +84,12 @@ step "muster project get and update"
 "$bin" project get "Trying muster" | tee "$tmp/project-get.json"
 jq -e '.name == "Trying muster" and .status.name == "In Progress" and (.members.nodes | type) == "array"' "$tmp/project-get.json" >/dev/null
 
+step "muster cycle list --active and the issue's --cycle"
+"$bin" cycle list --active | tee "$tmp/cycle.json"
+jq -e '.isActive == true and .number == 2 and .team.key == "APP"' "$tmp/cycle.json" >/dev/null
+"$bin" issue update "$id" --cycle active | jq -e '.cycle.number == 2' >/dev/null
+"$bin" cycle get 2 | jq -e --arg id "$id" '[.issues.nodes[].identifier] | index($id) != null' >/dev/null
+
 step "muster document create, list --project and get"
 # The fake seeds a document titled "Plan", so the README's is "Kickoff".
 "$bin" document create --title "Kickoff" --project "Trying muster" --content "# Kickoff" | tee "$tmp/document.json"
@@ -107,6 +113,14 @@ step "muster project-update create and list"
 "$bin" project-update create --project "Trying muster" --body "Shipping on Friday." --health onTrack | tee "$tmp/project-update.json"
 jq -e '.health == "onTrack" and .body == "Shipping on Friday." and .project.name == "Trying muster"' "$tmp/project-update.json" >/dev/null
 "$bin" project-update list --project "Trying muster" | jq -s -e 'length == 1' >/dev/null
+
+step "muster initiative create, add-project and get"
+# The fake seeds an initiative named "Launch", so the README's is "Growth".
+"$bin" initiative create --name "Growth" --owner me --status Active | tee "$tmp/initiative.json"
+jq -e '.name == "Growth" and .status == "Active" and .leadTeam == null' "$tmp/initiative.json" >/dev/null
+"$bin" initiative update Growth --lead-team APP | jq -e '.leadTeam.key == "APP"' >/dev/null
+"$bin" initiative add-project Growth --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
+"$bin" initiative get Growth | jq -e '.projects.nodes[0].name == "Trying muster"' >/dev/null
 
 step "muster issue close $id"
 "$bin" issue close "$id" --comment "Done from the README." | tee "$tmp/close.jsonl"

@@ -40,7 +40,7 @@ Change the workspace's settings; a flag left out leaves its setting alone, a boo
 | `--git-public-linkback-messages` | `<true\|false>` | no |  | Whether the git integration posts a linkback comment on a public repository's pull request |
 | `--git-linkback-descriptions` | `<true\|false>` | no |  | Whether a linkback comment carries the issue's description |
 | `--suggested-branch-name` | `<true\|false>` | no |  | Whether copying an issue, or opening it in a coding tool, suggests a branch name |
-| `--roadmap` | `<true\|false>` | no |  | Whether the roadmap is on |
+| `--roadmap` | `<true\|false>` | no |  | Whether initiatives are on (Linear's `roadmapEnabled`, the switch under Settings > Initiatives); `initiative create` is refused while off |
 | `--project-update-reminder-weeks` | `<N>` | no |  | How many weeks apart Linear asks for project updates |
 | `--project-update-reminders-day` | `<Sunday\|Monday\|Tuesday\|Wednesday\|Thursday\|Friday\|Saturday>` | no |  | The weekday project update reminders go out |
 | `--project-update-reminders-hour` | `<0-23>` | no |  | The hour project update reminders go out, 0 to 23 |
@@ -360,6 +360,122 @@ Bring a trashed or archived project back.
 | --- | --- | --- | --- | --- |
 | `<NAME>` | `<NAME>` | yes |  | The project, by name |
 
+### muster initiative list
+
+List the workspace's initiatives, one JSON object per line.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--status` | `<Proposed\|Planned\|Active\|Completed\|Canceled>` | no |  | Only initiatives in this status |
+| `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
+### muster initiative get
+
+One initiative with its content and its projects, by name.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The initiative, by name |
+
+### muster initiative create
+
+Create an initiative; a name an initiative already has is refused unless --allow-duplicate, and so is a workspace with initiatives off (`workspace update --roadmap true` switches them on).
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--name` | `<TEXT>` | yes |  | The name |
+| `--description` | `<TEXT>` | no |  | The description, plain text |
+| `--owner` | `<WHO>` | no |  | The owner: `me`, an email address or a name |
+| `--lead-team` | `<KEY>` | no |  | The team that leads it, by key; a team initiative is a Linear Business plan feature, refused, exit 6, below it |
+| `--status` | `<Proposed\|Planned\|Active\|Completed\|Canceled>` | no |  | The status; Linear's default when absent |
+| `--target-date` | `<DATE>` | no |  | The planned end, a date (2026-12-01) |
+| `--priority` | `<0-4>` | no |  | The priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low |
+| `--content` | `<TEXT>` | no |  | The content, markdown |
+| `--content-file` | `<PATH>` | no |  | The content from a file, or from stdin when PATH is `-` |
+| `--allow-duplicate` |  | no |  | Create it even when an initiative has the name |
+
+### muster initiative update
+
+Change an initiative's name, description, owner, lead team, status, target date, priority or content.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The initiative, by name |
+| `--name` | `<TEXT>` | no |  | A new name |
+| `--description` | `<TEXT>` | no |  | A new description, plain text |
+| `--owner` | `<WHO>` | no |  | A new owner: `me`, an email address, a name, or `none` |
+| `--lead-team` | `<KEY>` | no |  | A new lead team, by key, or `none`; a team initiative is a Linear Business plan feature, refused, exit 6, below it |
+| `--status` | `<Proposed\|Planned\|Active\|Completed\|Canceled>` | no |  | A new status |
+| `--target-date` | `<DATE>` | no |  | A new planned end, a date (2026-12-01), or `none` |
+| `--priority` | `<0-4>` | no |  | A new priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low |
+| `--content` | `<TEXT>` | no |  | A new content, markdown |
+| `--content-file` | `<PATH>` | no |  | The content from a file, or from stdin when PATH is `-` |
+
+### muster initiative archive
+
+Archive an initiative.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The initiative, by name |
+
+### muster initiative unarchive
+
+Bring an archived initiative back.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The initiative, by name |
+
+### muster initiative add-project
+
+Put a project in an initiative.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The initiative, by name |
+| `--project` | `<NAME>` | yes |  | The project, by name |
+
+### muster initiative remove-project
+
+Take a project out of an initiative.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The initiative, by name |
+| `--project` | `<NAME>` | yes |  | The project, by name |
+
+### muster cycle list
+
+List the team's cycles, one JSON object per line, newest first.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--active` |  | no |  | Only the active cycle |
+| `--upcoming` |  | no |  | Only the cycles still to come |
+| `--past` |  | no |  | Only the cycles that have ended |
+| `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
+### muster cycle get
+
+One cycle with its issues, by number.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NUMBER>` | `<NUMBER>` | yes |  | The cycle's number in its team |
+
+### muster cycle update
+
+Change a cycle's name, description, start or end.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NUMBER>` | `<NUMBER>` | yes |  | The cycle's number in its team |
+| `--name` | `<TEXT>` | no |  | A new name |
+| `--description` | `<TEXT>` | no |  | A new description |
+| `--starts-at` | `<TIME>` | no |  | A new start, a time (2026-11-10T00:00:00Z) |
+| `--ends-at` | `<TIME>` | no |  | A new end, a time (2026-11-24T00:00:00Z) |
+
 ### muster document list
 
 List documents, one JSON object per line, without their content.
@@ -624,6 +740,7 @@ Issues of the team: the open ones unless --state or --all; most recently updated
 | `--parent` | `<ISSUE>` | no |  | Only the sub-issues of this issue: the identifier (APP-12), the number alone (12, in the team) or the id; or `none` for issues with no parent |
 | `--project` | `<NAME>` | no |  | Only issues in this project, by name, or `none` for issues in no project |
 | `--milestone` | `<NAME>` | no |  | Only issues in this milestone, by name, or `none` for issues in no milestone |
+| `--cycle` | `<NUMBER\|active\|next\|none>` | no |  | Only issues in this cycle of the team: a number, `active`, `next`, or `none` for issues in no cycle |
 | `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
 
 ### muster issue create
@@ -640,6 +757,7 @@ Create an issue in the team; a title an open issue of the team already has is re
 | `--priority` | `<0-4>` | no |  | The priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low |
 | `--project` | `<NAME>` | no |  | The project, by name |
 | `--milestone` | `<NAME>` | no |  | The milestone, by name, in the project --project names |
+| `--cycle` | `<NUMBER\|active\|next>` | no |  | The cycle of the team to put it in: a number, `active` or `next` |
 | `--assignee` | `<WHO>` | no |  | The assignee: `me`, an email address or a name |
 | `--parent` | `<ISSUE>` | no |  | The parent, which makes this a sub-issue: the identifier (APP-12), the number alone (12, in the team) or the id; the team is the parent's unless --team or MUSTER_TEAM names one |
 | `--allow-duplicate` |  | no |  | Create it even when an open issue of the team has the same title |
@@ -692,6 +810,7 @@ Change an issue's title, state, labels, priority, assignee, project, parent or d
 | `--assignee` | `<WHO>` | no |  | A new assignee: `me`, an email address, a name, or `none` to unassign |
 | `--project` | `<NAME>` | no |  | A new project, by name, or `none` to remove it |
 | `--milestone` | `<NAME>` | no |  | A new milestone, by name, in the issue's project (or the one --project names), or `none` to remove it |
+| `--cycle` | `<NUMBER\|active\|next\|none>` | no |  | A new cycle, in the issue's team: a number, `active`, `next`, or `none` to take it out of its cycle |
 | `--parent` | `<ISSUE>` | no |  | A new parent, which makes this a sub-issue, or `none` to take it out from under its parent |
 | `--description` | `<TEXT>` | no |  | A new description, markdown |
 | `--description-file` | `<PATH>` | no |  | The new description from a file, or from stdin when PATH is `-` |
@@ -752,6 +871,8 @@ Every limit muster has, from `crates/muster/src/bounds.rs` (CLAUDE.md, invariant
 | `TEAMS_PER_PROJECT` | 10 | items | the teams `project list` and `project create` print with a project under `teams.nodes`; `project list` writes a `truncated` notice to stderr for a project in more, and a project `project create` makes has the one team, so it is never cut; bounded so that a page of PAGE_CAP projects stays inside Linear's query-complexity limit of 10,000 |
 | `MEMBERS_PER_PROJECT` | 50 | items | the members `project get` prints with a project under `members.nodes`; a project with more writes a `truncated` notice to stderr, and `project update --add-member` or `--remove-member` on it is refused, exit 6, before any request, since Linear replaces the whole member list and muster could not read it whole |
 | `MILESTONES_PER_PROJECT` | 50 | items | the milestones `project get` prints with a project under `projectMilestones.nodes`; a project with more writes a `truncated` notice to stderr |
+| `PROJECTS_PER_INITIATIVE` | 50 | items | the projects `initiative get` prints with an initiative under `projects.nodes`; an initiative with more writes a `truncated` notice to stderr |
+| `ISSUES_PER_CYCLE` | 50 | items | the issues `cycle get` prints with a cycle under `issues.nodes`; a cycle with more writes a `truncated` notice to stderr |
 | `REQUEST_TIMEOUT_SECS` | 30 | seconds | one request, connect to last byte; past it a query exits 7 and a mutation exits 8 |
 | `BODY_MAX_BYTES` | 262144 | bytes | the largest description, comment, title, name, link or subtitle sent; a larger one is refused, exit 6, before any request, and the message names which one it was; Linux refuses one argv string over 128 KiB before muster runs, so from a flag's value the bound is reached only where the OS allows the argument, from a file or stdin everywhere |
 | `RESPONSE_MAX_BYTES` | 16777216 | bytes | the largest answer read; a larger one is muster's failure, exit 1 |
@@ -801,6 +922,11 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `ProjectStatuses` | query |
 | `Milestones` | query |
 | `ProjectUpdates` | query |
+| `Initiatives` | query |
+| `InitiativeByName` | query |
+| `InitiativeLinks` | query |
+| `Cycles` | query |
+| `CycleByNumber` | query |
 | `Documents` | query |
 | `DocumentByTitle` | query |
 | `IssueCreate` | mutation |
@@ -839,6 +965,13 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `MilestoneUpdate` | mutation |
 | `MilestoneDelete` | mutation |
 | `ProjectUpdateCreate` | mutation |
+| `InitiativeCreate` | mutation |
+| `InitiativeUpdate` | mutation |
+| `InitiativeArchive` | mutation |
+| `InitiativeUnarchive` | mutation |
+| `InitiativeToProjectCreate` | mutation |
+| `InitiativeToProjectDelete` | mutation |
+| `CycleUpdate` | mutation |
 | `DocumentCreate` | mutation |
 | `DocumentUpdate` | mutation |
 | `DocumentDelete` | mutation |

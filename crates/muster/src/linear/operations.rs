@@ -153,6 +153,29 @@ pub const PROJECT_UPDATE_FIELDS: &str = "fragment ProjectUpdateFields on Project
   project { id name }
 }";
 
+/// The fields every initiative answer carries (ADR 0014, group 12).
+pub const INITIATIVE_FIELDS: &str = "fragment InitiativeFields on Initiative {
+  id name description status health targetDate priority url slugId
+  createdAt updatedAt archivedAt trashed
+  owner { id name displayName }
+  leadTeam { id key }
+}";
+
+/// The fields every initiative-to-project link answer carries (ADR 0014, group 12).
+pub const INITIATIVE_LINK_FIELDS: &str = "fragment InitiativeLinkFields on InitiativeToProject {
+  id createdAt
+  project { id name }
+  initiative { id name }
+}";
+
+/// The fields every cycle answer carries (ADR 0014, group 13).
+pub const CYCLE_FIELDS: &str = "fragment CycleFields on Cycle {
+  id number name description startsAt endsAt completedAt
+  isActive isNext isPrevious isFuture isPast progress
+  createdAt updatedAt archivedAt
+  team { id key }
+}";
+
 /// The fields every document answer carries (ADR 0014, group 14); `content` comes
 /// with `document get` only.
 pub const DOCUMENT_FIELDS: &str = "fragment DocumentFields on Document {
@@ -344,6 +367,67 @@ op!(
   }
 }",
     &[PROJECT_UPDATE_FIELDS]
+);
+
+op!(
+    INITIATIVES,
+    "Initiatives",
+    Kind::Query,
+    "query Initiatives($first: Int!, $filter: InitiativeFilter) {
+  initiatives(first: $first, filter: $filter) { nodes { ...InitiativeFields } pageInfo { hasNextPage } }
+}",
+    &[INITIATIVE_FIELDS]
+);
+
+op!(
+    INITIATIVE_BY_NAME,
+    "InitiativeByName",
+    Kind::Query,
+    "query InitiativeByName($name: String!, $includeArchived: Boolean, $projects: Int!) {
+  initiatives(first: 1, filter: { name: { eqIgnoreCase: $name } }, includeArchived: $includeArchived) {
+    nodes {
+      ...InitiativeFields
+      content
+      projects(first: $projects) { nodes { id name } pageInfo { hasNextPage } }
+    }
+  }
+}",
+    &[INITIATIVE_FIELDS]
+);
+
+op!(
+    INITIATIVE_LINKS,
+    "InitiativeLinks",
+    Kind::Query,
+    "query InitiativeLinks($first: Int!) {
+  initiativeToProjects(first: $first) { nodes { ...InitiativeLinkFields } pageInfo { hasNextPage } }
+}",
+    &[INITIATIVE_LINK_FIELDS]
+);
+
+op!(
+    CYCLES,
+    "Cycles",
+    Kind::Query,
+    "query Cycles($first: Int!, $filter: CycleFilter) {
+  cycles(first: $first, filter: $filter) { nodes { ...CycleFields } pageInfo { hasNextPage } }
+}",
+    &[CYCLE_FIELDS]
+);
+
+op!(
+    CYCLE_BY_NUMBER,
+    "CycleByNumber",
+    Kind::Query,
+    "query CycleByNumber($key: String!, $number: Float!, $issues: Int!) {
+  cycles(first: 1, filter: { team: { key: { eq: $key } }, number: { eq: $number } }) {
+    nodes {
+      ...CycleFields
+      issues(first: $issues) { nodes { id identifier title state { id name type } } pageInfo { hasNextPage } }
+    }
+  }
+}",
+    &[CYCLE_FIELDS]
 );
 
 op!(
@@ -732,6 +816,75 @@ op!(
 );
 
 op!(
+    INITIATIVE_CREATE,
+    "InitiativeCreate",
+    Kind::Mutation,
+    "mutation InitiativeCreate($input: InitiativeCreateInput!) {
+  initiativeCreate(input: $input) { success initiative { ...InitiativeFields } }
+}",
+    &[INITIATIVE_FIELDS]
+);
+
+op!(
+    INITIATIVE_UPDATE,
+    "InitiativeUpdate",
+    Kind::Mutation,
+    "mutation InitiativeUpdate($id: String!, $input: InitiativeUpdateInput!) {
+  initiativeUpdate(id: $id, input: $input) { success initiative { ...InitiativeFields } }
+}",
+    &[INITIATIVE_FIELDS]
+);
+
+op!(
+    INITIATIVE_ARCHIVE,
+    "InitiativeArchive",
+    Kind::Mutation,
+    "mutation InitiativeArchive($id: String!) {
+  initiativeArchive(id: $id) { success entity { ...InitiativeFields } }
+}",
+    &[INITIATIVE_FIELDS]
+);
+
+op!(
+    INITIATIVE_UNARCHIVE,
+    "InitiativeUnarchive",
+    Kind::Mutation,
+    "mutation InitiativeUnarchive($id: String!) {
+  initiativeUnarchive(id: $id) { success entity { ...InitiativeFields } }
+}",
+    &[INITIATIVE_FIELDS]
+);
+
+op!(
+    INITIATIVE_LINK_CREATE,
+    "InitiativeToProjectCreate",
+    Kind::Mutation,
+    "mutation InitiativeToProjectCreate($input: InitiativeToProjectCreateInput!) {
+  initiativeToProjectCreate(input: $input) { success initiativeToProject { ...InitiativeLinkFields } }
+}",
+    &[INITIATIVE_LINK_FIELDS]
+);
+
+op!(
+    INITIATIVE_LINK_DELETE,
+    "InitiativeToProjectDelete",
+    Kind::Mutation,
+    "mutation InitiativeToProjectDelete($id: String!) {
+  initiativeToProjectDelete(id: $id) { success entityId }
+}"
+);
+
+op!(
+    CYCLE_UPDATE,
+    "CycleUpdate",
+    Kind::Mutation,
+    "mutation CycleUpdate($id: String!, $input: CycleUpdateInput!) {
+  cycleUpdate(id: $id, input: $input) { success cycle { ...CycleFields } }
+}",
+    &[CYCLE_FIELDS]
+);
+
+op!(
     DOCUMENT_CREATE,
     "DocumentCreate",
     Kind::Mutation,
@@ -789,6 +942,11 @@ pub static READS: &[&Operation] = &[
     &PROJECT_STATUSES,
     &MILESTONES,
     &PROJECT_UPDATES,
+    &INITIATIVES,
+    &INITIATIVE_BY_NAME,
+    &INITIATIVE_LINKS,
+    &CYCLES,
+    &CYCLE_BY_NUMBER,
     &DOCUMENTS,
     &DOCUMENT_BY_TITLE,
 ];
@@ -831,6 +989,13 @@ pub static WRITES: &[&Operation] = &[
     &MILESTONE_UPDATE,
     &MILESTONE_DELETE,
     &PROJECT_UPDATE_CREATE,
+    &INITIATIVE_CREATE,
+    &INITIATIVE_UPDATE,
+    &INITIATIVE_ARCHIVE,
+    &INITIATIVE_UNARCHIVE,
+    &INITIATIVE_LINK_CREATE,
+    &INITIATIVE_LINK_DELETE,
+    &CYCLE_UPDATE,
     &DOCUMENT_CREATE,
     &DOCUMENT_UPDATE,
     &DOCUMENT_DELETE,
@@ -889,6 +1054,9 @@ mod tests {
                 "ProjectStatusFields",
                 "MilestoneFields",
                 "ProjectUpdateFields",
+                "InitiativeFields",
+                "InitiativeLinkFields",
+                "CycleFields",
                 "DocumentFields",
             ] {
                 let document = op.document();
