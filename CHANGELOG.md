@@ -11,6 +11,24 @@ user-visible change, added in the same commit as the change. The format follows
 - ADR 0013 decides the second slice: sub-issues, attachments and projects, in three
   features, in that order; cycles wait until a team of the workspace enables them
   ([ADR 0013](docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md)).
+- `issue get` prints `children`, the issue's sub-issues newest first as Linear orders
+  them, bounded by `CHILDREN_PER_ISSUE` with a `truncated` notice past it; `issue create --parent`,
+  `issue update --parent` (or `--parent none`) and `issue list --parent` make, move and
+  list sub-issues, a sub-issue goes to its parent's team unless `--team` or
+  `MUSTER_TEAM` names one, and an issue named as its own parent is a usage error,
+  exit 2, before any request (ADR 0013, feature 1;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `muster fixtures` records `IssueById` on an issue that has comments, attachments and
+  sub-issues when the workspace has one, and writes a `partial` notice saying what the
+  recording lacks; `skipped` and `partial` join the notices table of the reference.
+
+### Fixed
+
+- The reference, the tutorial and the `linear-read` skill said `issue get` prints
+  comments oldest first. Linear orders a connection newest first, `orderBy: createdAt`
+  included, and muster prints what Linear returns; the pages now say so, and a cut thread
+  is the newest `COMMENTS_PER_ISSUE` comments with the oldest left out. The output did
+  not change.
 
 ## 0.1.1 - 2026-11-03
 

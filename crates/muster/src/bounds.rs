@@ -20,11 +20,14 @@ pub const PAGE_SIZE: usize = 50;
 /// The largest `--limit` a list command accepts, and the largest `first` Linear serves
 /// in one page. A larger value is a usage error, exit 2.
 pub const PAGE_CAP: usize = 250;
-/// How many comments `issue get` fetches with an issue, oldest first. A longer thread
-/// is reported cut with a notice on stderr.
+/// How many comments `issue get` fetches with an issue, newest first, as Linear orders
+/// a connection. A longer thread is reported cut with a notice on stderr.
 pub const COMMENTS_PER_ISSUE: usize = 100;
 /// How many attachments `issue get` fetches with an issue.
 pub const ATTACHMENTS_PER_ISSUE: usize = 50;
+/// How many sub-issues `issue get` fetches with an issue, newest first, as Linear orders
+/// a connection. A parent with more is reported cut with a notice on stderr.
+pub const CHILDREN_PER_ISSUE: usize = 50;
 /// How long one request may take, connect to last byte. Past it a query exits 7 and a
 /// mutation exits 8.
 pub const REQUEST_TIMEOUT_SECS: u64 = 30;
@@ -55,13 +58,19 @@ pub const ALL: &[Bound] = &[
         name: "COMMENTS_PER_ISSUE",
         value: COMMENTS_PER_ISSUE as u64,
         unit: "items",
-        meaning: "the comments `issue get` fetches with an issue, oldest first; a longer thread writes a `truncated` notice to stderr",
+        meaning: "the comments `issue get` fetches with an issue, newest first, as Linear orders them; a longer thread writes a `truncated` notice to stderr and the oldest are the ones left out",
     },
     Bound {
         name: "ATTACHMENTS_PER_ISSUE",
         value: ATTACHMENTS_PER_ISSUE as u64,
         unit: "items",
         meaning: "the attachments `issue get` fetches with an issue",
+    },
+    Bound {
+        name: "CHILDREN_PER_ISSUE",
+        value: CHILDREN_PER_ISSUE as u64,
+        unit: "items",
+        meaning: "the sub-issues `issue get` fetches with an issue, newest first, as Linear orders them; a parent with more writes a `truncated` notice to stderr and the oldest are the ones left out",
     },
     Bound {
         name: "REQUEST_TIMEOUT_SECS",

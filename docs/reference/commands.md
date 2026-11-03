@@ -62,7 +62,7 @@ List them, one JSON object per line.
 
 ### muster issue get
 
-One issue with its comments and attachments.
+One issue with its comments, attachments and sub-issues.
 
 | Argument or flag | Value | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
@@ -80,6 +80,7 @@ Issues of the team: the open ones unless --state or --all; most recently updated
 | `--label` | `<NAME>` | no |  | Only issues carrying this label |
 | `--assignee` | `<WHO>` | no |  | Only issues assigned to this user: `me`, an email address, a name, or `none` |
 | `--search` | `<TEXT>` | no |  | Only issues whose title contains this text, case-insensitively; how a title is resolved |
+| `--parent` | `<ISSUE>` | no |  | Only the sub-issues of this issue: the identifier (APP-12), the number alone (12, in the team) or the id; or `none` for issues with no parent |
 | `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
 
 ### muster issue create
@@ -96,6 +97,7 @@ Create an issue in the team; a title an open issue of the team already has is re
 | `--priority` | `<0-4>` | no |  | The priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low |
 | `--project` | `<NAME>` | no |  | The project, by name |
 | `--assignee` | `<WHO>` | no |  | The assignee: `me`, an email address or a name |
+| `--parent` | `<ISSUE>` | no |  | The parent, which makes this a sub-issue: the identifier (APP-12), the number alone (12, in the team) or the id; the team is the parent's unless --team or MUSTER_TEAM names one |
 | `--allow-duplicate` |  | no |  | Create it even when an open issue of the team has the same title |
 
 ### muster issue comment
@@ -122,7 +124,7 @@ Move an issue to the team's completed state, or to --state, or with --cancel to 
 
 ### muster issue update
 
-Change an issue's title, state, labels, priority, assignee, project or description.
+Change an issue's title, state, labels, priority, assignee, project, parent or description.
 
 | Argument or flag | Value | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
@@ -134,6 +136,7 @@ Change an issue's title, state, labels, priority, assignee, project or descripti
 | `--priority` | `<0-4>` | no |  | A new priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low |
 | `--assignee` | `<WHO>` | no |  | A new assignee: `me`, an email address, a name, or `none` to unassign |
 | `--project` | `<NAME>` | no |  | A new project, by name, or `none` to remove it |
+| `--parent` | `<ISSUE>` | no |  | A new parent, which makes this a sub-issue, or `none` to take it out from under its parent |
 | `--description` | `<TEXT>` | no |  | A new description, markdown |
 | `--description-file` | `<PATH>` | no |  | The new description from a file, or from stdin when PATH is `-` |
 
@@ -175,7 +178,9 @@ A notice is one JSON object on stderr, `{"notice": {"code", "message", "hint"}}`
 
 | Code | Meaning |
 | --- | --- |
-| `truncated` | a list was cut at its --limit, or an issue's comments or attachments at their bound; the printed items are complete, there are more |
+| `truncated` | a list was cut at its --limit, or an issue's comments, attachments or sub-issues at their bound; the printed items are complete, there are more |
+| `skipped` | `fixtures` found no issue to record `IssueById` on, so that file was not written |
+| `partial` | `fixtures` recorded `IssueById` on an issue that lacks comments, attachments or sub-issues, so that node shape is not in the fixture |
 
 ## Bounds
 
@@ -185,8 +190,9 @@ Every limit muster has, from `crates/muster/src/bounds.rs` (CLAUDE.md, invariant
 | --- | --- | --- | --- |
 | `PAGE_SIZE` | 50 | items | the default --limit of every list command |
 | `PAGE_CAP` | 250 | items | the largest --limit a list accepts, which is Linear's largest page; a larger value is a usage error, exit 2; a list cut at its limit writes a `truncated` notice to stderr and exits 0 |
-| `COMMENTS_PER_ISSUE` | 100 | items | the comments `issue get` fetches with an issue, oldest first; a longer thread writes a `truncated` notice to stderr |
+| `COMMENTS_PER_ISSUE` | 100 | items | the comments `issue get` fetches with an issue, newest first, as Linear orders them; a longer thread writes a `truncated` notice to stderr and the oldest are the ones left out |
 | `ATTACHMENTS_PER_ISSUE` | 50 | items | the attachments `issue get` fetches with an issue |
+| `CHILDREN_PER_ISSUE` | 50 | items | the sub-issues `issue get` fetches with an issue, newest first, as Linear orders them; a parent with more writes a `truncated` notice to stderr and the oldest are the ones left out |
 | `REQUEST_TIMEOUT_SECS` | 30 | seconds | one request, connect to last byte; past it a query exits 7 and a mutation exits 8 |
 | `BODY_MAX_BYTES` | 262144 | bytes | the largest description or comment body sent; a larger one is refused, exit 6, before any request |
 | `RESPONSE_MAX_BYTES` | 16777216 | bytes | the largest answer read; a larger one is muster's failure, exit 1 |
@@ -201,7 +207,7 @@ Every environment variable muster reads, each with the reason its default cannot
 | `LINEAR_API_KEY` | every command that reaches Linear | a key is the one thing muster cannot infer; the environment is where a CI job or a one-off shell puts it, and the file below is where a laptop keeps it | reports `key.source` as `LINEAR_API_KEY` when it was read from here |
 | `MUSTER_KEY_FILE` | every command that reaches Linear, when LINEAR_API_KEY is unset | a laptop with several keys, or a runner that mounts a secret at a path of its own; the default path is the XDG one, `~/.config/muster/key` | fails when it names a file that cannot be read |
 | `XDG_CONFIG_HOME` | every command that reaches Linear, to find the default key file | the XDG Base Directory specification lets a user move every tool's configuration at once; muster follows it rather than inventing a path | reports `key.path` as the file under it |
-| `MUSTER_TEAM` | issue get by number, issue list, issue create, state list, label list, and whoami | a workspace with one team needs nothing; a workspace with several has no default, and this saves `--team` on every call from a checkout that belongs to one team; `--team` wins over it | fails when it names no team of the workspace |
+| `MUSTER_TEAM` | issue get by number, issue list, issue create (where it wins over the parent's team with --parent), state list, label list, and whoami | a workspace with one team needs nothing; a workspace with several has no default, and this saves `--team` on every call from a checkout that belongs to one team; `--team` wins over it | fails when it names no team of the workspace |
 | `MUSTER_ENDPOINT` | every command that reaches Linear | the tests and `just quickstart` point muster at the fake Linear (ADR 0010); nothing else sets it | warns when the endpoint is not Linear's |
 
 ## The key

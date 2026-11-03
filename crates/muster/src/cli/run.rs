@@ -4,7 +4,7 @@
 
 use serde_json::{Value, json};
 
-use crate::bounds::{ATTACHMENTS_PER_ISSUE, COMMENTS_PER_ISSUE, PAGE_CAP};
+use crate::bounds::{ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, PAGE_CAP};
 use crate::cli::{
     Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand, IssueListArgs,
     ListArgs, ListCommand, UpdateArgs,
@@ -241,9 +241,41 @@ impl Session {
         }
     }
 
-    /// One issue by identifier, number or id, with `comments` comments and
-    /// `attachments` attachments fetched (at least one of each; the shape is the same).
-    fn issue(&self, reference: &str, comments: usize, attachments: usize) -> Result<Value, Error> {
+    /// One issue's fields, without its comments, attachments or sub-issues: what a
+    /// `--parent` needs, in one `Issues` request (two when the reference is a bare
+    /// number, which needs the team).
+    fn issue_brief(&self, reference: &str) -> Result<Value, Error> {
+        let reference = reference.trim();
+        let clause = match issue_clause(reference, None)? {
+            Some(clause) => clause,
+            None => {
+                let team_key = self.team_key()?;
+                issue_clause(reference, Some(&team_key))?.unwrap_or(Value::Null)
+            }
+        };
+        let data = self.linear.run(
+            &ops::ISSUES,
+            json!({ "first": 1, "filter": clause, "orderBy": "createdAt" }),
+        )?;
+        match nodes(&data, "issues").into_iter().next() {
+            Some(issue) => Ok(issue),
+            None => Err(Error::new(
+                ErrorCode::NotFound,
+                format!("no issue {reference}"),
+            )),
+        }
+    }
+
+    /// One issue by identifier, number or id, with `comments` comments, `attachments`
+    /// attachments and `children` sub-issues fetched (at least one of each; the shape is
+    /// the same).
+    fn issue(
+        &self,
+        reference: &str,
+        comments: usize,
+        attachments: usize,
+        children: usize,
+    ) -> Result<Value, Error> {
         let reference = reference.trim();
         let id = if is_identifier(reference) || is_uuid(reference) {
             reference.to_string()
@@ -270,17 +302,11 @@ impl Session {
                 }
             }
         } else {
-            return Err(Error::with_hint(
-                ErrorCode::Usage,
-                format!(
-                    "{reference:?} is not an issue identifier (APP-12), a number (12) or an id"
-                ),
-                "to find an issue by its title, run `muster issue list --search <text>`",
-            ));
+            return Err(bad_reference(reference));
         };
         let data = self.linear.run(
             &ops::ISSUE_BY_ID,
-            json!({ "id": id, "comments": comments.max(1), "attachments": attachments.max(1) }),
+            json!({ "id": id, "comments": comments.max(1), "attachments": attachments.max(1), "children": children.max(1) }),
         )?;
         match data.get("issue") {
             Some(issue) if !issue.is_null() => Ok(issue.clone()),
@@ -453,7 +479,7 @@ fn issue_get(session: &Session, args: &GetArgs, out: &Output) -> Result<(), Erro
     } else {
         (COMMENTS_PER_ISSUE, ATTACHMENTS_PER_ISSUE)
     };
-    let mut issue = session.issue(&args.issue, comments, attachments)?;
+    let mut issue = session.issue(&args.issue, comments, attachments, CHILDREN_PER_ISSUE)?;
     if args.no_comments
         && let Some(map) = issue.as_object_mut()
     {
@@ -465,7 +491,7 @@ fn issue_get(session: &Session, args: &GetArgs, out: &Output) -> Result<(), Erro
         out.notice(
             "truncated",
             &format!(
-                "comments: the issue has more than the {COMMENTS_PER_ISSUE} printed, the oldest"
+                "comments: the issue has more than the {COMMENTS_PER_ISSUE} printed, the newest"
             ),
             "COMMENTS_PER_ISSUE is the bound (docs/reference/commands.md#bounds)",
         );
@@ -477,13 +503,77 @@ fn issue_get(session: &Session, args: &GetArgs, out: &Output) -> Result<(), Erro
             "ATTACHMENTS_PER_ISSUE is the bound (docs/reference/commands.md#bounds)",
         );
     }
+    if has_next_page(&issue, "children") {
+        out.notice(
+            "truncated",
+            &format!(
+                "children: the issue has more than the {CHILDREN_PER_ISSUE} sub-issues printed, the newest"
+            ),
+            "CHILDREN_PER_ISSUE is the bound (docs/reference/commands.md#bounds); `muster issue list --parent <ISSUE> --all` lists the team's sub-issues of it, open and closed, up to PAGE_CAP",
+        );
+    }
     Ok(())
+}
+
+/// Whether a flag's value is the `none` sentinel of `--assignee`, `--project` and
+/// `--parent`.
+fn is_none(value: &str) -> bool {
+    value.trim().eq_ignore_ascii_case("none")
+}
+
+/// A filter that names one issue, which Linear resolves inside the same request: by
+/// id, by identifier (`APP-12`: the team key and the number), or by number in
+/// `team_key`. `None` for a bare number when no team key was given.
+fn issue_clause(reference: &str, team_key: Option<&str>) -> Result<Option<Value>, Error> {
+    let reference = reference.trim();
+    if is_uuid(reference) {
+        return Ok(Some(json!({ "id": { "eq": reference } })));
+    }
+    if let Some((key, number)) = identifier_parts(reference) {
+        return Ok(Some(
+            json!({ "number": { "eq": number }, "team": { "key": { "eqIgnoreCase": key } } }),
+        ));
+    }
+    if !reference.is_empty() && reference.chars().all(|c| c.is_ascii_digit()) {
+        let number: u64 = reference
+            .parse()
+            .map_err(|_| Error::new(ErrorCode::Usage, format!("{reference:?} is not a number")))?;
+        return Ok(team_key
+            .map(|key| json!({ "number": { "eq": number }, "team": { "key": { "eq": key } } })));
+    }
+    Err(bad_reference(reference))
+}
+
+/// The team key and the number of an identifier, `APP-12`.
+fn identifier_parts(reference: &str) -> Option<(&str, u64)> {
+    if !is_identifier(reference) {
+        return None;
+    }
+    let (key, number) = reference.rsplit_once('-')?;
+    Some((key, number.parse().ok()?))
+}
+
+fn bad_reference(reference: &str) -> Error {
+    Error::with_hint(
+        ErrorCode::Usage,
+        format!("{reference:?} is not an issue identifier (APP-12), a number (12) or an id"),
+        "to find an issue by its title, run `muster issue list --search <text>`",
+    )
+}
+
+/// The `parent` clause of an issue filter: `none` for issues with no parent, else the
+/// issue the reference names, resolved by Linear inside the same request.
+fn parent_clause(reference: &str, team_key: &str) -> Result<Value, Error> {
+    if is_none(reference) {
+        return Ok(json!({ "null": true }));
+    }
+    Ok(issue_clause(reference, Some(team_key))?.unwrap_or(Value::Null))
 }
 
 fn assignee_filter(who: &str) -> Value {
     if who.eq_ignore_ascii_case("me") {
         json!({ "isMe": { "eq": true } })
-    } else if who.eq_ignore_ascii_case("none") {
+    } else if is_none(who) {
         json!({ "null": true })
     } else if who.contains('@') {
         json!({ "email": { "eqIgnoreCase": who } })
@@ -513,6 +603,9 @@ fn issue_list(session: &Session, args: &IssueListArgs, out: &Output) -> Result<(
     if let Some(text) = &args.search {
         filter = filter.with("title", json!({ "containsIgnoreCase": text }));
     }
+    if let Some(parent) = &args.parent {
+        filter = filter.with("parent", parent_clause(parent, &team_key)?);
+    }
     let data = session.linear.run(
         &ops::ISSUES,
         json!({ "first": n, "filter": filter.build(), "orderBy": "updatedAt" }),
@@ -540,9 +633,25 @@ fn body_from(text: &Option<String>, file: &Option<String>) -> Result<Option<Stri
 
 fn issue_create(session: &Session, args: &CreateArgs, out: &Output) -> Result<(), Error> {
     let description = body_from(&args.description, &args.description_file)?;
-    let (team, _) = session.team()?;
-    let team_key = need_str(&team, "key", "Teams")?;
-    let team_id = need_str(&team, "id", "Teams")?;
+    let parent = match &args.parent {
+        Some(reference) => Some(session.issue_brief(reference)?),
+        None => None,
+    };
+    // The team: `--team`, else `MUSTER_TEAM`, else the parent's team, else the
+    // workspace's only team (ADR 0008; ADR 0013).
+    let (team_key, team_id) = match (&session.config.team, &parent) {
+        (None, Some(parent)) => (
+            need_str(parent, "team.key", "Issues")?,
+            need_str(parent, "team.id", "Issues")?,
+        ),
+        _ => {
+            let (team, _) = session.team()?;
+            (
+                need_str(&team, "key", "Teams")?,
+                need_str(&team, "id", "Teams")?,
+            )
+        }
+    };
     if !args.allow_duplicate {
         let filter = Filter::new()
             .team(&team_key)
@@ -591,6 +700,9 @@ fn issue_create(session: &Session, args: &CreateArgs, out: &Output) -> Result<()
     if let Some(who) = &args.assignee {
         map.insert("assigneeId".into(), json!(session.user_id(who)?));
     }
+    if let Some(parent) = &parent {
+        map.insert("parentId".into(), json!(need_str(parent, "id", "Issues")?));
+    }
     let data = session
         .linear
         .run(&ops::ISSUE_CREATE, json!({ "input": input }))?;
@@ -618,7 +730,7 @@ fn payload(data: &Value, field: &str, object: &str) -> Result<Value, Error> {
 fn issue_comment(session: &Session, args: &CommentArgs, out: &Output) -> Result<(), Error> {
     let body = body_from(&args.body, &args.body_file)?
         .ok_or_else(|| Error::new(ErrorCode::Usage, "a comment needs --body or --body-file"))?;
-    let issue = session.issue(&args.issue, 1, 1)?;
+    let issue = session.issue(&args.issue, 1, 1, 1)?;
     let issue_id = need_str(&issue, "id", "IssueById")?;
     let data = session.linear.run(
         &ops::COMMENT_CREATE,
@@ -630,7 +742,7 @@ fn issue_comment(session: &Session, args: &CommentArgs, out: &Output) -> Result<
 
 fn issue_close(session: &Session, args: &CloseArgs, out: &Output) -> Result<(), Error> {
     let comment = body_from(&args.comment, &args.comment_file)?;
-    let issue = session.issue(&args.issue, 1, 1)?;
+    let issue = session.issue(&args.issue, 1, 1, 1)?;
     let issue_id = need_str(&issue, "id", "IssueById")?;
     let team_key = need_str(&issue, "team.key", "IssueById")?;
     let state_id = match (&args.state, args.cancel) {
@@ -655,7 +767,7 @@ fn issue_close(session: &Session, args: &CloseArgs, out: &Output) -> Result<(), 
 
 fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<(), Error> {
     let description = body_from(&args.description, &args.description_file)?;
-    let issue = session.issue(&args.issue, 1, 1)?;
+    let issue = session.issue(&args.issue, 1, 1, 1)?;
     let issue_id = need_str(&issue, "id", "IssueById")?;
     let team_key = need_str(&issue, "team.key", "IssueById")?;
     let mut input = json!({});
@@ -683,7 +795,7 @@ fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<()
         map.insert("priority".into(), json!(priority));
     }
     if let Some(who) = &args.assignee {
-        let value = if who.eq_ignore_ascii_case("none") {
+        let value = if is_none(who) {
             Value::Null
         } else {
             json!(session.user_id(who)?)
@@ -691,18 +803,37 @@ fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<()
         map.insert("assigneeId".into(), value);
     }
     if let Some(project) = &args.project {
-        let value = if project.eq_ignore_ascii_case("none") {
+        let value = if is_none(project) {
             Value::Null
         } else {
             json!(session.project_id(project)?)
         };
         map.insert("projectId".into(), value);
     }
+    if let Some(parent) = &args.parent {
+        let value = if is_none(parent) {
+            Value::Null
+        } else {
+            let parent_id = need_str(&session.issue_brief(parent)?, "id", "Issues")?;
+            if parent_id == issue_id {
+                return Err(Error::with_hint(
+                    ErrorCode::Usage,
+                    format!(
+                        "{} cannot be its own parent",
+                        str_at(&issue, "identifier").unwrap_or(&issue_id)
+                    ),
+                    "name another issue, or `none` to take it out from under its parent",
+                ));
+            }
+            json!(parent_id)
+        };
+        map.insert("parentId".into(), value);
+    }
     if map.is_empty() {
         return Err(Error::with_hint(
             ErrorCode::Usage,
             "nothing to change",
-            "pass at least one of --title, --state, --add-label, --remove-label, --priority, --assignee, --project, --description, --description-file",
+            "pass at least one of --title, --state, --add-label, --remove-label, --priority, --assignee, --project, --parent, --description, --description-file",
         ));
     }
     let data = session.linear.run(
@@ -730,6 +861,36 @@ mod tests {
         assert_eq!(assignee_filter("none"), json!({ "null": true }));
         assert_eq!(at(&assignee_filter("a@b.c"), "email.eqIgnoreCase"), "a@b.c");
         assert!(assignee_filter("Rjae").get("or").is_some());
+    }
+
+    #[test]
+    fn issue_clauses_and_the_none_sentinel() {
+        let id = "1f979a91-84ec-4817-9397-3cdc6ca67612";
+        let by_id = issue_clause(id, None).ok().flatten().unwrap_or_default();
+        assert_eq!(at(&by_id, "id.eq"), id);
+        let by_identifier = issue_clause(" app-12 ", None)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        assert_eq!(at(&by_identifier, "number.eq"), 12);
+        assert_eq!(at(&by_identifier, "team.key.eqIgnoreCase"), "app");
+        assert!(
+            issue_clause("12", None).ok().flatten().is_none(),
+            "a bare number needs the team"
+        );
+        let by_number = issue_clause("12", Some("APP"))
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        assert_eq!(at(&by_number, "number.eq"), 12);
+        assert_eq!(at(&by_number, "team.key.eq"), "APP");
+        assert!(issue_clause("Try muster", None).is_err());
+        assert_eq!(
+            parent_clause("none", "APP").ok(),
+            Some(json!({ "null": true }))
+        );
+        assert!(is_none(" None "));
+        assert!(!is_none("nonesuch"));
     }
 
     #[test]

@@ -121,6 +121,37 @@ next ones [ADR 0013](../decisions/0013-build-the-second-slice-sub-issues-attachm
 
 ## The worked example
 
-Feature 1 of ADR 0007, "Reach the workspace", is the first feature that follows this
-page. Its commits will be listed here, step by step, when it lands on `master`; until
-then `git log --oneline origin/master` is the record.
+Feature 1 of ADR 0013, sub-issues, is the first feature that followed this page step by
+step, as the Linear issue APP-8; `git log --oneline --grep '^APP-8:' origin/master`
+lists its commit on `master`. In the order of the steps above:
+
+1. **The issue** (step 1). `/linear-create` wrote APP-8 from a brief with "What
+   changes", a "Done when" list and the invariants by number, and
+   `muster issue update APP-8 --state "In Progress" --assignee me` started it.
+2. **No ADR of its own** (step 2). ADR 0013 had already decided the output field
+   (`children`), the three `--parent` flags and the bound, so the feature went to step
+   3. A feature that decides one of those itself writes the ADR first.
+3. **The fixture and the fake first** (step 3.1). The fake's seed gained a sub-issue of
+   its first issue and its `full_issue` gained `children`, so that the fixture test
+   has a node shape to hold it to; then `just record-fixtures` re-recorded `IssueById`
+   on an issue of the workspace that has a sub-issue and a comment. The recorder now
+   prefers such an issue and says in a `partial` notice what a recording lacks.
+4. **The tutorial's lines** (step 3.2). Step 4 of the tutorial says what `--parent`
+   prints and where the sub-issue is created; step 6 says what `children.nodes` holds
+   and where its bound is.
+5. **The code** (step 3.3). `CHILDREN_PER_ISSUE` in `bounds.rs`; `children` on the
+   `IssueById` operation; `--parent` on `issue create`, `issue update` and
+   `issue list` in `cli/mod.rs`; the resolution of the parent, the team rule and the
+   `truncated` notice in `cli/run.rs`.
+6. **The tests** (step 3.4). Five tests through the binary: the children and the
+   parent in `issue get`, a sub-issue created by identifier, number and id and found by
+   `issue list --parent`, an issue moved under a parent and out again, the team rule
+   with two teams and with `MUSTER_TEAM` set, and the bound at 50 and at 51
+   sub-issues. An unknown parent is exit 4 before any mutation.
+7. **The docs** (step 3.5). `just gen-commands`, the glossary's `sub-issue` row, the
+   changelog lines, the smoke script's sub-issue steps, and this section.
+8. **The gates and the landing** (step 4). `/pr APP-8` ran the four gates one command
+   at a time, opened the pull request with the review record as its body and the
+   `auto-merge` label, the loop reviewed and squash-merged it, and
+   `muster issue close APP-8 --comment-file comment.md` closed the issue with the
+   commit's hash in the comment.

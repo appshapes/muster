@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
+use muster::bounds::{ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE};
 use serde_json::{Value, json};
 
 /// The key the fake accepts.
@@ -122,7 +123,41 @@ impl Fake {
             .issues
             .iter()
             .find(|i| i["identifier"] == identifier)
-            .map(|i| st.ws.full_issue(i, 100, 50))
+            .map(|i| {
+                st.ws.full_issue(
+                    i,
+                    COMMENTS_PER_ISSUE,
+                    ATTACHMENTS_PER_ISSUE,
+                    CHILDREN_PER_ISSUE,
+                )
+            })
+    }
+
+    /// Add `n` sub-issues under an issue, in its team, for the bound tests.
+    pub fn add_sub_issues(&self, parent: &str, n: usize) {
+        let mut st = self.state.lock().unwrap();
+        let parent = st
+            .ws
+            .issues
+            .iter()
+            .find(|i| i["identifier"] == parent)
+            .cloned()
+            .expect("the parent exists");
+        let team_key = parent["team"]["key"].as_str().unwrap().to_string();
+        for k in 1..=n {
+            let child = st.ws.new_issue(
+                &team_key,
+                &format!("Part {k}"),
+                None,
+                "Todo",
+                &[],
+                0,
+                None,
+                None,
+                Some(&parent),
+            );
+            st.ws.issues.push(child);
+        }
     }
 
     /// The comments of an issue, oldest first.
@@ -271,6 +306,15 @@ fn compare(value: &Value, comparator: &Value) -> bool {
             (Some(v), Some(w)) => v.contains(w),
             _ => false,
         },
+        "gt" | "gte" | "lt" | "lte" => match (value.as_f64(), want.as_f64()) {
+            (Some(v), Some(w)) => match op.as_str() {
+                "gt" => v > w,
+                "gte" => v >= w,
+                "lt" => v < w,
+                _ => v <= w,
+            },
+            _ => false,
+        },
         "null" => want.as_bool().is_some_and(|n| n == value.is_null()),
         _ => true,
     })
@@ -293,6 +337,21 @@ fn passes(object: &Value, filter: &Value) -> bool {
         "null" => clause.as_bool().is_some_and(|n| n == object.is_null()),
         field => {
             let value = &object[field];
+            if let Some(map) = clause.as_object()
+                && ["length", "some", "every"]
+                    .iter()
+                    .any(|k| map.contains_key(*k))
+            {
+                // A collection filter, as Linear's: `length` against the node count,
+                // `some` and `every` against the nodes.
+                let items = value["nodes"].as_array().cloned().unwrap_or_default();
+                return map.iter().all(|(k, c)| match k.as_str() {
+                    "length" => compare(&json!(items.len()), c),
+                    "some" => items.iter().any(|n| passes(n, c)),
+                    "every" => items.iter().all(|n| passes(n, c)),
+                    _ => true,
+                });
+            }
             let is_comparator = clause.as_object().is_some_and(|m| {
                 m.keys().all(|k| {
                     matches!(
@@ -303,6 +362,10 @@ fn passes(object: &Value, filter: &Value) -> bool {
                             | "nin"
                             | "containsIgnoreCase"
                             | "contains"
+                            | "gt"
+                            | "gte"
+                            | "lt"
+                            | "lte"
                             | "null"
                     )
                 })
@@ -360,9 +423,10 @@ impl Workspace {
             0,
             None,
             None,
+            None,
         );
         let a_id = a["id"].clone();
-        ws.issues.push(a);
+        ws.issues.push(a.clone());
         ws.new_comment(&a_id, "The first comment.", &me);
         ws.new_comment(&a_id, "The second comment, with `code`.", &other);
         let label_id = ws.labels[2]["id"].clone();
@@ -375,10 +439,35 @@ impl Workspace {
             2,
             None,
             Some(&other),
+            None,
         );
         ws.issues.push(b);
-        let c = ws.new_issue("APP", "An old thing", None, "Done", &[], 4, None, None);
+        let c = ws.new_issue(
+            "APP",
+            "An old thing",
+            None,
+            "Done",
+            &[],
+            4,
+            None,
+            None,
+            None,
+        );
         ws.issues.push(c);
+        // A sub-issue of the first, so that `children` has a node shape to hold the
+        // fixture to (ADR 0010; ADR 0013).
+        let d = ws.new_issue(
+            "APP",
+            "Read the first comment",
+            Some("A sub-issue of the first onboarding issue."),
+            "Todo",
+            &[],
+            0,
+            None,
+            None,
+            Some(&a),
+        );
+        ws.issues.push(d);
         ws
     }
 
@@ -440,6 +529,7 @@ impl Workspace {
         priority: u64,
         project: Option<Value>,
         assignee: Option<&Value>,
+        parent: Option<&Value>,
     ) -> Value {
         let team = self.team_by_key(team_key).cloned().expect("team");
         let number = self
@@ -478,7 +568,7 @@ impl Workspace {
             "cycle": null,
             "assignee": assignee.map(|u| json!({ "id": u["id"], "name": u["name"], "displayName": u["displayName"], "email": u["email"] })).unwrap_or(Value::Null),
             "creator": { "id": me["id"], "name": me["name"], "displayName": me["displayName"] },
-            "parent": null,
+            "parent": parent.map(|p| json!({ "id": p["id"], "identifier": p["identifier"] })).unwrap_or(Value::Null),
             "labels": { "nodes": labels },
         })
     }
@@ -501,9 +591,17 @@ impl Workspace {
         comment
     }
 
-    fn full_issue(&self, issue: &Value, comments: usize, attachments: usize) -> Value {
+    fn full_issue(
+        &self,
+        issue: &Value,
+        comments: usize,
+        attachments: usize,
+        children: usize,
+    ) -> Value {
         let mut full = issue.clone();
-        let all: Vec<Value> = self
+        // Linear orders a connection newest first, `orderBy: createdAt` included
+        // (read on the appshapes workspace, 2026-11-03); so does the fake.
+        let mut all: Vec<Value> = self
             .comments
             .iter()
             .filter(|c| c["issueId"] == issue["id"])
@@ -514,11 +612,34 @@ impl Workspace {
                 c
             })
             .collect();
+        all.reverse();
         let cut = all.len() > comments;
         full["comments"] = json!({ "nodes": all.into_iter().take(comments).collect::<Vec<_>>(), "pageInfo": { "hasNextPage": cut } });
         full["attachments"] =
             json!({ "nodes": [], "pageInfo": { "hasNextPage": attachments == 0 } });
+        let mut kids: Vec<Value> = self
+            .issues
+            .iter()
+            .filter(|i| i["parent"]["id"] == issue["id"])
+            .map(|i| json!({ "id": i["id"], "identifier": i["identifier"], "title": i["title"], "state": i["state"] }))
+            .collect();
+        kids.reverse();
+        full["children"] = Workspace::page(kids, children);
         full
+    }
+
+    /// An issue as a filter sees it: with every comment, attachment and sub-issue
+    /// attached, and its `parent` as the whole parent issue, so that a clause such as
+    /// `parent: { number: { eq: 12 }, team: { key: { eq: "APP" } } }` resolves as it
+    /// does in Linear, where `parent` is an `Issue`.
+    fn filter_view(&self, issue: &Value) -> Value {
+        let mut view = self.full_issue(issue, usize::MAX, usize::MAX, usize::MAX);
+        if let Some(pid) = view["parent"]["id"].as_str()
+            && let Some(parent) = self.issues.iter().find(|i| i["id"] == pid)
+        {
+            view["parent"] = parent.clone();
+        }
+        view
     }
 
     fn page(items: Vec<Value>, first: usize) -> Value {
@@ -578,6 +699,7 @@ impl Workspace {
                 let id = vars["id"].as_str().unwrap_or("");
                 let comments = vars["comments"].as_u64().unwrap_or(10) as usize;
                 let attachments = vars["attachments"].as_u64().unwrap_or(10) as usize;
+                let children = vars["children"].as_u64().unwrap_or(10) as usize;
                 match self.issues.iter().find(|i| {
                     i["id"] == id
                         || i["identifier"]
@@ -586,21 +708,25 @@ impl Workspace {
                 }) {
                     Some(issue) => (
                         200,
-                        json!({ "data": { "issue": self.full_issue(issue, comments, attachments) } }),
+                        json!({ "data": { "issue": self.full_issue(issue, comments, attachments, children) } }),
                     ),
                     None => not_found("Issue"),
                 }
             }
             "Issues" => {
+                // Filtered with their comments, attachments and children attached, so
+                // that a collection filter (`children: { length: { gt: 0 } }`) sees
+                // them; answered as Linear answers `issues`, without them.
                 let mut issues: Vec<Value> = self
                     .issues
                     .iter()
-                    .filter(|i| passes(i, filter))
+                    .filter(|i| passes(&self.filter_view(i), filter))
                     .cloned()
                     .collect();
                 match vars["orderBy"].as_str() {
+                    // Newest first, as Linear orders `createdAt` (2026-11-03).
                     Some("createdAt") => {
-                        issues.sort_by(|a, b| a["createdAt"].as_str().cmp(&b["createdAt"].as_str()))
+                        issues.sort_by(|a, b| b["createdAt"].as_str().cmp(&a["createdAt"].as_str()))
                     }
                     _ => {
                         issues.sort_by(|a, b| b["updatedAt"].as_str().cmp(&a["updatedAt"].as_str()))
@@ -661,6 +787,13 @@ impl Workspace {
                     },
                     None => None,
                 };
+                let parent = match input["parentId"].as_str() {
+                    Some(pid) => match self.issues.iter().find(|i| i["id"] == pid) {
+                        Some(p) => Some(p.clone()),
+                        None => return not_found("Issue"),
+                    },
+                    None => None,
+                };
                 let issue = self.new_issue(
                     &team_key,
                     title,
@@ -670,6 +803,7 @@ impl Workspace {
                     input["priority"].as_u64().unwrap_or(0),
                     project,
                     assignee.as_ref(),
+                    parent.as_ref(),
                 );
                 self.issues.push(issue.clone());
                 (
@@ -765,6 +899,15 @@ impl Workspace {
                         Some(pid) => match self.projects.iter().find(|p| p["id"] == pid) {
                             Some(p) => json!({ "id": p["id"], "name": p["name"] }),
                             None => return not_found("Project"),
+                        },
+                        None => Value::Null,
+                    };
+                }
+                if input.get("parentId").is_some() {
+                    issue["parent"] = match input["parentId"].as_str() {
+                        Some(pid) => match self.issues.iter().find(|i| i["id"] == pid) {
+                            Some(p) => json!({ "id": p["id"], "identifier": p["identifier"] }),
+                            None => return not_found("Issue"),
                         },
                         None => Value::Null,
                     };

@@ -20,10 +20,20 @@ use crate::{DOCS_URL, VERSION};
 use super::run::Session;
 
 /// The notices a command can write to stderr while exiting 0.
-pub const NOTICES: &[(&str, &str)] = &[(
-    "truncated",
-    "a list was cut at its --limit, or an issue's comments or attachments at their bound; the printed items are complete, there are more",
-)];
+pub const NOTICES: &[(&str, &str)] = &[
+    (
+        "truncated",
+        "a list was cut at its --limit, or an issue's comments, attachments or sub-issues at their bound; the printed items are complete, there are more",
+    ),
+    (
+        "skipped",
+        "`fixtures` found no issue to record `IssueById` on, so that file was not written",
+    ),
+    (
+        "partial",
+        "`fixtures` recorded `IssueById` on an issue that lacks comments, attachments or sub-issues, so that node shape is not in the fixture",
+    ),
+];
 
 const GLOBAL: &[&str] = &["human", "trace", "team", "help", "version"];
 
@@ -322,40 +332,30 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
             format!("cannot create {}: {e}", dir.display()),
         )
     })?;
-    let first_issue = {
-        let data = session.linear.run(
-            &ops::ISSUES,
-            json!({ "first": 1, "filter": Value::Null, "orderBy": "createdAt" }),
-        )?;
-        nodes(&data, "issues")
-            .first()
-            .and_then(|i| str_at(i, "identifier").map(str::to_string))
-    };
+    let (sample, lack) = sample_issue(session)?;
+    match (&sample, lack) {
+        (Some(id), Some(lack)) => out.notice(
+            "partial",
+            &format!("IssueById: recorded on {id}, which {lack}"),
+            "add what is missing to an issue and run `just record-fixtures` again; the fixture test cannot hold the fake to a shape that was not recorded",
+        ),
+        (None, _) => out.notice(
+            "skipped",
+            "IssueById: the workspace has no issue to record",
+            "create one and run `just record-fixtures` again",
+        ),
+        _ => {}
+    }
     for op in ops::READS {
-        let variables = match op.name {
-            "Viewer" => json!({}),
-            "Teams" => json!({ "first": 5 }),
-            "WorkflowStates" | "IssueLabels" | "Projects" | "Users" => {
-                json!({ "first": 5, "filter": Value::Null })
+        // The same variables the fixture test replays against the fake, from one place.
+        let Some(variables) = fixture_variables(op.name, sample.as_deref()) else {
+            if op.name == "IssueById" {
+                continue;
             }
-            "Issues" => json!({ "first": 2, "filter": Value::Null, "orderBy": "createdAt" }),
-            "IssueById" => match &first_issue {
-                Some(id) => json!({ "id": id, "comments": 5, "attachments": 5 }),
-                None => {
-                    out.notice(
-                        "skipped",
-                        "IssueById: the workspace has no issue to record",
-                        "create one and run `just record-fixtures` again",
-                    );
-                    continue;
-                }
-            },
-            other => {
-                return Err(Error::new(
-                    ErrorCode::Failed,
-                    format!("no variables known for {other}"),
-                ));
-            }
+            return Err(Error::new(
+                ErrorCode::Failed,
+                format!("no variables known for {}", op.name),
+            ));
         };
         let data = session.linear.run(op, variables)?;
         let shape = shape_of(&data);
@@ -372,6 +372,37 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
     Ok(())
 }
 
+/// The issue `IssueById` is recorded on, and what it lacks: the newest issue whose
+/// comments, attachments and sub-issues are all non-empty, so that every node shape is
+/// recorded; else the newest with a sub-issue; else the newest issue. (Linear orders
+/// `createdAt` newest first.)
+fn sample_issue(session: &Session) -> Result<(Option<String>, Option<&'static str>), Error> {
+    let candidates: [(Value, Option<&'static str>); 3] = [
+        (
+            json!({ "children": { "length": { "gt": 0 } }, "comments": { "length": { "gt": 0 } }, "attachments": { "length": { "gt": 0 } } }),
+            None,
+        ),
+        (
+            json!({ "children": { "length": { "gt": 0 } } }),
+            Some("has a sub-issue but lacks a comment or an attachment"),
+        ),
+        (Value::Null, Some("has no sub-issue")),
+    ];
+    for (filter, lack) in candidates {
+        let data = session.linear.run(
+            &ops::ISSUES,
+            json!({ "first": 1, "filter": filter, "orderBy": "createdAt" }),
+        )?;
+        if let Some(id) = nodes(&data, "issues")
+            .first()
+            .and_then(|i| str_at(i, "identifier").map(str::to_string))
+        {
+            return Ok((Some(id), lack));
+        }
+    }
+    Ok((None, None))
+}
+
 /// The variables each read operation is recorded with, and the fixture test replays
 /// against the fake; `None` when `IssueById` has no issue to ask for.
 pub fn fixture_variables(op: &str, first_issue: Option<&str>) -> Option<Value> {
@@ -382,7 +413,9 @@ pub fn fixture_variables(op: &str, first_issue: Option<&str>) -> Option<Value> {
             json!({ "first": 5, "filter": Value::Null })
         }
         "Issues" => json!({ "first": 2, "filter": Value::Null, "orderBy": "createdAt" }),
-        "IssueById" => json!({ "id": first_issue?, "comments": 5, "attachments": 5 }),
+        "IssueById" => {
+            json!({ "id": first_issue?, "comments": 5, "attachments": 5, "children": 5 })
+        }
         _ => return None,
     })
 }

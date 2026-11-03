@@ -1,7 +1,7 @@
 ---
 name: linear-create
 description: Create a Linear issue in the team with the muster CLI, from a title or a markdown file, with optional labels, state, priority, project and assignee
-argument-hint: "<title> [--team <key>] [--label <name>]... [--state <name>] [--priority 0-4] [--project <name>] [--assignee me|email|name] [--from <markdown file>]"
+argument-hint: "<title> [--team <key>] [--label <name>]... [--state <name>] [--priority 0-4] [--project <name>] [--assignee me|email|name] [--parent <APP-12>] [--from <markdown file>]"
 ---
 Create one Linear issue with `muster issue create`. `muster` is this repository's own
 binary (`cargo install --path crates/muster`); it prints the created issue as one JSON
@@ -24,6 +24,10 @@ The arguments are: $ARGUMENTS
 - A title an open issue of the team already has is refused with exit 6 and the existing
   identifier in the message: use that issue, or pass `--allow-duplicate` when a second one
   is wanted on purpose.
+- `--parent <APP-12>` makes the issue a sub-issue of that one: a part of a feature split
+  into several pull requests, or a follow-up under the issue that found it. The sub-issue
+  is created in the parent's team unless `--team` or `MUSTER_TEAM` names one, and
+  `muster issue get APP-12` lists it under `children`.
 - Never put a token, an API key, a password or any other credential on an issue.
 
 ## Steps
@@ -38,7 +42,7 @@ The arguments are: $ARGUMENTS
    muster issue create --title "<title>" --label Feature --description-file /tmp/description.md
    ```
    Optional flags: `--state <name>`, `--priority <0-4>` (1 urgent, 4 low), `--project
-   <name>`, `--assignee me`.
+   <name>`, `--assignee me`, `--parent <APP-12>`.
 3. Read the JSON line and report the `identifier` and `url`. Check that `labels.nodes`
    names the labels asked for.
 4. To add a comment afterwards: `muster issue comment <identifier> --body-file <file>`.

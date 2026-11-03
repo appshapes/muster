@@ -42,7 +42,7 @@ pub const ENVIRONMENT: &[EnvVar] = &[
     },
     EnvVar {
         name: "MUSTER_TEAM",
-        read_by: "issue get by number, issue list, issue create, state list, label list, and whoami",
+        read_by: "issue get by number, issue list, issue create (where it wins over the parent's team with --parent), state list, label list, and whoami",
         why_not_default: "a workspace with one team needs nothing; a workspace with several has no default, and this saves `--team` on every call from a checkout that belongs to one team; `--team` wins over it",
         whoami_check: "fails when it names no team of the workspace",
     },
