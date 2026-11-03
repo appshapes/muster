@@ -426,9 +426,9 @@ pub fn fixture_variables(
         "TeamByKey" => json!({ "key": first_team?, "includeArchived": false }),
         "TeamMembers" => json!({ "key": first_team?, "first": 5 }),
         "Teams" => json!({ "first": 5 }),
-        "WorkflowStates" | "IssueLabels" | "Users" => {
-            json!({ "first": 5, "filter": Value::Null })
-        }
+        "WorkflowStates" | "IssueLabels" => json!({ "first": 5, "filter": Value::Null }),
+        "Users" => json!({ "first": 5, "filter": Value::Null, "includeDisabled": true }),
+        "UserById" => json!({ "id": "me" }),
         "Projects" => json!({ "first": 5, "filter": Value::Null, "teams": TEAMS_PER_PROJECT }),
         // Issues that carry a label, so that the label node shape is recorded too.
         "Issues" => {
@@ -522,6 +522,12 @@ mod tests {
             "member list",
             "member add",
             "member remove",
+            "user get",
+            "user update",
+            "user change-role",
+            "user suspend",
+            "user unsuspend",
+            "user revoke-sessions",
             "state list",
             "label list",
             "project list",

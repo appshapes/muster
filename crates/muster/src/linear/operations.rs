@@ -100,6 +100,15 @@ pub const MEMBERSHIP_FIELDS: &str = "fragment MembershipFields on TeamMembership
   team { id key }
 }";
 
+/// The fields every user answer carries (ADR 0014, group 4): the role flags, the
+/// profile `user update` changes, and when the user was last seen.
+pub const USER_FIELDS: &str = "fragment UserFields on User {
+  id name displayName email avatarUrl url
+  active admin owner guest app isMe disableReason
+  title description timezone statusEmoji statusLabel statusUntilAt
+  lastSeen createdAt updatedAt
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -187,9 +196,9 @@ op!(
     USERS,
     "Users",
     Kind::Query,
-    "query Users($first: Int!, $filter: UserFilter) {
-  users(first: $first, filter: $filter) {
-    nodes { id name displayName email active admin isMe }
+    "query Users($first: Int!, $filter: UserFilter, $includeDisabled: Boolean) {
+  users(first: $first, filter: $filter, includeDisabled: $includeDisabled) {
+    nodes { id name displayName email active admin owner guest app isMe }
     pageInfo { hasNextPage }
   }
 }"
@@ -228,6 +237,16 @@ op!(
   }
 }",
     &[MEMBERSHIP_FIELDS]
+);
+
+op!(
+    USER_BY_ID,
+    "UserById",
+    Kind::Query,
+    "query UserById($id: String!) {
+  user(id: $id) { ...UserFields }
+}",
+    &[USER_FIELDS]
 );
 
 op!(
@@ -359,6 +378,52 @@ op!(
 }"
 );
 
+op!(
+    USER_UPDATE,
+    "UserUpdate",
+    Kind::Mutation,
+    "mutation UserUpdate($id: String!, $input: UserUpdateInput!) {
+  userUpdate(id: $id, input: $input) { success user { ...UserFields } }
+}",
+    &[USER_FIELDS]
+);
+
+op!(
+    USER_CHANGE_ROLE,
+    "UserChangeRole",
+    Kind::Mutation,
+    "mutation UserChangeRole($id: String!, $role: UserRoleType!) {
+  userChangeRole(id: $id, role: $role) { success }
+}"
+);
+
+op!(
+    USER_SUSPEND,
+    "UserSuspend",
+    Kind::Mutation,
+    "mutation UserSuspend($id: String!) {
+  userSuspend(id: $id) { success }
+}"
+);
+
+op!(
+    USER_UNSUSPEND,
+    "UserUnsuspend",
+    Kind::Mutation,
+    "mutation UserUnsuspend($id: String!) {
+  userUnsuspend(id: $id) { success }
+}"
+);
+
+op!(
+    USER_REVOKE_SESSIONS,
+    "UserRevokeAllSessions",
+    Kind::Mutation,
+    "mutation UserRevokeAllSessions($id: String!) {
+  userRevokeAllSessions(id: $id) { success }
+}"
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -372,6 +437,7 @@ pub static READS: &[&Operation] = &[
     &WORKSPACE,
     &TEAM_BY_KEY,
     &TEAM_MEMBERS,
+    &USER_BY_ID,
 ];
 
 /// Every write operation.
@@ -388,6 +454,11 @@ pub static WRITES: &[&Operation] = &[
     &TEAM_UNARCHIVE,
     &MEMBERSHIP_CREATE,
     &MEMBERSHIP_DELETE,
+    &USER_UPDATE,
+    &USER_CHANGE_ROLE,
+    &USER_SUSPEND,
+    &USER_UNSUSPEND,
+    &USER_REVOKE_SESSIONS,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -435,6 +506,7 @@ mod tests {
                 "OrganizationFields",
                 "TeamFields",
                 "MembershipFields",
+                "UserFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));

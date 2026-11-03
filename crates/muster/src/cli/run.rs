@@ -11,7 +11,8 @@ use crate::cli::{
     AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
     IssueListArgs, ListArgs, ListCommand, MemberArgs, MemberCommand, ProjectCommand,
     ProjectCreateArgs, TeamCommand, TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs,
-    WorkspaceCommand, WorkspaceUpdateArgs,
+    UserCommand, UserListArgs, UserRefArgs, UserRoleArgs, UserUpdateArgs, WorkspaceCommand,
+    WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -73,9 +74,28 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 ProjectCommand::Create(args) => project_create(&session, args, out),
             }
         }
-        Command::User {
-            command: ListCommand::List(args),
-        } => list_users(&Session::open(&config)?, args, out),
+        Command::User { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                UserCommand::List(args) => list_users(&session, args, out),
+                UserCommand::Get(args) => user_get(&session, args, out),
+                UserCommand::Update(args) => user_update(&session, args, out),
+                UserCommand::ChangeRole(args) => user_change_role(&session, args, out),
+                UserCommand::Suspend(args) => {
+                    user_admin(&session, args, &ops::USER_SUSPEND, "userSuspend", out)
+                }
+                UserCommand::Unsuspend(args) => {
+                    user_admin(&session, args, &ops::USER_UNSUSPEND, "userUnsuspend", out)
+                }
+                UserCommand::RevokeSessions(args) => user_admin(
+                    &session,
+                    args,
+                    &ops::USER_REVOKE_SESSIONS,
+                    "userRevokeAllSessions",
+                    out,
+                ),
+            }
+        }
         Command::Issue { command } => {
             let session = Session::open(&config)?;
             match command {
@@ -304,9 +324,12 @@ impl Session {
         } else {
             json!({ "or": [ { "name": { "eqIgnoreCase": who } }, { "displayName": { "eqIgnoreCase": who } } ] })
         };
-        let data = self
-            .linear
-            .run(&ops::USERS, json!({ "first": 2, "filter": filter }))?;
+        // Suspended users included, so that `user unsuspend` and `user get` find
+        // them; an assignment to one is Linear's refusal.
+        let data = self.linear.run(
+            &ops::USERS,
+            json!({ "first": 2, "filter": filter, "includeDisabled": true }),
+        )?;
         let users = nodes(&data, "users");
         match users.as_slice() {
             [user] => need_str(user, "id", "Users"),
@@ -625,6 +648,116 @@ fn workspace_update(
         json!({ "input": Value::Object(input) }),
     )?;
     out.emit(&payload(&data, "organizationUpdate", "organization")?);
+    Ok(())
+}
+
+/// One user with every `UserFields` field, by `me`, email or name, in one `UserById`
+/// request after the resolution (ADR 0014, group 4).
+fn user_full(session: &Session, who: &str) -> Result<Value, Error> {
+    let id = session.user_id(who)?;
+    let data = session.linear.run(&ops::USER_BY_ID, json!({ "id": id }))?;
+    match data.get("user") {
+        Some(user) if !user.is_null() => Ok(user.clone()),
+        _ => Err(Error::new(ErrorCode::NotFound, format!("no user {who:?}"))),
+    }
+}
+
+fn user_get(session: &Session, args: &UserRefArgs, out: &Output) -> Result<(), Error> {
+    out.emit(&user_full(session, &args.who)?);
+    Ok(())
+}
+
+/// The input of `userUpdate` from `user update`'s flags: only what was passed, the
+/// texts bounded, `none` keeping a status for good.
+fn user_input(args: &UserUpdateArgs) -> Result<Map<String, Value>, Error> {
+    let mut input = Map::new();
+    for (field, value, what) in [
+        ("name", &args.name, Text::Name),
+        ("displayName", &args.display_name, Text::Name),
+        ("title", &args.title, Text::Title),
+        ("description", &args.description, Text::Body),
+        ("statusEmoji", &args.status_emoji, Text::Name),
+        ("statusLabel", &args.status_label, Text::Title),
+        ("avatarUrl", &args.avatar_url, Text::Link),
+    ] {
+        if let Some(value) = value {
+            check_body(what, value)?;
+            input.insert(field.into(), json!(value));
+        }
+    }
+    if let Some(timezone) = &args.timezone {
+        input.insert("timezone".into(), json!(timezone));
+    }
+    if let Some(until) = &args.status_until {
+        let value = if is_none(until) {
+            Value::Null
+        } else {
+            json!(until)
+        };
+        input.insert("statusUntilAt".into(), value);
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --name, --display-name, --title, --description, --timezone, --status-emoji, --status-label, --status-until, --avatar-url",
+        ));
+    }
+    Ok(input)
+}
+
+fn user_update(session: &Session, args: &UserUpdateArgs, out: &Output) -> Result<(), Error> {
+    let input = user_input(args)?;
+    let id = session.user_id(&args.who)?;
+    let data = session.linear.run(
+        &ops::USER_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "userUpdate", "user")?);
+    Ok(())
+}
+
+/// The `success` of a `UserAdminPayload`, which carries nothing else, as one line.
+fn success_payload(data: &Value, field: &str) -> Result<Value, Error> {
+    match at(data, &format!("{field}.success")).as_bool() {
+        Some(true) => Ok(at(data, field).clone()),
+        Some(false) => Err(Error::new(
+            ErrorCode::Refused,
+            format!("Linear answered {field} with success false"),
+        )),
+        None => Err(Error::new(
+            ErrorCode::Failed,
+            format!("Linear's answer to {field} has no success"),
+        )),
+    }
+}
+
+/// `user change-role`: Linear's `success`, then the user read back, so that the new
+/// role is on the output (two lines, as `issue close` prints two).
+fn user_change_role(session: &Session, args: &UserRoleArgs, out: &Output) -> Result<(), Error> {
+    let id = session.user_id(&args.who)?;
+    let data = session.linear.run(
+        &ops::USER_CHANGE_ROLE,
+        json!({ "id": id, "role": args.role.linear() }),
+    )?;
+    out.emit(&success_payload(&data, "userChangeRole")?);
+    out.emit(&user_full(session, &args.who)?);
+    Ok(())
+}
+
+/// `user suspend`, `user unsuspend` and `user revoke-sessions`: one mutation with the
+/// user's id, Linear's `success`, then the user read back.
+fn user_admin(
+    session: &Session,
+    args: &UserRefArgs,
+    op: &ops::Operation,
+    field: &str,
+    out: &Output,
+) -> Result<(), Error> {
+    let id = session.user_id(&args.who)?;
+    let data = session.linear.run(op, json!({ "id": id }))?;
+    out.emit(&success_payload(&data, field)?);
+    out.emit(&user_full(session, &args.who)?);
     Ok(())
 }
 
@@ -1059,11 +1192,12 @@ fn teams_notice(out: &Output, cut: &[String]) {
     }
 }
 
-fn list_users(session: &Session, args: &ListArgs, out: &Output) -> Result<(), Error> {
+fn list_users(session: &Session, args: &UserListArgs, out: &Output) -> Result<(), Error> {
     let n = limit(args.limit)?;
-    let data = session
-        .linear
-        .run(&ops::USERS, json!({ "first": n, "filter": Value::Null }))?;
+    let data = session.linear.run(
+        &ops::USERS,
+        json!({ "first": n, "filter": Value::Null, "includeDisabled": args.all }),
+    )?;
     emit_list(
         out,
         nodes(&data, "users"),
@@ -1923,6 +2057,58 @@ mod tests {
         assert_eq!(
             team_update_input(&blank).err().map(|e| e.code),
             Some(ErrorCode::Usage)
+        );
+    }
+
+    #[test]
+    fn a_user_input_holds_only_what_was_passed() {
+        let e = user_input(&UserUpdateArgs {
+            who: "me".into(),
+            ..UserUpdateArgs::default()
+        })
+        .err();
+        assert_eq!(e.as_ref().map(|e| e.code), Some(ErrorCode::Usage), "{e:?}");
+        let args = UserUpdateArgs {
+            who: "me".into(),
+            display_name: Some("rjae".into()),
+            status_label: Some("Heads down".into()),
+            status_until: Some("none".into()),
+            ..UserUpdateArgs::default()
+        };
+        let input = user_input(&args).unwrap_or_default();
+        assert_eq!(input.get("displayName"), Some(&json!("rjae")));
+        assert_eq!(input.get("statusLabel"), Some(&json!("Heads down")));
+        assert_eq!(
+            input.get("statusUntilAt"),
+            Some(&Value::Null),
+            "`none` keeps the status"
+        );
+        assert_eq!(input.get("name"), None, "a flag left out is not sent");
+        let long = UserUpdateArgs {
+            who: "me".into(),
+            description: Some("d".repeat(BODY_MAX_BYTES + 1)),
+            ..UserUpdateArgs::default()
+        };
+        assert!(
+            user_input(&long)
+                .err()
+                .is_some_and(|e| e.code == ErrorCode::Refused)
+        );
+        assert!(
+            success_payload(
+                &json!({ "userSuspend": { "success": true } }),
+                "userSuspend"
+            )
+            .is_ok_and(|v| v["success"] == true)
+        );
+        assert_eq!(
+            success_payload(
+                &json!({ "userSuspend": { "success": false } }),
+                "userSuspend"
+            )
+            .err()
+            .map(|e| e.code),
+            Some(ErrorCode::Refused)
         );
     }
 

@@ -1623,6 +1623,125 @@ fn team_delete_archives_the_team_and_unarchive_brings_it_back() {
     assert_eq!(run.code, 8, "{}", run.stderr);
 }
 
+// ---- users (ADR 0014, group 4) -----------------------------------------------------------
+
+#[test]
+fn user_get_update_role_suspension_and_sessions() {
+    let fake = Fake::start().unwrap();
+    let me = muster(&fake, &["user", "get", "me"]);
+    assert_eq!(me.code, 0, "{}", me.stderr);
+    let v = me.one();
+    assert_eq!(v["email"], "fake@example.com");
+    assert_eq!(v["admin"], true);
+    assert_eq!(v["owner"], false);
+    assert_eq!(v["guest"], false);
+    assert_eq!(v["app"], false);
+    assert_eq!(v["isMe"], true);
+    assert!(v["timezone"].is_string() && v["lastSeen"].is_string() && v["url"].is_string());
+    assert!(v["statusLabel"].is_null() && v["disableReason"].is_null());
+    assert_eq!(
+        fake.operations(),
+        vec!["Viewer", "UserById"],
+        "`me` is the viewer"
+    );
+    let by_email = muster(&fake, &["user", "get", "other@example.com"]).one();
+    assert_eq!(by_email["displayName"], "other");
+    let by_name = muster(&fake, &["user", "get", "Other Person"]).one();
+    assert_eq!(by_name["email"], "other@example.com");
+    let nobody = muster(&fake, &["user", "get", "nobody"]);
+    assert_eq!(nobody.code, 4, "{}", nobody.stderr);
+
+    let updated = muster(
+        &fake,
+        &[
+            "user",
+            "update",
+            "me",
+            "--title",
+            "Owner",
+            "--status-emoji",
+            "🚀",
+            "--status-label",
+            "Shipping",
+            "--status-until",
+            "2026-11-10T09:00:00Z",
+        ],
+    );
+    assert_eq!(updated.code, 0, "{}", updated.stderr);
+    let u = updated.one();
+    assert_eq!(u["title"], "Owner");
+    assert_eq!(u["statusLabel"], "Shipping");
+    assert_eq!(u["statusUntilAt"], "2026-11-10T09:00:00Z");
+    assert_eq!(
+        u["name"], "Fake Person",
+        "a flag left out leaves its field alone"
+    );
+    let kept = muster(&fake, &["user", "update", "me", "--status-until", "none"]).one();
+    assert!(kept["statusUntilAt"].is_null(), "`none` keeps the status");
+    let nothing = muster(&fake, &["user", "update", "me"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+
+    let promoted = muster(&fake, &["user", "change-role", "other", "--role", "admin"]);
+    assert_eq!(promoted.code, 0, "{}", promoted.stderr);
+    let lines = promoted.lines();
+    assert_eq!(lines.len(), 2, "Linear's success, then the user read back");
+    assert_eq!(lines[0]["success"], true);
+    assert_eq!(lines[1]["admin"], true);
+    assert_eq!(lines[1]["displayName"], "other");
+    let guest = muster(&fake, &["user", "change-role", "other", "--role", "guest"]).lines();
+    assert_eq!(guest[1]["guest"], true);
+    assert_eq!(guest[1]["admin"], false);
+    let bad = muster(&fake, &["user", "change-role", "other", "--role", "app"]);
+    assert_eq!(
+        bad.code, 2,
+        "`app` is not a role a person takes: {}",
+        bad.stderr
+    );
+
+    let suspended = muster(&fake, &["user", "suspend", "other"]);
+    assert_eq!(suspended.code, 0, "{}", suspended.stderr);
+    assert_eq!(suspended.lines()[0]["success"], true);
+    assert_eq!(suspended.lines()[1]["active"], false);
+    assert!(suspended.lines()[1]["disableReason"].is_string());
+    let active = muster(&fake, &["user", "list"]);
+    assert_eq!(active.lines().len(), 1, "a suspended user is not listed");
+    let everyone = muster(&fake, &["user", "list", "--all"]);
+    assert_eq!(everyone.lines().len(), 2, "unless --all");
+    assert!(everyone.lines().iter().any(|u| u["active"] == false));
+    let back = muster(&fake, &["user", "unsuspend", "other@example.com"]);
+    assert_eq!(
+        back.code, 0,
+        "a suspended user is still found: {}",
+        back.stderr
+    );
+    assert_eq!(back.lines()[1]["active"], true);
+    let revoked = muster(&fake, &["user", "revoke-sessions", "other"]);
+    assert_eq!(revoked.code, 0, "{}", revoked.stderr);
+    assert_eq!(revoked.lines()[0]["success"], true);
+    assert_eq!(revoked.lines()[1]["email"], "other@example.com");
+
+    for (op, args) in [
+        ("UserUpdate", vec!["user", "update", "me", "--title", "x"]),
+        (
+            "UserChangeRole",
+            vec!["user", "change-role", "other", "--role", "user"],
+        ),
+        ("UserSuspend", vec!["user", "suspend", "other"]),
+        ("UserUnsuspend", vec!["user", "unsuspend", "other"]),
+        (
+            "UserRevokeAllSessions",
+            vec!["user", "revoke-sessions", "other"],
+        ),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+    fake.fail_next("UserById", Failure::Drop);
+    let run = muster(&fake, &["user", "get", "me"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+}
+
 // ---- members (ADR 0014, group 3) ---------------------------------------------------------
 
 #[test]
@@ -1650,7 +1769,8 @@ fn member_list_add_and_remove_work_on_the_teams_memberships() {
     let own = muster(&fake, &["--team", "SMK", "member", "list"]);
     assert_eq!(own.lines().len(), 1, "the creator is the one member");
     assert_eq!(
-        own.lines()[0]["owner"], false,
+        own.lines()[0]["owner"],
+        false,
         "as Linear answered for a team made through the API (appshapes, 2026-11-03)"
     );
     let added = muster(
@@ -1731,13 +1851,20 @@ fn member_list_add_and_remove_work_on_the_teams_memberships() {
     );
     assert_eq!(run.code, 8, "{}", run.stderr);
     fake.fail_next("TeamMembershipDelete", Failure::Drop);
-    let run = muster(&fake, &["member", "remove", "--user", "other", "--team", "APP"]);
+    let run = muster(
+        &fake,
+        &["member", "remove", "--user", "other", "--team", "APP"],
+    );
     assert_eq!(run.code, 8, "{}", run.stderr);
     fake.fail_next("TeamMembers", Failure::Drop);
     let run = muster(&fake, &["--team", "APP", "member", "list"]);
     assert_eq!(run.code, 7, "{}", run.stderr);
     let nowhere = muster(&fake, &["member", "list"]);
-    assert_eq!(nowhere.code, 2, "two teams and none named: {}", nowhere.stderr);
+    assert_eq!(
+        nowhere.code, 2,
+        "two teams and none named: {}",
+        nowhere.stderr
+    );
 }
 
 #[test]

@@ -465,9 +465,10 @@ impl Workspace {
             "previousUrlKeys": [], "deletionRequestedAt": null, "trialStartsAt": null, "trialEndsAt": null,
             "userCount": 2, "createdIssueCount": 4, "subscription": null,
         });
-        let me = json!({ "id": ws.id(), "name": "Fake Person", "displayName": "fake", "email": "fake@example.com", "active": true, "admin": true, "isMe": true });
-        let other = json!({ "id": ws.id(), "name": "Other Person", "displayName": "other", "email": "other@example.com", "active": true, "admin": false, "isMe": false });
-        ws.users = vec![me.clone(), other.clone()];
+        // Every field `UserFields` asks for (ADR 0014, group 4), with the values a
+        // workspace shows for its admin and for a member.
+        let me = ws.new_user("Fake Person", "fake", "fake@example.com", true, true);
+        let other = ws.new_user("Other Person", "other", "other@example.com", false, false);
         for (name, color) in [
             ("Bug", "#eb5757"),
             ("Improvement", "#4ea7fc"),
@@ -612,6 +613,19 @@ impl Workspace {
             }),
         );
         team
+    }
+
+    fn new_user(&mut self, name: &str, display: &str, email: &str, admin: bool, me: bool) -> Value {
+        let (id, now) = (self.id(), self.now());
+        let user = json!({
+            "id": id, "name": name, "displayName": display, "email": email, "avatarUrl": null,
+            "url": format!("https://linear.app/fake/profiles/{display}"),
+            "active": true, "admin": admin, "owner": false, "guest": false, "app": false, "isMe": me, "disableReason": null,
+            "title": null, "description": null, "timezone": "Etc/UTC", "statusEmoji": null, "statusLabel": null, "statusUntilAt": null,
+            "lastSeen": now, "createdAt": now, "updatedAt": now,
+        });
+        self.users.push(user.clone());
+        user
     }
 
     fn new_membership(&mut self, team_id: &Value, user_id: &Value, owner: bool) -> Value {
@@ -1201,11 +1215,99 @@ impl Workspace {
                 )
             }
             "Users" => {
-                let users: Vec<Value> = self.users.iter().filter(|u| passes(u, filter)).map(|u| json!({ "id": u["id"], "name": u["name"], "displayName": u["displayName"], "email": u["email"], "active": u["active"], "admin": u["admin"], "isMe": u["isMe"] })).collect();
+                // Suspended users are left out unless `includeDisabled`, as Linear
+                // does (the query's own description).
+                let include_disabled = vars["includeDisabled"].as_bool().unwrap_or(false);
+                let users: Vec<Value> = self
+                    .users
+                    .iter()
+                    .filter(|u| passes(u, filter) && (include_disabled || u["active"] == true))
+                    .map(|u| json!({ "id": u["id"], "name": u["name"], "displayName": u["displayName"], "email": u["email"], "active": u["active"], "admin": u["admin"], "owner": u["owner"], "guest": u["guest"], "app": u["app"], "isMe": u["isMe"] }))
+                    .collect();
                 (
                     200,
                     json!({ "data": { "users": Workspace::page(users, first) } }),
                 )
+            }
+            "UserById" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                match self
+                    .users
+                    .iter()
+                    .find(|u| u["id"] == id || (id == "me" && u["isMe"] == true))
+                {
+                    Some(user) => (200, json!({ "data": { "user": user } })),
+                    None => not_found("User"),
+                }
+            }
+            "UserUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "UserUpdateInput!");
+                };
+                let Some(index) = self
+                    .users
+                    .iter()
+                    .position(|u| u["id"] == id || (id == "me" && u["isMe"] == true))
+                else {
+                    return not_found("User");
+                };
+                let now = self.now();
+                for (field, value) in input {
+                    self.users[index][&field] = value;
+                }
+                self.users[index]["updatedAt"] = json!(now);
+                (
+                    200,
+                    json!({ "data": { "userUpdate": { "success": true, "user": self.users[index] } } }),
+                )
+            }
+            "UserChangeRole" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let role = vars["role"].as_str().unwrap_or("");
+                let Some(index) = self.users.iter().position(|u| u["id"] == id) else {
+                    return not_found("User");
+                };
+                let (owner, admin, guest) = match role {
+                    "owner" => (true, true, false),
+                    "admin" => (false, true, false),
+                    "user" => (false, false, false),
+                    "guest" => (false, false, true),
+                    _ => {
+                        return (
+                            400,
+                            json!({ "errors": [ { "message": format!("Variable \"$role\" got invalid value {role:?}"), "extensions": { "code": "GRAPHQL_VALIDATION_FAILED", "type": "graphql error", "userError": true } } ] }),
+                        );
+                    }
+                };
+                let user = &mut self.users[index];
+                user["owner"] = json!(owner);
+                user["admin"] = json!(admin);
+                user["guest"] = json!(guest);
+                (
+                    200,
+                    json!({ "data": { "userChangeRole": { "success": true } } }),
+                )
+            }
+            "UserSuspend" | "UserUnsuspend" | "UserRevokeAllSessions" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.users.iter().position(|u| u["id"] == id) else {
+                    return not_found("User");
+                };
+                let field = match op {
+                    "UserSuspend" => {
+                        self.users[index]["active"] = json!(false);
+                        self.users[index]["disableReason"] = json!("suspended");
+                        "userSuspend"
+                    }
+                    "UserUnsuspend" => {
+                        self.users[index]["active"] = json!(true);
+                        self.users[index]["disableReason"] = Value::Null;
+                        "userUnsuspend"
+                    }
+                    _ => "userRevokeAllSessions",
+                };
+                (200, json!({ "data": { field: { "success": true } } }))
             }
             "IssueById" => {
                 let id = vars["id"].as_str().unwrap_or("");

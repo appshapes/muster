@@ -4,11 +4,14 @@
       {
         "active": true,
         "admin": true,
+        "app": true,
         "displayName": "<string>",
         "email": "<string>",
+        "guest": true,
         "id": "<string>",
         "isMe": true,
-        "name": "<string>"
+        "name": "<string>",
+        "owner": true
       }
     ],
     "pageInfo": {

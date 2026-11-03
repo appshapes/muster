@@ -71,6 +71,12 @@ Who is in the team is `muster member list`: one JSON line per membership, with i
 `user` and whether they are an `owner`; `muster member add --user <email>` and
 `muster member remove --user <email>` change it, for the team of `--team`,
 `MUSTER_TEAM` or the only one, and a user who is not a member is exit 4.
+A person is `muster user get me` (or an email address, or a name): one JSON line with
+their role flags (`admin`, `owner`, `guest`), whether they are `active`, their profile
+and status, and `lastSeen`. `muster user update me --status-label "Heads down"` changes
+your own profile, and a workspace admin changes anyone's; `muster user change-role`,
+`muster user suspend`, `muster user unsuspend` and `muster user revoke-sessions` are
+the admin's, and each prints Linear's `success` and then the user read back.
 
 If you see `"code":"authentication"` on stderr and exit 3, the key was not found or
 was refused; the `hint` says where to put it. If the `team` is `null` with a `warn`

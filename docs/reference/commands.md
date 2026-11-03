@@ -233,11 +233,70 @@ Create a project for the team; a name a project of the workspace already has is 
 
 ### muster user list
 
-List them, one JSON object per line.
+List the workspace's users, one JSON object per line; the active ones unless --all.
 
 | Argument or flag | Value | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+| `--all` |  | no |  | The suspended users too, not only the active ones |
+
+### muster user get
+
+One user with their role flags, profile, status and when they were last seen.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WHO>` | `<WHO>` | yes |  | The user: `me`, an email address or a name |
+
+### muster user update
+
+Change a user's profile; your own, or anyone's as a workspace admin; a flag left out leaves its field alone.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WHO>` | `<WHO>` | yes |  | The user: `me`, an email address or a name |
+| `--name` | `<TEXT>` | no |  | A new full name |
+| `--display-name` | `<TEXT>` | no |  | A new display name, unique in the workspace |
+| `--title` | `<TEXT>` | no |  | A new job title |
+| `--description` | `<TEXT>` | no |  | A new short bio |
+| `--timezone` | `<TZ>` | no |  | The user's timezone, an IANA name (Europe/London) |
+| `--status-emoji` | `<TEXT>` | no |  | The emoji of the user's status |
+| `--status-label` | `<TEXT>` | no |  | The text of the user's status |
+| `--status-until` | `<TIME|none>` | no |  | When the status clears, a time (2026-11-10T09:00:00Z), or `none` to keep it |
+| `--avatar-url` | `<URL>` | no |  | A new avatar, by URL |
+
+### muster user change-role
+
+Change a user's workspace role; a workspace admin's command, and the caller's role must be at least the new one.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WHO>` | `<WHO>` | yes |  | The user: `me`, an email address or a name |
+| `--role` | `<ROLE>` | yes |  | The new role |
+
+### muster user suspend
+
+Suspend a user: their account is deactivated and their sessions end; a workspace admin's command.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WHO>` | `<WHO>` | yes |  | The user: `me`, an email address or a name |
+
+### muster user unsuspend
+
+Reactivate a suspended user; a workspace admin's command.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WHO>` | `<WHO>` | yes |  | The user: `me`, an email address or a name |
+
+### muster user revoke-sessions
+
+End every session of a user, so that they sign in again; a workspace admin's command.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WHO>` | `<WHO>` | yes |  | The user: `me`, an email address or a name |
 
 ### muster issue get
 
@@ -429,6 +488,7 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `Workspace` | query |
 | `TeamByKey` | query |
 | `TeamMembers` | query |
+| `UserById` | query |
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
@@ -441,3 +501,8 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `TeamUnarchive` | mutation |
 | `TeamMembershipCreate` | mutation |
 | `TeamMembershipDelete` | mutation |
+| `UserUpdate` | mutation |
+| `UserChangeRole` | mutation |
+| `UserSuspend` | mutation |
+| `UserUnsuspend` | mutation |
+| `UserRevokeAllSessions` | mutation |

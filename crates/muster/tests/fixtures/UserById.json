@@ -1,0 +1,26 @@
+{
+  "user": {
+    "active": true,
+    "admin": true,
+    "app": true,
+    "avatarUrl": "<string>",
+    "createdAt": "<string>",
+    "description": null,
+    "disableReason": null,
+    "displayName": "<string>",
+    "email": "<string>",
+    "guest": true,
+    "id": "<string>",
+    "isMe": true,
+    "lastSeen": "<string>",
+    "name": "<string>",
+    "owner": true,
+    "statusEmoji": null,
+    "statusLabel": null,
+    "statusUntilAt": null,
+    "timezone": "<string>",
+    "title": "<string>",
+    "updatedAt": "<string>",
+    "url": "<string>"
+  }
+}

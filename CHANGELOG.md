@@ -55,6 +55,18 @@ user-visible change, added in the same commit as the change. The format follows
   first, so that a user who is not a member is exit 4 before any mutation; the team
   is the usual rule, `--team`, `MUSTER_TEAM` or the only one (ADR 0014, group 3;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `user get <WHO>` prints one user with their role flags (`admin`, `owner`, `guest`,
+  `app`), `active` and `disableReason`, profile, status and `lastSeen`; `user list`
+  now prints `owner`, `guest` and `app` too and leaves suspended users out unless
+  `--all`. `user update <WHO>` changes a profile through Linear's `userUpdate` (your
+  own, or anyone's as a workspace admin): `--name`, `--display-name`, `--title`,
+  `--description`, `--timezone`, `--status-emoji`, `--status-label`, `--status-until
+  <TIME|none>` and `--avatar-url`; a flag left out leaves its field alone. The admin's
+  commands `user change-role <WHO> --role <owner|admin|user|guest>`, `user suspend`,
+  `user unsuspend` and `user revoke-sessions` print Linear's `success`, then the user
+  read back, two JSON lines; a suspended user is still found by email or name, so that
+  `unsuspend` reaches them (ADR 0014, group 4;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.2.0 - 2026-11-03
 

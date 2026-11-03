@@ -75,11 +75,11 @@ pub enum Command {
         #[command(subcommand)]
         command: ProjectCommand,
     },
-    /// Users of the workspace
+    /// Users: list, get, update, change-role, suspend, unsuspend, revoke-sessions
     User {
-        /// `list`.
+        /// The user command.
         #[command(subcommand)]
-        command: ListCommand,
+        command: UserCommand,
     },
     /// Issues: get, list, create, comment, attach, close, update
     Issue {
@@ -540,7 +540,91 @@ pub struct MemberArgs {
     pub user: String,
 }
 
-/// `list` under `state`, `label` and `user`.
+/// The user commands (ADR 0007; ADR 0014, group 4).
+#[derive(Subcommand, Debug)]
+pub enum UserCommand {
+    /// List the workspace's users, one JSON object per line; the active ones unless --all
+    List(UserListArgs),
+    /// One user with their role flags, profile, status and when they were last seen
+    Get(UserRefArgs),
+    /// Change a user's profile; your own, or anyone's as a workspace admin; a flag left out leaves its field alone
+    Update(Box<UserUpdateArgs>),
+    /// Change a user's workspace role; a workspace admin's command, and the caller's role must be at least the new one
+    ChangeRole(UserRoleArgs),
+    /// Suspend a user: their account is deactivated and their sessions end; a workspace admin's command
+    Suspend(UserRefArgs),
+    /// Reactivate a suspended user; a workspace admin's command
+    Unsuspend(UserRefArgs),
+    /// End every session of a user, so that they sign in again; a workspace admin's command
+    RevokeSessions(UserRefArgs),
+}
+
+/// `user list`.
+#[derive(Args, Debug)]
+pub struct UserListArgs {
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+    /// The suspended users too, not only the active ones
+    #[arg(long)]
+    pub all: bool,
+}
+
+/// A user named as `--assignee` names one.
+#[derive(Args, Debug)]
+pub struct UserRefArgs {
+    /// The user: `me`, an email address or a name
+    #[arg(value_name = "WHO")]
+    pub who: String,
+}
+
+/// `user change-role`.
+#[derive(Args, Debug)]
+pub struct UserRoleArgs {
+    /// The user: `me`, an email address or a name
+    #[arg(value_name = "WHO")]
+    pub who: String,
+    /// The new role
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub role: Role,
+}
+
+/// `user update`: the profile fields of `UserUpdateInput`.
+#[derive(Args, Debug, Default)]
+pub struct UserUpdateArgs {
+    /// The user: `me`, an email address or a name
+    #[arg(value_name = "WHO")]
+    pub who: String,
+    /// A new full name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new display name, unique in the workspace
+    #[arg(long, value_name = "TEXT")]
+    pub display_name: Option<String>,
+    /// A new job title
+    #[arg(long, value_name = "TEXT")]
+    pub title: Option<String>,
+    /// A new short bio
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// The user's timezone, an IANA name (Europe/London)
+    #[arg(long, value_name = "TZ")]
+    pub timezone: Option<String>,
+    /// The emoji of the user's status
+    #[arg(long, value_name = "TEXT")]
+    pub status_emoji: Option<String>,
+    /// The text of the user's status
+    #[arg(long, value_name = "TEXT")]
+    pub status_label: Option<String>,
+    /// When the status clears, a time (2026-11-10T09:00:00Z), or `none` to keep it
+    #[arg(long, value_name = "TIME|none")]
+    pub status_until: Option<String>,
+    /// A new avatar, by URL
+    #[arg(long, value_name = "URL")]
+    pub avatar_url: Option<String>,
+}
+
+/// `list` under `state` and `label`.
 #[derive(Subcommand, Debug)]
 pub enum ListCommand {
     /// List them, one JSON object per line
