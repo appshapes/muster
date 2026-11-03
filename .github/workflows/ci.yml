@@ -34,11 +34,12 @@ jobs:
   gates:
     name: gates (${{ matrix.name }})
     runs-on: ${{ matrix.runner }}
-    # A bound for a hung runner, not a measurement: the first runs on the empty crate are
-    # read for their duration, and this moves to twice the slowest cold job once ten
-    # runs exist. Cavalry's same five gates without its extra suites took under three
-    # minutes cold on these labels.
-    timeout-minutes: 15
+    # Twice the slowest job measured, rounded up to whole minutes (APP-26, 2026-11-03):
+    # over the first 11 runs, gates (linux) took 44 s on average and 60 s at most,
+    # gates (macos) 80 s and 99 s, the cold first run of each inside those. Re-measure
+    # with `gh run view <id> --json jobs` when a gate grows; a run that nears this bound
+    # is a hung runner or a gate that needs its own look.
+    timeout-minutes: 4
     strategy:
       fail-fast: false
       matrix:

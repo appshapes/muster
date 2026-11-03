@@ -24,7 +24,9 @@ jobs:
   create:
     name: create
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 5
+    # The two release runs' create job took 6 and 7 s (APP-26, 2026-11-03); the bound
+    # is for a hung runner or a stuck GitHub API call.
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check the tag against the manifest
@@ -47,9 +49,10 @@ jobs:
     name: build (${{ matrix.name }})
     needs: create
     runs-on: ${{ matrix.runner }}
-    # A bound for a hung runner: the release build of the one crate took under two
-    # minutes cold on each label in the first release's run.
-    timeout-minutes: 20
+    # Twice the slowest build measured, plus whole minutes for the toolchain fetch the
+    # runs include (APP-26, 2026-11-03): the two release runs built in 28 to 32 s per
+    # label, the first of them cold. Re-measure with `gh run view <id> --json jobs`.
+    timeout-minutes: 3
     strategy:
       fail-fast: false
       matrix:
