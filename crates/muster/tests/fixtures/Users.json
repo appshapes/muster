@@ -1,0 +1,18 @@
+{
+  "users": {
+    "nodes": [
+      {
+        "active": true,
+        "admin": true,
+        "displayName": "<string>",
+        "email": "<string>",
+        "id": "<string>",
+        "isMe": true,
+        "name": "<string>"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": true
+    }
+  }
+}

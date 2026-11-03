@@ -1,0 +1,70 @@
+{
+  "issue": {
+    "archivedAt": null,
+    "assignee": null,
+    "attachments": {
+      "nodes": [],
+      "pageInfo": {
+        "hasNextPage": true
+      }
+    },
+    "branchName": "<string>",
+    "canceledAt": "<string>",
+    "comments": {
+      "nodes": [
+        {
+          "body": "<string>",
+          "createdAt": "<string>",
+          "editedAt": null,
+          "id": "<string>",
+          "parent": null,
+          "updatedAt": "<string>",
+          "url": "<string>",
+          "user": {
+            "displayName": "<string>",
+            "id": "<string>",
+            "name": "<string>"
+          }
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": true
+      }
+    },
+    "completedAt": null,
+    "createdAt": "<string>",
+    "creator": {
+      "displayName": "<string>",
+      "id": "<string>",
+      "name": "<string>"
+    },
+    "cycle": null,
+    "description": "<string>",
+    "dueDate": null,
+    "estimate": null,
+    "id": "<string>",
+    "identifier": "<string>",
+    "labels": {
+      "nodes": []
+    },
+    "number": 0,
+    "parent": null,
+    "priority": 0,
+    "priorityLabel": "<string>",
+    "project": null,
+    "startedAt": null,
+    "state": {
+      "id": "<string>",
+      "name": "<string>",
+      "type": "<string>"
+    },
+    "team": {
+      "id": "<string>",
+      "key": "<string>",
+      "name": "<string>"
+    },
+    "title": "<string>",
+    "updatedAt": "<string>",
+    "url": "<string>"
+  }
+}

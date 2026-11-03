@@ -1,0 +1,18 @@
+{
+  "issueLabels": {
+    "nodes": [
+      {
+        "color": "<string>",
+        "description": null,
+        "id": "<string>",
+        "isGroup": true,
+        "name": "<string>",
+        "parent": null,
+        "team": null
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": true
+    }
+  }
+}

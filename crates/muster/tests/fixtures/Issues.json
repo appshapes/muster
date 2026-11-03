@@ -1,0 +1,50 @@
+{
+  "issues": {
+    "nodes": [
+      {
+        "archivedAt": null,
+        "assignee": null,
+        "branchName": "<string>",
+        "canceledAt": "<string>",
+        "completedAt": null,
+        "createdAt": "<string>",
+        "creator": {
+          "displayName": "<string>",
+          "id": "<string>",
+          "name": "<string>"
+        },
+        "cycle": null,
+        "description": "<string>",
+        "dueDate": null,
+        "estimate": null,
+        "id": "<string>",
+        "identifier": "<string>",
+        "labels": {
+          "nodes": []
+        },
+        "number": 0,
+        "parent": null,
+        "priority": 0,
+        "priorityLabel": "<string>",
+        "project": null,
+        "startedAt": null,
+        "state": {
+          "id": "<string>",
+          "name": "<string>",
+          "type": "<string>"
+        },
+        "team": {
+          "id": "<string>",
+          "key": "<string>",
+          "name": "<string>"
+        },
+        "title": "<string>",
+        "updatedAt": "<string>",
+        "url": "<string>"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": true
+    }
+  }
+}

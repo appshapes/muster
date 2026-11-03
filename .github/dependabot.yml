@@ -1,0 +1,32 @@
+# Keeps the SHA-pinned actions in .github/workflows/ and the crates in Cargo.lock current.
+# Dependabot opens one pull request a week when any pinned action has a new release, and
+# one when any crate does. ci.yml runs on each, the reviewer agent reviews it from master
+# (dispatch-review.yml starts review-pull-request.yml, ADR 0005) and checks each new SHA
+# against the version it names, and the `auto-merge` label below lets auto-merge.yml
+# squash-merge it when the reviewer approves and CI is green (ADR 0004). Bot pull requests
+# are the exception to committing straight to master (CLAUDE.md, "Working rules for
+# agents"; ADR 0003). A cargo bump moves versions and nothing else: a bump that adds a
+# direct dependency fails `just lint-workspace`, whose allowlist is in the crate's
+# Cargo.toml metadata, and a bump that breaks the build fails CI and does not merge.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - auto-merge
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - auto-merge
+    groups:
+      cargo:
+        patterns:
+          - "*"

@@ -1,0 +1,15 @@
+{
+  "organization": {
+    "id": "<string>",
+    "name": "<string>",
+    "urlKey": "<string>"
+  },
+  "viewer": {
+    "active": true,
+    "admin": true,
+    "displayName": "<string>",
+    "email": "<string>",
+    "id": "<string>",
+    "name": "<string>"
+  }
+}

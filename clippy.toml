@@ -1,0 +1,10 @@
+# The rules clippy can see that rustc cannot (ADR 0003). Each entry names the invariant
+# it serves; docs/reference/commands.md is where the behaviour is documented for a user.
+disallowed-methods = [
+    { path = "std::io::stdin", reason = "muster never prompts: an agent cannot answer (CLAUDE.md, invariant 2; ADR 0008). Take the input from a flag, a file or stdin named `-` through `std::io::Read` on a file handle opened by the output module" },
+    { path = "std::process::exit", reason = "return an ExitCode from main so stdout is flushed and the error object is written (ADR 0008)" },
+    { path = "std::thread::sleep", reason = "a rate limit is reported with its reset time, never absorbed by sleeping (CLAUDE.md, invariant 3)" },
+]
+disallowed-types = [
+    { path = "std::io::Stdin", reason = "muster never prompts (CLAUDE.md, invariant 2; ADR 0008)" },
+]

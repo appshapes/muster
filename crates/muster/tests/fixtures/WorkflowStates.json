@@ -1,0 +1,21 @@
+{
+  "workflowStates": {
+    "nodes": [
+      {
+        "color": "<string>",
+        "description": "<string>",
+        "id": "<string>",
+        "name": "<string>",
+        "position": 0,
+        "team": {
+          "id": "<string>",
+          "key": "<string>"
+        },
+        "type": "<string>"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": true
+    }
+  }
+}

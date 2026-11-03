@@ -1,0 +1,33 @@
+[package]
+name = "muster"
+description = "A command-line client for Linear, for coding agents first: JSON Lines out, an exit code per failure, the key from a file"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+# Nothing is releasable until the first release (ADR 0003).
+publish = false
+
+[dependencies]
+# The command tree, derive API (ADR 0002). No `env` feature: muster reads its variables
+# itself so that `muster schema` can list each with its why_not_default (ADR 0008).
+clap = { version = "4.5", features = ["derive"] }
+# The request and the answer: Linear's field names, kept as they are (ADR 0008).
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# One blocking request at a time, rustls with bundled roots, no runtime (ADR 0002).
+ureq = { version = "3.1", default-features = false, features = ["rustls", "gzip"] }
+
+[[bin]]
+name = "muster"
+path = "src/main.rs"
+
+# Inherits unsafe_code = "forbid" and the clippy denials (ADR 0003).
+[lints]
+workspace = true
+
+# Read by `just lint-workspace` (ADR 0003): every direct dependency must be here, and a
+# new one needs a justification in the commit message and an ADR (ADR 0002).
+[package.metadata.muster]
+allowed-dependencies = ["clap", "serde", "serde_json", "ureq"]

@@ -1,0 +1,31 @@
+# Muster workspace. CLAUDE.md's repository map says what the crate is; ADR 0003
+# (docs/decisions/) records the decisions behind this file.
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+# Edition 2024 needs 1.85 and ureq 3 needs 1.85; 1.89 is the floor the sibling
+# repository builds on, so a laptop set up for one builds the other (ADR 0003).
+rust-version = "1.89"
+license = "Apache-2.0"
+repository = "https://github.com/appshapes/muster"
+
+# Muster has no reason for `unsafe` anywhere, so it is forbidden, not denied (ADR 0003).
+# The crate inherits this table with `[lints] workspace = true`; `just lint-workspace`
+# checks that it does.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+# A panic is an exit code docs/reference/commands.md does not list (invariant 2), and
+# every byte on stdout is the answer (ADR 0008): the output module carries the only
+# `#[expect]` of the print lints, and `just lint-workspace` counts them.
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"

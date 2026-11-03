@@ -1,0 +1,16 @@
+{
+  "teams": {
+    "nodes": [
+      {
+        "description": null,
+        "id": "<string>",
+        "key": "<string>",
+        "name": "<string>",
+        "private": true
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": true
+    }
+  }
+}

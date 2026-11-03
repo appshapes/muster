@@ -1,0 +1,131 @@
+---
+name: commit
+description: Commit, pull and push the working tree to master after just lint, just test, just docs and just lint-docs, with a commit message that is the review record
+argument-hint: "[issue identifier, such as APP-12]"
+---
+
+Commit the current working tree to `master` with this repository's commit sequence.
+Developers commit directly to `master`; only bots and agent workflows use branches and
+pull requests (CLAUDE.md, "Working rules for agents"). `master` is green after every
+commit, and the commit message is the review record: what changed, which invariant it
+serves, and the evidence.
+
+The sequence is `git add`, `git commit`, `git pull --no-edit`, `git push`, with the
+gates CLAUDE.md and `.claude/rules/docs.md` require in front of it:
+
+```
+just lint
+just test
+just docs
+just lint-docs
+git add --verbose :/ .
+git commit -m "<message>"
+git pull --no-edit
+git push
+```
+
+Merges only. Never `rebase`, never `--force`. On a merge conflict, stop and hand it
+back: no `git merge --abort`, no rebase, no force-push.
+
+The optional Linear issue identifier is: $ARGUMENTS
+
+## 1. Analyze changes
+
+Run these in parallel:
+
+- `git status` (never use `-uall`)
+- `git diff`
+- `git diff --cached`
+- `git log --oneline -5`
+
+If the working tree is clean (no staged, unstaged or untracked changes), say there is
+nothing to commit and stop.
+
+`git add --verbose :/ .` stages everything in the working tree, so ALL changes will be
+included, not just staged files. If something present should not go in (a scratch
+file, a local-only config, a second change that belongs in its own commit), say so and
+stop; the user removes it or asks for a split.
+
+## 2. Check the change against CLAUDE.md
+
+Check each of these against the diff. A miss is a reason to stop and say so, not to
+commit and fix later.
+
+- Docs ship in the same commit as the code they describe. A new or changed public
+  item needs a matching change under `docs/` or a README. A new or changed command,
+  flag, exit code, bound or environment variable needs `just gen-commands` run, so that
+  `docs/reference/commands.md` is in the diff, and a glossary row for any new term. A
+  user-visible change needs a line under `Unreleased` in `CHANGELOG.md`. A message that
+  says "docs to follow" gets reverted.
+- A change to an output field, an exit code, a key source or a flag's meaning needs an
+  accepted ADR in `docs/decisions/` (CLAUDE.md, "Documentation"; ADR 0008).
+- A new dependency needs its entry on `allowed-dependencies` in
+  `crates/muster/Cargo.toml`, a justification in the commit message, and an ADR
+  (ADR 0002, ADR 0003).
+- A change that claims to work against Linear, not only against the fake, carries the
+  output of `just smoke` in the commit message (CLAUDE.md, "Working rules for agents").
+- A new operation has its fixture under `crates/muster/tests/fixtures/` and its answer
+  in the fake (ADR 0010), and the test that runs the command through the binary.
+
+## 3. Check for secrets
+
+Scan every added line (`+` prefix) in the diff output, in ALL files, not just code
+files, for anything that looks like a secret: API keys (`lin_api_` above all), passwords,
+tokens, connection strings, private keys or credentials. Non-code files (markdown,
+prompts, fixtures, config notes) are just as likely to contain secrets, and a fixture
+must hold shapes only, no identifier, name or address of a real workspace (ADR 0010).
+If found, warn the user and do not proceed until they confirm the files are safe.
+
+## 4. Run the gates
+
+Run `just lint`, `just test`, `just docs`, then `just lint-docs`, each as its own
+command, and read its exit code before the next; never chain a gate through a pipe
+(`just lint | tail -1 && ...` reports `tail`'s exit code, and the failed gate goes
+through). All four must pass before the commit. `just lint-docs` on a dirty tree checks
+the change about to be committed; on a clean tree it checks the last commit.
+
+- A recipe that prints `not built yet` is a gate that does not exist yet, not a pass.
+  If the change touches what that gate would check, building the gate is part of the
+  change (CLAUDE.md, "Gates"): stop and name the gate. If the change cannot touch it
+  (an ADR, a skill, the changelog), note the unbuilt gate in the report and continue.
+- If `cargo` fails because there is no workspace yet (no `Cargo.toml` at the root),
+  the gate cannot run; say so in the report and continue. Once the workspace exists, a
+  failing gate blocks the commit.
+
+## 5. Write the commit message
+
+- Subject: imperative mood, capitalized, under 72 characters, the intent rather than a
+  list of files. When an issue identifier was given, prefix it: `APP-12: <Subject>`. The
+  identifier is the Linear issue the work belongs to (see `/linear-read`).
+- Body: the review record. What changed. Which invariant it serves, by number. The
+  evidence: the gate results, the ADR number, the `just smoke` output when the change
+  claims to work against Linear, and the name of the test that fails without the change.
+- Wrap the body at 72 characters. Backticks and quotes are safe inside the quoted
+  heredoc below, so use the real names of files, flags and commands.
+
+## 6. Execute
+
+No confirmation is asked: the user has authorized every commit this sequence makes
+(the owner's instruction of 2026-11-02 to proceed autonomously, committing and
+pushing), and the gates above are the check. Run exactly:
+
+```
+git add --verbose :/ .
+git commit -m "$(cat <<'EOF'
+<subject>
+
+<body>
+EOF
+)"
+git pull --no-edit
+git push
+```
+
+If `git pull --no-edit` created a merge commit, run the four gates again
+before `git push`. If either fails, stop and report; do not push.
+
+## 7. Report the result
+
+- On success, give the commit hash, the subject and the body, and say it was pushed.
+- On failure (a gate, a merge conflict, a rejected push), report the error output
+  clearly. Do not retry automatically. On a merge conflict, hand it back as it is.
