@@ -19,6 +19,7 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 | project | A named group of issues across teams, with a state of its own. | `project` | none | `docs/reference/commands.md#muster-project-list` |
 | comment | A markdown note on an issue, by a user, in order of creation. | `comment` | comment | `docs/reference/commands.md#muster-issue-comment` |
 | attachment | A link on an issue, with a title and a URL. | `attachment` | attachment | `docs/reference/commands.md#muster-issue-get` |
+| sub-issue | An issue whose `parent` is another issue; the parent prints its `children`. | `parent`, `children`, `parentId` | checklist item (the nearest) | `docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md` |
 | assignee | The user responsible for an issue; `me` is the key's owner. | `assignee` | member | `docs/reference/commands.md#muster-issue-create` |
 | priority | An integer from 0 (none) to 4 (low); 1 is urgent. | `priority`, `priorityLabel` | none | `docs/reference/commands.md#muster-issue-create` |
 | session stamp | The last line of a comment an agent writes: `Session stamp: <team>/<session>, <date>`. | none | the same line | `.claude/skills/linear-done/SKILL.md` |

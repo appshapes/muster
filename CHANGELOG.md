@@ -6,7 +6,11 @@ user-visible change, added in the same commit as the change. The format follows
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- ADR 0013 decides the second slice: sub-issues, attachments and projects, in three
+  features, in that order; cycles wait until a team of the workspace enables them
+  ([ADR 0013](docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md)).
 
 ## 0.1.1 - 2026-11-03
 
