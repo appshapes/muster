@@ -29,10 +29,10 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 | role | A person's permission level in the workspace: `owner`, `admin`, `user` (a member) or `guest`; every member is an admin on the Free plan. | `UserRoleType`, `admin`, `owner`, `guest` | admin, normal, observer (the nearest) | `docs/reference/commands.md#muster-workspace-update` |
 | invitations role | The least role that may invite a user; `--invitations-role` on `workspace update`. | `securitySettings.invitationsRole` | none | `docs/reference/commands.md#muster-workspace-update` |
 | team creation role | The least role that may create a team; `--team-creation-role`. | `securitySettings.teamCreationRole` | none | `docs/reference/commands.md#muster-workspace-update` |
-| label management role | The least role that may manage workspace labels; `--label-management-role`. | `securitySettings.labelManagementRole` | none | `docs/reference/commands.md#muster-workspace-update` |
+| label management role | The least role that may manage labels: of the workspace on `workspace update`, of the team on `team update`; `--label-management-role` on both. | `securitySettings.labelManagementRole`, `securitySettings.labelManagement` | none | `docs/reference/commands.md#muster-workspace-update` |
 | personal api keys role | The least role that may create a personal API key; `--personal-api-keys-role`. | `securitySettings.personalApiKeysRole` | none | `docs/reference/commands.md#muster-workspace-update` |
 | admin management role | The least role that may grant or revoke the admin role; `--admin-management-role`. | `securitySettings.adminManagementRole` | none | `docs/reference/commands.md#muster-workspace-update` |
-| template management role | The least role that may manage workspace templates; `--template-management-role`. | `securitySettings.templateManagementRole` | none | `docs/reference/commands.md#muster-workspace-update` |
+| template management role | The least role that may manage templates: of the workspace on `workspace update`, of the team on `team update`; `--template-management-role` on both. | `securitySettings.templateManagementRole`, `securitySettings.templateManagement` | none | `docs/reference/commands.md#muster-workspace-update` |
 | integration creation role | The least role that may install an integration; `--integration-creation-role`. | `securitySettings.integrationCreationRole` | none | `docs/reference/commands.md#muster-workspace-update` |
 | import role | The least role that may import data; `--import-role`. | `securitySettings.importRole` | none | `docs/reference/commands.md#muster-workspace-update` |
 | api settings role | The least role that may manage the workspace's API settings; `--api-settings-role`. | `securitySettings.apiSettingsRole` | none | `docs/reference/commands.md#muster-workspace-update` |
@@ -44,6 +44,37 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 | timezone | The IANA timezone a team's cycles and reminders follow (`Europe/London`); `--timezone` on `team create`. | `timezone` | none | `docs/reference/commands.md#muster-team-create` |
 | cycles enabled | Whether a team uses cycles, Linear's time-boxed sprints; `--cycles-enabled` on `team create`; cycles are made by Linear from the team's cycle settings. | `cyclesEnabled` | none | `docs/reference/commands.md#muster-team-create` |
 | copy settings from | A team, by key, whose settings a new team starts from; `--copy-settings-from` on `team create`. | `copySettingsFromTeamId` | none | `docs/reference/commands.md#muster-team-create` |
+| icon | A team's icon, as Linear names it; `--icon` on `team update`. | `icon` | none | `docs/reference/commands.md#muster-team-update` |
+| color | A team's colour, a hex string (`#4ea7fc`); `--color` on `team update`. | `color` | none | `docs/reference/commands.md#muster-team-update` |
+| private | Whether a team is visible to its members alone; `--private` on `team update`, read back as `visibility`. | `private`, `visibility` | private board | `docs/reference/commands.md#muster-team-update` |
+| cycle start day | The weekday a team's cycles start, 0 for Sunday to 6 for Saturday; `--cycle-start-day`. | `cycleStartDay` | none | `docs/reference/commands.md#muster-team-update` |
+| cycle duration | How many weeks a team's cycle lasts; `--cycle-duration`. | `cycleDuration` | none | `docs/reference/commands.md#muster-team-update` |
+| cycle cooldown | How many weeks of cooldown follow a team's cycle; `--cycle-cooldown`. | `cycleCooldownTime` | none | `docs/reference/commands.md#muster-team-update` |
+| cycle auto assign started | Whether an issue that is started is put in the active cycle; `--cycle-auto-assign-started`. | `cycleIssueAutoAssignStarted` | none | `docs/reference/commands.md#muster-team-update` |
+| cycle auto assign completed | Whether an issue that is completed is put in the active cycle; `--cycle-auto-assign-completed`. | `cycleIssueAutoAssignCompleted` | none | `docs/reference/commands.md#muster-team-update` |
+| cycle lock to active | Whether only issues in a cycle may be active; `--cycle-lock-to-active`. | `cycleLockToActive` | none | `docs/reference/commands.md#muster-team-update` |
+| cycle enabled start date | The time a team's cycles begin, which `team update` sets when it enables them; `--cycle-enabled-start-date`. | `cycleEnabledStartDate` | none | `docs/reference/commands.md#muster-team-update` |
+| upcoming cycle count | How many upcoming cycles Linear keeps made for a team; `--upcoming-cycle-count`. | `upcomingCycleCount` | none | `docs/reference/commands.md#muster-team-update` |
+| triage enabled | Whether new issues from outside the team land in triage, a state of its own before the backlog; `--triage-enabled`. | `triageEnabled`, `triageIssueState` | none | `docs/reference/commands.md#muster-team-update` |
+| require priority to leave triage | Whether an issue needs a priority before it leaves triage; `--require-priority-to-leave-triage`. | `requirePriorityToLeaveTriage` | none | `docs/reference/commands.md#muster-team-update` |
+| default issue state | The state a team's new issues start in; `--default-issue-state` on `team update`, by name. | `defaultIssueState`, `defaultIssueStateId` | the first list | `docs/reference/commands.md#muster-team-update` |
+| issue estimation type | How a team estimates issues: `notUsed`, `exponential`, `fibonacci`, `linear` or `tShirt`; `--issue-estimation-type`. | `issueEstimationType` | none | `docs/reference/commands.md#muster-team-update` |
+| issue estimation allow zero | Whether an estimate may be zero; `--issue-estimation-allow-zero`. | `issueEstimationAllowZero` | none | `docs/reference/commands.md#muster-team-update` |
+| issue estimation extended | Whether the estimate scale has its extra points; `--issue-estimation-extended`. | `issueEstimationExtended` | none | `docs/reference/commands.md#muster-team-update` |
+| default issue estimate | The estimate an issue has when none is set; `--default-issue-estimate`. | `defaultIssueEstimate` | none | `docs/reference/commands.md#muster-team-update` |
+| auto close period | The months after which a team's idle issue is closed, or `none`; `--auto-close-period`. | `autoClosePeriod` | none | `docs/reference/commands.md#muster-team-update` |
+| auto close state | The canceled state an auto-closed issue goes to; `--auto-close-state`, by name. | `autoCloseStateId` | none | `docs/reference/commands.md#muster-team-update` |
+| auto close parent issues | Whether a parent issue closes when every sub-issue is closed; `--auto-close-parent-issues`. | `autoCloseParentIssues` | none | `docs/reference/commands.md#muster-team-update` |
+| auto close child issues | Whether the sub-issues close when their parent is closed; `--auto-close-child-issues`. | `autoCloseChildIssues` | none | `docs/reference/commands.md#muster-team-update` |
+| auto archive period | The months after which a team's closed issue is archived; `--auto-archive-period`. | `autoArchivePeriod` | none | `docs/reference/commands.md#muster-team-update` |
+| join by default | Whether a new user of the workspace joins the team by default, a workspace admin's setting; `--join-by-default`. | `joinByDefault` | none | `docs/reference/commands.md#muster-team-update` |
+| all members can join | Whether every member of the workspace may join the team; `--all-members-can-join`. | `allMembersCanJoin` | none | `docs/reference/commands.md#muster-team-update` |
+| initiatives enabled | Whether initiatives show in the team's sidebar; `--initiatives-enabled`. | `initiativesEnabled` | none | `docs/reference/commands.md#muster-team-update` |
+| group issue history | Whether an issue's recent history entries are grouped; `--group-issue-history`. | `groupIssueHistory` | none | `docs/reference/commands.md#muster-team-update` |
+| team role | A person's role inside a team, `owner` or `member`; the value of the team's role settings. | `TeamRoleType`, `TeamMembership.owner` | none | `docs/reference/commands.md#muster-team-update` |
+| team management role | The least team role that may change a team's settings; `--team-management-role`. | `securitySettings.teamManagement` | none | `docs/reference/commands.md#muster-team-update` |
+| member management role | The least team role that may add or remove a team's members; `--member-management-role`. | `securitySettings.memberManagement` | none | `docs/reference/commands.md#muster-team-update` |
+| issue sharing role | The least team role that may share an issue outside the team; `--issue-sharing-role`. | `securitySettings.issueSharing` | none | `docs/reference/commands.md#muster-team-update` |
 | issue | One unit of work, with a title, a description in markdown, a state, labels and comments. | `issue` | card | `docs/reference/commands.md#muster-issue-get` |
 | identifier | An issue's human name: the team key, a dash and the number, `APP-12`. | `identifier` | card number in the URL | `docs/reference/commands.md#muster-issue-get` |
 | number | The integer part of an identifier, unique inside a team. | `number` | `idShort` | `docs/reference/commands.md#muster-issue-get` |

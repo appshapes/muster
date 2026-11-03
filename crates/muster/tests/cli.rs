@@ -1445,6 +1445,128 @@ fn team_create_makes_a_team_with_its_states_and_refuses_a_duplicate_name() {
 }
 
 #[test]
+fn team_update_changes_only_what_is_passed_and_resolves_names() {
+    let fake = Fake::start().unwrap();
+    fake.add_team("SMK", "Smoke tests");
+    let run = muster(
+        &fake,
+        &[
+            "team",
+            "update",
+            "SMK",
+            "--description",
+            "The smoke team.",
+            "--private",
+            "true",
+            "--cycles-enabled",
+            "true",
+            "--cycle-enabled-start-date",
+            "2026-11-10T00:00:00Z",
+            "--cycle-start-day",
+            "1",
+            "--cycle-duration",
+            "1",
+            "--default-issue-state",
+            "Todo",
+            "--auto-close-state",
+            "Canceled",
+            "--auto-close-period",
+            "none",
+            "--issue-estimation-type",
+            "fibonacci",
+            "--parent",
+            "APP",
+            "--team-management-role",
+            "owner",
+        ],
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let v = run.one();
+    assert_eq!(v["key"], "SMK");
+    assert_eq!(v["description"], "The smoke team.");
+    assert_eq!(
+        v["visibility"], "private",
+        "Linear's current field, not the deprecated one"
+    );
+    assert_eq!(v["cyclesEnabled"], true);
+    assert_eq!(v["cycleStartDay"], 1);
+    assert_eq!(v["cycleDuration"], 1);
+    assert_eq!(
+        v["cycleCooldownTime"], 0,
+        "a flag left out leaves its setting alone"
+    );
+    assert_eq!(
+        v["defaultIssueState"]["name"], "Todo",
+        "resolved in the team"
+    );
+    assert!(v["autoCloseStateId"].is_string());
+    assert!(v["autoClosePeriod"].is_null());
+    assert_eq!(v["issueEstimationType"], "fibonacci");
+    assert_eq!(v["parent"]["key"], "APP");
+    assert_eq!(v["securitySettings"]["teamManagement"], "owner");
+    assert_eq!(v["timezone"], "Etc/UTC", "untouched");
+    let back = muster(&fake, &["team", "get", "SMK"]).one();
+    assert_eq!(back["cyclesEnabled"], true);
+    assert_eq!(back["parent"]["key"], "APP");
+
+    let orphan = muster(&fake, &["team", "update", "SMK", "--parent", "none"]);
+    assert_eq!(orphan.code, 0, "{}", orphan.stderr);
+    assert!(orphan.one()["parent"].is_null());
+    let lowercase = muster(
+        &fake,
+        &["team", "update", "smk", "--default-issue-state", "Todo"],
+    );
+    assert_eq!(
+        lowercase.code, 0,
+        "the states are filtered by the key Linear returned, not the key as typed: {}",
+        lowercase.stderr
+    );
+    assert_eq!(lowercase.one()["key"], "SMK");
+    assert_eq!(lowercase.one()["defaultIssueState"]["name"], "Todo");
+    let inferred = muster_with(
+        &fake,
+        &["team", "update", "--timezone", "Europe/London"],
+        &[("LINEAR_API_KEY", KEY), ("MUSTER_TEAM", "SMK")],
+        &temp_dir(),
+        Stdio::null(),
+    );
+    assert_eq!(inferred.code, 0, "{}", inferred.stderr);
+    assert_eq!(inferred.one()["key"], "SMK");
+    assert_eq!(inferred.one()["timezone"], "Europe/London");
+
+    let before = fake
+        .operations()
+        .iter()
+        .filter(|o| *o == "TeamUpdate")
+        .count();
+    let nothing = muster(&fake, &["team", "update", "SMK"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    assert_eq!(nothing.error()["message"], "nothing to change");
+    let no_state = muster(
+        &fake,
+        &["team", "update", "SMK", "--default-issue-state", "Nope"],
+    );
+    assert_eq!(no_state.code, 4, "{}", no_state.stderr);
+    let itself = muster(&fake, &["team", "update", "SMK", "--parent", "smk"]);
+    assert_eq!(itself.code, 2, "{}", itself.stderr);
+    let sunday_plus = muster(&fake, &["team", "update", "SMK", "--cycle-start-day", "7"]);
+    assert_eq!(sunday_plus.code, 2, "{}", sunday_plus.stderr);
+    let maybe = muster(&fake, &["team", "update", "SMK", "--private", "maybe"]);
+    assert_eq!(maybe.code, 2, "{}", maybe.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "TeamUpdate")
+            .count(),
+        before,
+        "the usage errors and the unknown state sent no mutation"
+    );
+    fake.fail_next("TeamUpdate", Failure::Drop);
+    let run = muster(&fake, &["team", "update", "SMK", "--name", "Dropped"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+}
+
+#[test]
 fn team_retire_and_unretire_set_and_clear_retired_at() {
     let fake = Fake::start().unwrap();
     fake.add_team("SMK", "Smoke tests");

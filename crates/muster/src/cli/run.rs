@@ -10,7 +10,7 @@ use crate::bounds::{
 use crate::cli::{
     AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
     IssueListArgs, ListArgs, ListCommand, ProjectCommand, ProjectCreateArgs, TeamCommand,
-    TeamCreateArgs, TeamRefArgs, UpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
+    TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -44,6 +44,7 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 TeamCommand::List(args) => list_teams(&session, args, out),
                 TeamCommand::Get(args) => team_get(&session, args, out),
                 TeamCommand::Create(args) => team_create(&session, args, out),
+                TeamCommand::Update(args) => team_update(&session, args, out),
                 TeamCommand::Retire(args) => team_retire(&session, args, true, out),
                 TeamCommand::Unretire(args) => team_retire(&session, args, false, out),
                 TeamCommand::Delete(args) => team_delete(&session, args, out),
@@ -691,6 +692,181 @@ fn team_create(session: &Session, args: &TeamCreateArgs, out: &Output) -> Result
     Ok(())
 }
 
+/// The scalar part of a `teamUpdate` input from `team update`'s flags: only what was
+/// passed; `none` clears the auto-close period; the roles nest under
+/// `securitySettings`. The parent and the two states are resolved by the handler,
+/// after these checks, so that a refusal here sends nothing.
+fn team_update_input(args: &TeamUpdateArgs) -> Result<Map<String, Value>, Error> {
+    let mut input = Map::new();
+    if let Some(name) = &args.name {
+        check_body(Text::Name, name)?;
+        input.insert("name".into(), json!(name));
+    }
+    if let Some(key) = &args.key {
+        let key = key.trim();
+        if key.is_empty() {
+            return Err(Error::new(ErrorCode::Usage, "--key must not be empty"));
+        }
+        input.insert("key".into(), json!(key));
+    }
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    for (field, value) in [
+        ("icon", &args.icon),
+        ("color", &args.color),
+        ("timezone", &args.timezone),
+        ("cycleEnabledStartDate", &args.cycle_enabled_start_date),
+    ] {
+        if let Some(value) = value {
+            input.insert(field.into(), json!(value));
+        }
+    }
+    for (field, value) in [
+        ("private", args.private),
+        ("cyclesEnabled", args.cycles_enabled),
+        (
+            "cycleIssueAutoAssignStarted",
+            args.cycle_auto_assign_started,
+        ),
+        (
+            "cycleIssueAutoAssignCompleted",
+            args.cycle_auto_assign_completed,
+        ),
+        ("cycleLockToActive", args.cycle_lock_to_active),
+        ("triageEnabled", args.triage_enabled),
+        (
+            "requirePriorityToLeaveTriage",
+            args.require_priority_to_leave_triage,
+        ),
+        ("issueEstimationAllowZero", args.issue_estimation_allow_zero),
+        ("issueEstimationExtended", args.issue_estimation_extended),
+        ("autoCloseParentIssues", args.auto_close_parent_issues),
+        ("autoCloseChildIssues", args.auto_close_child_issues),
+        ("joinByDefault", args.join_by_default),
+        ("allMembersCanJoin", args.all_members_can_join),
+        ("initiativesEnabled", args.initiatives_enabled),
+        ("groupIssueHistory", args.group_issue_history),
+    ] {
+        if let Some(value) = value {
+            input.insert(field.into(), json!(value));
+        }
+    }
+    if let Some(day) = args.cycle_start_day {
+        input.insert("cycleStartDay".into(), json!(day));
+    }
+    for (field, value) in [
+        ("cycleDuration", args.cycle_duration),
+        ("cycleCooldownTime", args.cycle_cooldown),
+        ("upcomingCycleCount", args.upcoming_cycle_count),
+        ("defaultIssueEstimate", args.default_issue_estimate),
+        ("autoArchivePeriod", args.auto_archive_period),
+    ] {
+        if let Some(value) = value {
+            input.insert(field.into(), json!(value));
+        }
+    }
+    if let Some(kind) = args.issue_estimation_type {
+        input.insert("issueEstimationType".into(), json!(kind.linear()));
+    }
+    if let Some(period) = &args.auto_close_period {
+        let value = if is_none(period) {
+            Value::Null
+        } else {
+            // `f64::from_str` accepts `nan`, `inf` and a sign, and serde_json turns a
+            // number that is not finite into `null`, the `none` sentinel: only a
+            // finite, non-negative number is sent, and anything else is refused before
+            // any request (CLAUDE.md, When in doubt: exit non-zero rather than guess).
+            let months = period
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|months| months.is_finite() && *months >= 0.0)
+                .ok_or_else(|| {
+                    Error::with_hint(
+                        ErrorCode::Usage,
+                        format!("--auto-close-period {period:?} is not a number of months"),
+                        "pass a non-negative number of months, or `none` to never close idle issues",
+                    )
+                })?;
+            json!(months)
+        };
+        input.insert("autoClosePeriod".into(), value);
+    }
+    let mut security = Map::new();
+    for (field, role) in [
+        ("teamManagement", args.team_management_role),
+        ("memberManagement", args.member_management_role),
+        ("labelManagement", args.label_management_role),
+        ("templateManagement", args.template_management_role),
+        ("issueSharing", args.issue_sharing_role),
+    ] {
+        if let Some(role) = role {
+            security.insert(field.into(), json!(role.linear()));
+        }
+    }
+    if !security.is_empty() {
+        input.insert("securitySettings".into(), Value::Object(security));
+    }
+    Ok(input)
+}
+
+/// `team update`: `teamUpdate` with the input above and the parent and states
+/// resolved by key and name, and the team as Linear returns it afterwards (ADR 0014,
+/// group 2). Most settings need a team owner or a workspace admin; Linear's refusal
+/// is exit 6 with its message.
+fn team_update(session: &Session, args: &TeamUpdateArgs, out: &Output) -> Result<(), Error> {
+    let mut input = team_update_input(args)?;
+    let team = session.team_full(&session.team_key_of(&args.key_of)?, false)?;
+    let id = need_str(&team, "id", "TeamByKey")?;
+    // The key as Linear spells it, not as typed: `TeamByKey` matches a key in any
+    // case, but the states are filtered with `eq`, which is case-sensitive, so a
+    // lowercase key would report a state that exists as matching nothing.
+    let key = need_str(&team, "key", "TeamByKey")?;
+    if let Some(parent) = &args.parent {
+        let value = if is_none(parent) {
+            Value::Null
+        } else {
+            let parent_id = need_str(&session.team_full(parent, false)?, "id", "TeamByKey")?;
+            if parent_id == id {
+                return Err(Error::with_hint(
+                    ErrorCode::Usage,
+                    format!("{key} cannot be its own parent"),
+                    "name another team, or `none` to take it out from under its parent",
+                ));
+            }
+            json!(parent_id)
+        };
+        input.insert("parentId".into(), value);
+    }
+    if let Some(state) = &args.default_issue_state {
+        input.insert(
+            "defaultIssueStateId".into(),
+            json!(session.state_id(&key, state)?),
+        );
+    }
+    if let Some(state) = &args.auto_close_state {
+        input.insert(
+            "autoCloseStateId".into(),
+            json!(session.state_id(&key, state)?),
+        );
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one setting; `muster team update --help` lists them, and `muster team get` shows their values",
+        ));
+    }
+    let data = session.linear.run(
+        &ops::TEAM_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "teamUpdate", "team")?);
+    Ok(())
+}
+
 /// `team retire` and `team unretire`: `teamUpdate` with `retiredAt` set to now, or
 /// cleared, and the team as Linear returns it.
 fn team_retire(
@@ -932,8 +1108,8 @@ fn issue_get(session: &Session, args: &GetArgs, out: &Output) -> Result<(), Erro
     Ok(())
 }
 
-/// Whether a flag's value is the `none` sentinel of `--assignee`, `--project` and
-/// `--parent`.
+/// Whether a flag's value is the `none` sentinel of `--assignee`, `--project`,
+/// `--parent` and `team update`'s `--auto-close-period`.
 fn is_none(value: &str) -> bool {
     value.trim().eq_ignore_ascii_case("none")
 }
@@ -1638,6 +1814,83 @@ mod tests {
                 .err()
                 .map(|e| e.code),
             Some(ErrorCode::Refused)
+        );
+    }
+
+    #[test]
+    fn a_team_update_input_holds_only_what_was_passed() {
+        use crate::cli::{EstimationType, TeamRole};
+        assert_eq!(
+            team_update_input(&TeamUpdateArgs::default()).ok(),
+            Some(Map::new()),
+            "no flag is an empty input; the handler refuses it after resolving the team"
+        );
+        let args = TeamUpdateArgs {
+            name: Some("Smoke".into()),
+            private: Some(true),
+            cycle_start_day: Some(1),
+            cycle_duration: Some(2),
+            issue_estimation_type: Some(EstimationType::TShirt),
+            auto_close_period: Some(" None ".into()),
+            team_management_role: Some(TeamRole::Owner),
+            ..TeamUpdateArgs::default()
+        };
+        let input = team_update_input(&args).unwrap_or_default();
+        assert_eq!(input.get("name"), Some(&json!("Smoke")));
+        assert_eq!(input.get("private"), Some(&json!(true)));
+        assert_eq!(input.get("cycleStartDay"), Some(&json!(1)));
+        assert_eq!(input.get("cycleDuration"), Some(&json!(2)));
+        assert_eq!(
+            input.get("cyclesEnabled"),
+            None,
+            "a flag left out is not sent"
+        );
+        assert_eq!(input.get("issueEstimationType"), Some(&json!("tShirt")));
+        assert_eq!(
+            input.get("autoClosePeriod"),
+            Some(&Value::Null),
+            "`none` clears the period"
+        );
+        assert_eq!(
+            at(
+                &Value::Object(input.clone()),
+                "securitySettings.teamManagement"
+            ),
+            "owner"
+        );
+        assert_eq!(
+            at(&Value::Object(input), "securitySettings.memberManagement"),
+            &Value::Null
+        );
+        let months = TeamUpdateArgs {
+            auto_close_period: Some("3".into()),
+            ..TeamUpdateArgs::default()
+        };
+        assert_eq!(
+            team_update_input(&months)
+                .unwrap_or_default()
+                .get("autoClosePeriod"),
+            Some(&json!(3.0))
+        );
+        for period in ["soon", "nan", "inf", "-inf", "infinity", "-1"] {
+            let bad = TeamUpdateArgs {
+                auto_close_period: Some(period.into()),
+                ..TeamUpdateArgs::default()
+            };
+            assert_eq!(
+                team_update_input(&bad).err().map(|e| e.code),
+                Some(ErrorCode::Usage),
+                "--auto-close-period {period:?} is refused before any request, \
+                 never sent as `null` or as a negative number"
+            );
+        }
+        let blank = TeamUpdateArgs {
+            key: Some(" ".into()),
+            ..TeamUpdateArgs::default()
+        };
+        assert_eq!(
+            team_update_input(&blank).err().map(|e| e.code),
+            Some(ErrorCode::Usage)
         );
     }
 

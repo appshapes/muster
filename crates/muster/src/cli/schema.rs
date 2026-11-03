@@ -528,6 +528,7 @@ mod tests {
             "team list",
             "team get",
             "team create",
+            "team update",
             "team retire",
             "team unretire",
             "team delete",

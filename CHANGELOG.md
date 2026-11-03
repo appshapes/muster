@@ -43,6 +43,18 @@ user-visible change, added in the same commit as the change. The format follows
   schedules its data for deletion after Linear's grace period, printing Linear's delete
   payload, and `team unarchive <KEY>` cancels that within the period (ADR 0014,
   group 2; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `team update [<KEY>]` changes a team's settings through Linear's `teamUpdate` and
+  prints the team as Linear returns it afterwards: the name, key, description, icon,
+  colour and timezone, `--private`, `--parent <KEY|none>`, the cycle settings
+  (`--cycles-enabled`, `--cycle-enabled-start-date`, the start day, duration, cooldown,
+  the auto-assign and lock switches, the upcoming count), the triage settings, the
+  default issue state by name, the estimation settings, the auto-close and
+  auto-archive settings (`--auto-close-period none` never closes an idle issue), the
+  membership settings, initiatives, grouped history, and the five team roles. A flag
+  left out leaves its setting alone, a boolean takes `true` or `false`, a state is
+  resolved in the team before any request, and no flag at all is exit 2; most settings
+  need a team owner or a workspace admin, and Linear's refusal is exit 6 (ADR 0014,
+  group 2; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ### Changed
 

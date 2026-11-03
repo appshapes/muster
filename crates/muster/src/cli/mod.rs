@@ -294,6 +294,8 @@ pub enum TeamCommand {
     Get(TeamRefArgs),
     /// Create a team: its creator becomes a member and Linear makes its default states and labels; a name a team already has is refused unless --allow-duplicate
     Create(Box<TeamCreateArgs>),
+    /// Change a team's settings; a flag left out leaves its setting alone, a boolean takes true or false, and most need a team owner or a workspace admin
+    Update(Box<TeamUpdateArgs>),
     /// Retire a team: it keeps its issues and accepts no new ones (`retiredAt` set to now)
     Retire(TeamRefArgs),
     /// Take a retired team back into use (`retiredAt` cleared)
@@ -339,6 +341,178 @@ pub struct TeamCreateArgs {
     /// Create it even when a team has the same name
     #[arg(long)]
     pub allow_duplicate: bool,
+}
+
+/// `team update`: every setting of `TeamUpdateInput` that is public, not deprecated
+/// and readable back with `team get` (ADR 0014, group 2).
+#[derive(Args, Debug, Default)]
+pub struct TeamUpdateArgs {
+    /// The team key (APP); when absent, --team, MUSTER_TEAM or the workspace's only team
+    #[arg(value_name = "KEY")]
+    pub key_of: Option<String>,
+    /// A new name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new key, the prefix of the team's identifiers; Linear keeps the old one redirecting
+    #[arg(long, value_name = "KEY")]
+    pub key: Option<String>,
+    /// A new description, plain text
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// The team's icon
+    #[arg(long, value_name = "TEXT")]
+    pub icon: Option<String>,
+    /// The team's colour, a hex string (#4ea7fc)
+    #[arg(long, value_name = "HEX")]
+    pub color: Option<String>,
+    /// Whether the team is private, visible to its members alone
+    #[arg(long, value_name = "true|false")]
+    pub private: Option<bool>,
+    /// The team's timezone, an IANA name (Europe/London)
+    #[arg(long, value_name = "TZ")]
+    pub timezone: Option<String>,
+    /// The parent team, by key, or `none` to take the team out from under its parent
+    #[arg(long, value_name = "KEY")]
+    pub parent: Option<String>,
+    /// Whether the team uses cycles; Linear makes the cycles from the settings below
+    #[arg(long, value_name = "true|false")]
+    pub cycles_enabled: Option<bool>,
+    /// The weekday a cycle starts, 0 for Sunday to 6 for Saturday
+    #[arg(long, value_name = "0-6", value_parser = clap::value_parser!(u8).range(0..=6))]
+    pub cycle_start_day: Option<u8>,
+    /// How many weeks a cycle lasts
+    #[arg(long, value_name = "WEEKS")]
+    pub cycle_duration: Option<u32>,
+    /// How many weeks of cooldown follow a cycle
+    #[arg(long, value_name = "WEEKS")]
+    pub cycle_cooldown: Option<u32>,
+    /// Whether an issue that is started is put in the active cycle
+    #[arg(long, value_name = "true|false")]
+    pub cycle_auto_assign_started: Option<bool>,
+    /// Whether an issue that is completed is put in the active cycle
+    #[arg(long, value_name = "true|false")]
+    pub cycle_auto_assign_completed: Option<bool>,
+    /// Whether only issues in a cycle may be active
+    #[arg(long, value_name = "true|false")]
+    pub cycle_lock_to_active: Option<bool>,
+    /// When cycles begin, a time (2026-11-10T00:00:00Z)
+    #[arg(long, value_name = "TIME")]
+    pub cycle_enabled_start_date: Option<String>,
+    /// How many upcoming cycles Linear keeps made
+    #[arg(long, value_name = "N")]
+    pub upcoming_cycle_count: Option<u32>,
+    /// Whether new issues from outside the team land in triage
+    #[arg(long, value_name = "true|false")]
+    pub triage_enabled: Option<bool>,
+    /// Whether an issue needs a priority before it leaves triage
+    #[arg(long, value_name = "true|false")]
+    pub require_priority_to_leave_triage: Option<bool>,
+    /// The state a new issue starts in, by name
+    #[arg(long, value_name = "NAME")]
+    pub default_issue_state: Option<String>,
+    /// How issues are estimated
+    #[arg(long, value_name = "TYPE", value_enum)]
+    pub issue_estimation_type: Option<EstimationType>,
+    /// Whether an estimate may be zero
+    #[arg(long, value_name = "true|false")]
+    pub issue_estimation_allow_zero: Option<bool>,
+    /// Whether the estimate scale has its extra points
+    #[arg(long, value_name = "true|false")]
+    pub issue_estimation_extended: Option<bool>,
+    /// The estimate an issue has when none is set
+    #[arg(long, value_name = "N")]
+    pub default_issue_estimate: Option<u32>,
+    /// The months after which an idle issue is closed, or `none` to never close one
+    #[arg(long, value_name = "MONTHS|none")]
+    pub auto_close_period: Option<String>,
+    /// The canceled state an auto-closed issue goes to, by name
+    #[arg(long, value_name = "NAME")]
+    pub auto_close_state: Option<String>,
+    /// Whether a parent issue closes when every sub-issue is closed
+    #[arg(long, value_name = "true|false")]
+    pub auto_close_parent_issues: Option<bool>,
+    /// Whether the sub-issues close when their parent is closed
+    #[arg(long, value_name = "true|false")]
+    pub auto_close_child_issues: Option<bool>,
+    /// The months after which a closed issue is archived
+    #[arg(long, value_name = "MONTHS")]
+    pub auto_archive_period: Option<u32>,
+    /// Whether a new user joins the team by default; a workspace admin's setting
+    #[arg(long, value_name = "true|false")]
+    pub join_by_default: Option<bool>,
+    /// Whether every member of the workspace may join the team
+    #[arg(long, value_name = "true|false")]
+    pub all_members_can_join: Option<bool>,
+    /// Whether initiatives show in the team's sidebar
+    #[arg(long, value_name = "true|false")]
+    pub initiatives_enabled: Option<bool>,
+    /// Whether an issue's recent history entries are grouped
+    #[arg(long, value_name = "true|false")]
+    pub group_issue_history: Option<bool>,
+    /// The least team role that may change the team's settings
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub team_management_role: Option<TeamRole>,
+    /// The least team role that may add or remove members
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub member_management_role: Option<TeamRole>,
+    /// The least team role that may manage the team's labels
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub label_management_role: Option<TeamRole>,
+    /// The least team role that may manage the team's templates
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub template_management_role: Option<TeamRole>,
+    /// The least team role that may share an issue outside the team
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub issue_sharing_role: Option<TeamRole>,
+}
+
+/// A role inside a team, as Linear's `TeamRoleType` names it.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TeamRole {
+    /// A team owner.
+    Owner,
+    /// A team member.
+    Member,
+}
+
+impl TeamRole {
+    /// The value Linear takes.
+    pub fn linear(self) -> &'static str {
+        match self {
+            TeamRole::Owner => "owner",
+            TeamRole::Member => "member",
+        }
+    }
+}
+
+/// How a team estimates issues, as Linear's `issueEstimationType` spells it.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EstimationType {
+    /// No estimates.
+    #[value(name = "notUsed")]
+    NotUsed,
+    /// Powers of two.
+    Exponential,
+    /// The Fibonacci scale.
+    Fibonacci,
+    /// One to five.
+    Linear,
+    /// T-shirt sizes.
+    #[value(name = "tShirt")]
+    TShirt,
+}
+
+impl EstimationType {
+    /// The value Linear takes.
+    pub fn linear(self) -> &'static str {
+        match self {
+            EstimationType::NotUsed => "notUsed",
+            EstimationType::Exponential => "exponential",
+            EstimationType::Fibonacci => "fibonacci",
+            EstimationType::Linear => "linear",
+            EstimationType::TShirt => "tShirt",
+        }
+    }
 }
 
 /// `list` under `state`, `label` and `user`.
