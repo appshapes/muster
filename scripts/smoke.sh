@@ -151,9 +151,30 @@ jq -e '(.members | length) == 1' "$tmp/project-members.json" >/dev/null
 jq -e --arg n "Smoke project $stamp" '.name == $n' "$tmp/project-back.json" >/dev/null
 "$bin" project delete "Smoke project $stamp" | jq -c '{name}' >/dev/null
 echo
-echo "smoke: muster issue create --project 'Smoke tests'"
-"$bin" issue create --title "Smoke test $stamp" --project "Smoke tests" --description "Created by scripts/smoke.sh at $stamp. It is canceled by the same run." | tee "$tmp/create.json"
-jq -e '.project.name == "Smoke tests"' "$tmp/create.json" >/dev/null
+echo "smoke: muster milestone create --project 'Smoke tests' --name 'Smoke milestone' (exit 6 after the first run: the duplicate guard; it stays, for the fixture; ADR 0014)"
+set +e
+"$bin" milestone create --project "Smoke tests" --name "Smoke milestone" --description "The milestone the smoke issues go in; it stays so that the fixture has a node (ADR 0014)." > "$tmp/milestone.json" 2> "$tmp/milestone.err"
+code=$?
+set -e
+case "$code" in
+  0) jq -c '{name, status, project: .project.name}' "$tmp/milestone.json" ;;
+  6) cat "$tmp/milestone.err"; jq -e '.error.code == "refused" and (.error.message | test("a milestone named"))' "$tmp/milestone.err" >/dev/null ;;
+  *) echo "smoke: milestone create exited $code" >&2; cat "$tmp/milestone.err" >&2; exit 1 ;;
+esac
+"$bin" milestone list --project "Smoke tests" | jq -c '{name, targetDate, status}' | tee "$tmp/milestones.jsonl"
+jq -s -e 'map(.name) | index("Smoke milestone") != null' "$tmp/milestones.jsonl" >/dev/null
+echo
+echo "smoke: a throwaway milestone updated and deleted (ADR 0014)"
+"$bin" milestone create --project "Smoke tests" --name "Smoke $stamp" --target-date "${stamp%%T*}" | jq -c '{name, targetDate}' | tee "$tmp/milestone-throwaway.json"
+jq -e --arg n "Smoke $stamp" '.name == $n' "$tmp/milestone-throwaway.json" >/dev/null
+"$bin" milestone update "Smoke $stamp" --project "Smoke tests" --name "Smoky $stamp" --target-date none | jq -c '{name, targetDate}' | tee "$tmp/milestone-update.json"
+jq -e --arg n "Smoky $stamp" '.name == $n and .targetDate == null' "$tmp/milestone-update.json" >/dev/null
+"$bin" milestone delete "Smoky $stamp" --project "Smoke tests" | tee "$tmp/milestone-delete.json"
+jq -e '.success == true' "$tmp/milestone-delete.json" >/dev/null
+echo
+echo "smoke: muster issue create --project 'Smoke tests' --milestone 'Smoke milestone'"
+"$bin" issue create --title "Smoke test $stamp" --project "Smoke tests" --milestone "Smoke milestone" --description "Created by scripts/smoke.sh at $stamp. It is canceled by the same run." | tee "$tmp/create.json"
+jq -e '.project.name == "Smoke tests" and .projectMilestone.name == "Smoke milestone"' "$tmp/create.json" >/dev/null
 id=$(jq -r .identifier "$tmp/create.json")
 echo
 echo "smoke: muster issue comment $id"
@@ -186,6 +207,10 @@ echo
 echo "smoke: muster issue list --project 'Smoke tests'"
 "$bin" issue list --project "Smoke tests" | jq -c '{identifier, project: .project.name}' | tee "$tmp/in-project.jsonl"
 jq -s -e --arg id "$id" 'map(.identifier) | index($id) != null' "$tmp/in-project.jsonl" >/dev/null
+echo
+echo "smoke: muster issue list --milestone 'Smoke milestone'"
+"$bin" issue list --milestone "Smoke milestone" | jq -c '{identifier, milestone: .projectMilestone.name}' | tee "$tmp/in-milestone.jsonl"
+jq -s -e --arg id "$id" 'map(.identifier) | index($id) != null' "$tmp/in-milestone.jsonl" >/dev/null
 echo
 echo "smoke: muster issue list --parent $id"
 "$bin" issue list --parent "$id" | jq -c '{identifier, parent: .parent.identifier}'

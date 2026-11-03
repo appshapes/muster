@@ -75,6 +75,12 @@ pub enum Command {
         #[command(subcommand)]
         command: ProjectCommand,
     },
+    /// A project's milestones: list, create, update, delete
+    Milestone {
+        /// The milestone command.
+        #[command(subcommand)]
+        command: MilestoneCommand,
+    },
     /// The workspace's project statuses: list, create, update, archive, unarchive
     ProjectStatus {
         /// The project status command.
@@ -985,6 +991,81 @@ impl ProjectStatusType {
     }
 }
 
+/// The milestone commands (ADR 0014, group 10): the steps inside a project.
+#[derive(Subcommand, Debug)]
+pub enum MilestoneCommand {
+    /// List a project's milestones, one JSON object per line
+    List(MilestoneListArgs),
+    /// Add a milestone to a project; a name a milestone of the project has is refused unless --allow-duplicate
+    Create(MilestoneCreateArgs),
+    /// Change a milestone's name, description or target date
+    Update(MilestoneUpdateArgs),
+    /// Delete a milestone; no undo in Linear
+    Delete(MilestoneRefArgs),
+}
+
+/// `milestone list`.
+#[derive(Args, Debug)]
+pub struct MilestoneListArgs {
+    /// The project, by name
+    #[arg(long, value_name = "NAME")]
+    pub project: String,
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+}
+
+/// A milestone named in its project.
+#[derive(Args, Debug)]
+pub struct MilestoneRefArgs {
+    /// The milestone, by name
+    #[arg(value_name = "NAME")]
+    pub name: String,
+    /// The project, by name
+    #[arg(long, value_name = "NAME")]
+    pub project: String,
+}
+
+/// `milestone create`.
+#[derive(Args, Debug, Default)]
+pub struct MilestoneCreateArgs {
+    /// The project, by name
+    #[arg(long, value_name = "NAME")]
+    pub project: String,
+    /// The name
+    #[arg(long, value_name = "TEXT")]
+    pub name: String,
+    /// The description, markdown
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// The planned date, a date (2026-12-01)
+    #[arg(long, value_name = "DATE")]
+    pub target_date: Option<String>,
+    /// Create it even when a milestone of the project has the name
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `milestone update`.
+#[derive(Args, Debug, Default)]
+pub struct MilestoneUpdateArgs {
+    /// The milestone, by name
+    #[arg(value_name = "NAME")]
+    pub milestone: String,
+    /// The project, by name
+    #[arg(long, value_name = "NAME")]
+    pub project: String,
+    /// A new name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new description, markdown
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// A new planned date, a date (2026-12-01), or `none`
+    #[arg(long, value_name = "DATE")]
+    pub target_date: Option<String>,
+}
+
 /// `project create`.
 #[derive(Args, Debug)]
 pub struct ProjectCreateArgs {
@@ -1054,6 +1135,9 @@ pub struct IssueListArgs {
     /// Only issues in this project, by name, or `none` for issues in no project
     #[arg(long, value_name = "NAME")]
     pub project: Option<String>,
+    /// Only issues in this milestone, by name, or `none` for issues in no milestone
+    #[arg(long, value_name = "NAME")]
+    pub milestone: Option<String>,
     /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
     #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
     pub limit: usize,
@@ -1083,6 +1167,9 @@ pub struct CreateArgs {
     /// The project, by name
     #[arg(long, value_name = "NAME")]
     pub project: Option<String>,
+    /// The milestone, by name, in the project --project names
+    #[arg(long, value_name = "NAME", requires = "project")]
+    pub milestone: Option<String>,
     /// The assignee: `me`, an email address or a name
     #[arg(long, value_name = "WHO")]
     pub assignee: Option<String>,
@@ -1177,6 +1264,9 @@ pub struct UpdateArgs {
     /// A new project, by name, or `none` to remove it
     #[arg(long, value_name = "NAME")]
     pub project: Option<String>,
+    /// A new milestone, by name, in the issue's project (or the one --project names), or `none` to remove it
+    #[arg(long, value_name = "NAME")]
+    pub milestone: Option<String>,
     /// A new parent, which makes this a sub-issue, or `none` to take it out from under its parent
     #[arg(long, value_name = "ISSUE")]
     pub parent: Option<String>,

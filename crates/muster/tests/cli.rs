@@ -1863,6 +1863,259 @@ fn user_get_update_role_suspension_and_sessions() {
     assert_eq!(run.code, 7, "{}", run.stderr);
 }
 
+// ---- milestones (ADR 0014, group 10) -----------------------------------------------------
+
+#[test]
+fn milestone_list_create_update_delete_and_the_issue_flag() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds one milestone, "First cut", so that `project get` prints a node.
+    let seeded = muster(&fake, &["milestone", "list", "--project", "Muster"]);
+    assert_eq!(seeded.code, 0, "{}", seeded.stderr);
+    assert_eq!(seeded.lines().len(), 1);
+    assert_eq!(seeded.lines()[0]["name"], "First cut");
+    let created = muster(
+        &fake,
+        &[
+            "milestone",
+            "create",
+            "--project",
+            "muster",
+            "--name",
+            "Alpha",
+            "--description",
+            "The first cut.",
+            "--target-date",
+            "2026-12-01",
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let v = created.one();
+    assert_eq!(v["name"], "Alpha");
+    assert_eq!(v["targetDate"], "2026-12-01");
+    assert_eq!(v["project"]["name"], "Muster");
+    assert!(v["status"].is_string() && v["progress"].is_number());
+    let again = muster(
+        &fake,
+        &[
+            "milestone",
+            "create",
+            "--project",
+            "Muster",
+            "--name",
+            "alpha",
+        ],
+    );
+    assert_eq!(again.code, 6, "{}", again.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "MilestoneCreate")
+            .count(),
+        1,
+        "refused before any mutation"
+    );
+    // The guard's read failing is the command's exit, never "no duplicate" and a
+    // create: an agent that retries after a timeout makes one, not two (ADR 0008).
+    fake.fail_next("Milestones", Failure::Drop);
+    let unread = muster(
+        &fake,
+        &[
+            "milestone",
+            "create",
+            "--project",
+            "Muster",
+            "--name",
+            "Alpha",
+        ],
+    );
+    assert_eq!(unread.code, 7, "{}", unread.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "MilestoneCreate")
+            .count(),
+        1,
+        "no mutation after a guard whose read failed"
+    );
+    let nowhere = muster(
+        &fake,
+        &["milestone", "create", "--project", "Nope", "--name", "x"],
+    );
+    assert_eq!(nowhere.code, 4, "{}", nowhere.stderr);
+    let listed = muster(&fake, &["milestone", "list", "--project", "Muster"]);
+    assert_eq!(listed.lines().len(), 2);
+    // The list at its bound: what fits, and a `truncated` notice, never silence.
+    let cut = muster(
+        &fake,
+        &["milestone", "list", "--project", "Muster", "--limit", "1"],
+    );
+    assert_eq!(cut.code, 0, "{}", cut.stderr);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(cut.lines()[0]["name"], "First cut");
+    assert_eq!(cut.notices()[0]["code"], "truncated", "{}", cut.stderr);
+    let detail = muster(&fake, &["project", "get", "Muster"]).one();
+    assert!(
+        detail["projectMilestones"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["name"] == "Alpha"),
+        "`project get` lists it"
+    );
+
+    let issue = muster(
+        &fake,
+        &[
+            "issue",
+            "create",
+            "--title",
+            "In alpha",
+            "--project",
+            "Muster",
+            "--milestone",
+            "Alpha",
+        ],
+    );
+    assert_eq!(issue.code, 0, "{}", issue.stderr);
+    assert_eq!(issue.one()["projectMilestone"]["name"], "Alpha");
+    let id = issue.one()["identifier"].as_str().unwrap().to_string();
+    let orphan = muster(
+        &fake,
+        &[
+            "issue",
+            "create",
+            "--title",
+            "Nowhere",
+            "--milestone",
+            "Alpha",
+        ],
+    );
+    assert_eq!(
+        orphan.code, 2,
+        "--milestone needs --project: {}",
+        orphan.stderr
+    );
+    let listed = muster(&fake, &["issue", "list", "--milestone", "alpha"]);
+    assert_eq!(listed.lines().len(), 1);
+    assert_eq!(listed.lines()[0]["identifier"], id);
+    let without = muster(&fake, &["issue", "list", "--milestone", "none", "--all"]);
+    assert!(
+        without
+            .lines()
+            .iter()
+            .all(|i| i["projectMilestone"].is_null())
+    );
+    let cleared = muster(&fake, &["issue", "update", &id, "--milestone", "none"]);
+    assert_eq!(cleared.code, 0, "{}", cleared.stderr);
+    assert!(cleared.one()["projectMilestone"].is_null());
+    let back = muster(&fake, &["issue", "update", &id, "--milestone", "Alpha"]);
+    assert_eq!(
+        back.code, 0,
+        "resolved in the issue's own project: {}",
+        back.stderr
+    );
+    assert_eq!(back.one()["projectMilestone"]["name"], "Alpha");
+    let no_project = muster(&fake, &["issue", "update", "APP-1", "--milestone", "Alpha"]);
+    assert_eq!(
+        no_project.code, 2,
+        "an issue in no project: {}",
+        no_project.stderr
+    );
+
+    let renamed = muster(
+        &fake,
+        &[
+            "milestone",
+            "update",
+            "Alpha",
+            "--project",
+            "Muster",
+            "--name",
+            "Beta",
+            "--target-date",
+            "none",
+        ],
+    );
+    assert_eq!(renamed.code, 0, "{}", renamed.stderr);
+    assert_eq!(renamed.one()["name"], "Beta");
+    assert!(renamed.one()["targetDate"].is_null());
+    assert_eq!(
+        muster(&fake, &["issue", "get", &id]).one()["projectMilestone"]["name"],
+        "Beta",
+        "the issue shows the new name"
+    );
+    let nothing = muster(
+        &fake,
+        &["milestone", "update", "Beta", "--project", "Muster"],
+    );
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+
+    let deleted = muster(
+        &fake,
+        &["milestone", "delete", "Beta", "--project", "Muster"],
+    );
+    assert_eq!(deleted.code, 0, "{}", deleted.stderr);
+    assert_eq!(deleted.one()["success"], true);
+    assert!(
+        muster(&fake, &["issue", "get", &id]).one()["projectMilestone"].is_null(),
+        "a deleted milestone leaves its issues"
+    );
+    let gone = muster(
+        &fake,
+        &["milestone", "delete", "Beta", "--project", "Muster"],
+    );
+    assert_eq!(gone.code, 4, "{}", gone.stderr);
+
+    fake.fail_next("MilestoneCreate", Failure::Drop);
+    let run = muster(
+        &fake,
+        &[
+            "milestone",
+            "create",
+            "--project",
+            "Muster",
+            "--name",
+            "Dropped",
+        ],
+    );
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    let created = muster(
+        &fake,
+        &[
+            "milestone",
+            "create",
+            "--project",
+            "Muster",
+            "--name",
+            "Gamma",
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    fake.fail_next("MilestoneUpdate", Failure::Drop);
+    let run = muster(
+        &fake,
+        &[
+            "milestone",
+            "update",
+            "Gamma",
+            "--project",
+            "Muster",
+            "--name",
+            "x",
+        ],
+    );
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("MilestoneDelete", Failure::Drop);
+    let run = muster(
+        &fake,
+        &["milestone", "delete", "Gamma", "--project", "Muster"],
+    );
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("Milestones", Failure::Drop);
+    let run = muster(&fake, &["milestone", "list", "--project", "Muster"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+}
+
 // ---- project statuses (ADR 0014, group 9) ------------------------------------------------
 
 #[test]

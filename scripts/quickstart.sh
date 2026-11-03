@@ -89,6 +89,13 @@ step "muster issue list --project"
 "$bin" issue list --project "Trying muster" | tee "$tmp/in-project.jsonl"
 jq -s -e --arg id "$id" 'map(.identifier) == [$id]' "$tmp/in-project.jsonl" >/dev/null
 
+# After the issue is in the project: `--milestone` resolves in the issue's own project.
+step "muster milestone create and the issue's --milestone"
+"$bin" milestone create --project "Trying muster" --name "Alpha" --target-date 2026-12-01 | tee "$tmp/milestone.json"
+jq -e '.name == "Alpha" and .project.name == "Trying muster" and .targetDate == "2026-12-01"' "$tmp/milestone.json" >/dev/null
+"$bin" issue update "$id" --milestone Alpha | jq -e '.projectMilestone.name == "Alpha"' >/dev/null
+"$bin" issue list --milestone Alpha | jq -s -e --arg id "$id" 'map(.identifier) == [$id]' >/dev/null
+
 step "muster issue close $id"
 "$bin" issue close "$id" --comment "Done from the README." | tee "$tmp/close.jsonl"
 jq -s -e 'length == 2 and .[0].body == "Done from the README." and .[1].state.type == "completed" and .[1].identifier == "'"$id"'"' "$tmp/close.jsonl" >/dev/null

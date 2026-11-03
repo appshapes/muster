@@ -360,6 +360,48 @@ Bring a trashed or archived project back.
 | --- | --- | --- | --- | --- |
 | `<NAME>` | `<NAME>` | yes |  | The project, by name |
 
+### muster milestone list
+
+List a project's milestones, one JSON object per line.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--project` | `<NAME>` | yes |  | The project, by name |
+| `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
+### muster milestone create
+
+Add a milestone to a project; a name a milestone of the project has is refused unless --allow-duplicate.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--project` | `<NAME>` | yes |  | The project, by name |
+| `--name` | `<TEXT>` | yes |  | The name |
+| `--description` | `<TEXT>` | no |  | The description, markdown |
+| `--target-date` | `<DATE>` | no |  | The planned date, a date (2026-12-01) |
+| `--allow-duplicate` |  | no |  | Create it even when a milestone of the project has the name |
+
+### muster milestone update
+
+Change a milestone's name, description or target date.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The milestone, by name |
+| `--project` | `<NAME>` | yes |  | The project, by name |
+| `--name` | `<TEXT>` | no |  | A new name |
+| `--description` | `<TEXT>` | no |  | A new description, markdown |
+| `--target-date` | `<DATE>` | no |  | A new planned date, a date (2026-12-01), or `none` |
+
+### muster milestone delete
+
+Delete a milestone; no undo in Linear.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The milestone, by name |
+| `--project` | `<NAME>` | yes |  | The project, by name |
+
 ### muster project-status list
 
 List the workspace's project statuses by position, one JSON object per line.
@@ -501,6 +543,7 @@ Issues of the team: the open ones unless --state or --all; most recently updated
 | `--search` | `<TEXT>` | no |  | Only issues whose title contains this text, case-insensitively; how a title is resolved |
 | `--parent` | `<ISSUE>` | no |  | Only the sub-issues of this issue: the identifier (APP-12), the number alone (12, in the team) or the id; or `none` for issues with no parent |
 | `--project` | `<NAME>` | no |  | Only issues in this project, by name, or `none` for issues in no project |
+| `--milestone` | `<NAME>` | no |  | Only issues in this milestone, by name, or `none` for issues in no milestone |
 | `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
 
 ### muster issue create
@@ -516,6 +559,7 @@ Create an issue in the team; a title an open issue of the team already has is re
 | `--label` | `<NAME>` | no |  | A label, by name; repeatable |
 | `--priority` | `<0-4>` | no |  | The priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low |
 | `--project` | `<NAME>` | no |  | The project, by name |
+| `--milestone` | `<NAME>` | no |  | The milestone, by name, in the project --project names |
 | `--assignee` | `<WHO>` | no |  | The assignee: `me`, an email address or a name |
 | `--parent` | `<ISSUE>` | no |  | The parent, which makes this a sub-issue: the identifier (APP-12), the number alone (12, in the team) or the id; the team is the parent's unless --team or MUSTER_TEAM names one |
 | `--allow-duplicate` |  | no |  | Create it even when an open issue of the team has the same title |
@@ -567,6 +611,7 @@ Change an issue's title, state, labels, priority, assignee, project, parent or d
 | `--priority` | `<0-4>` | no |  | A new priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low |
 | `--assignee` | `<WHO>` | no |  | A new assignee: `me`, an email address, a name, or `none` to unassign |
 | `--project` | `<NAME>` | no |  | A new project, by name, or `none` to remove it |
+| `--milestone` | `<NAME>` | no |  | A new milestone, by name, in the issue's project (or the one --project names), or `none` to remove it |
 | `--parent` | `<ISSUE>` | no |  | A new parent, which makes this a sub-issue, or `none` to take it out from under its parent |
 | `--description` | `<TEXT>` | no |  | A new description, markdown |
 | `--description-file` | `<PATH>` | no |  | The new description from a file, or from stdin when PATH is `-` |
@@ -674,6 +719,7 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `UserById` | query |
 | `ProjectByName` | query |
 | `ProjectStatuses` | query |
+| `Milestones` | query |
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
@@ -706,3 +752,6 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `ProjectStatusUpdate` | mutation |
 | `ProjectStatusArchive` | mutation |
 | `ProjectStatusUnarchive` | mutation |
+| `MilestoneCreate` | mutation |
+| `MilestoneUpdate` | mutation |
+| `MilestoneDelete` | mutation |

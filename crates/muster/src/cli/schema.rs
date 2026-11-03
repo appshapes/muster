@@ -372,7 +372,15 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
             team.as_deref(),
             project.as_deref(),
         ) else {
-            if ["IssueById", "TeamByKey", "TeamMembers", "ProjectByName"].contains(&op.name) {
+            if [
+                "IssueById",
+                "TeamByKey",
+                "TeamMembers",
+                "ProjectByName",
+                "Milestones",
+            ]
+            .contains(&op.name)
+            {
                 continue;
             }
             return Err(Error::new(
@@ -505,6 +513,7 @@ pub fn fixture_variables(
         "Users" => json!({ "first": 5, "filter": Value::Null, "includeDisabled": true }),
         "UserById" => json!({ "id": "me" }),
         "ProjectStatuses" => json!({ "first": 5, "includeArchived": false }),
+        "Milestones" => json!({ "project": first_project?, "first": 5 }),
         "ProjectByName" => {
             json!({ "name": first_project?, "includeArchived": false, "teams": TEAMS_PER_PROJECT, "members": MEMBERS_PER_PROJECT, "milestones": MILESTONES_PER_PROJECT })
         }
@@ -624,6 +633,10 @@ mod tests {
             "project-status update",
             "project-status archive",
             "project-status unarchive",
+            "milestone list",
+            "milestone create",
+            "milestone update",
+            "milestone delete",
             "state list",
             "label list",
             "project list",

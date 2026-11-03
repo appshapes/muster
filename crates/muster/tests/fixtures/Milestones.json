@@ -1,0 +1,23 @@
+{
+  "projectMilestones": {
+    "nodes": [
+      {
+        "createdAt": "<string>",
+        "description": "<string>",
+        "id": "<string>",
+        "name": "<string>",
+        "progress": 0,
+        "project": {
+          "id": "<string>",
+          "name": "<string>"
+        },
+        "sortOrder": 0,
+        "status": "<string>",
+        "targetDate": null
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": true
+    }
+  }
+}
