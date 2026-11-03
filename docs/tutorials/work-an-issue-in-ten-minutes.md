@@ -155,6 +155,35 @@ update` puts an issue in the running cycle (`next` the one after it, a number an
 of them, and `none` on `issue update` takes it out; `issue create` does not take
 `none`, since a new issue starts in no cycle), and `muster issue list --cycle
 active` lists the cycle's issues (`--cycle none` the issues in no cycle).
+A document is a page of markdown kept with a project or an issue:
+`muster document create --title "Kickoff" --project "Trying muster" --content "#
+Kickoff"` makes one (one JSON line with its `title`, `url`, `project` and `content`;
+a document with neither a project nor an issue is Linear's refusal, exit 6), `muster
+document list --project "Trying muster"` lists the project's without their content,
+`muster document get Kickoff` prints one with it, `muster document update Kickoff
+--content-file kickoff.md` replaces the text from a file, and `muster document delete
+Kickoff` puts it in the trash (`unarchive` brings it back).
+A template is a saved shape for a new issue, project or document:
+`muster template list` prints the team's and the workspace's, `muster template get
+"Bug report"` one with its `templateData` (a string of JSON, as Linear returns it;
+`jq '.templateData | fromjson'` reads it), and `muster template create
+--name "Feature" --type issue --data-file feature.json` makes one from a file holding
+that JSON (`--workspace` for one every team shares); `muster template update Feature
+--data-file feature.json` replaces the data, and `muster template delete Feature`
+deletes it, with no undo.
+A webhook is a URL Linear posts changes to: `muster webhook create --url
+https://example.com/hooks/issues --resource-type Issue --resource-type Comment --label
+"Issues" --secret-file secret.txt` makes one for the team (one JSON line with its
+`url`, `enabled`, `resourceTypes` and `team`, never its secret), `muster webhook
+list` prints them, `muster webhook update Issues --enabled false` stops it without
+deleting it, and `muster webhook delete Issues` deletes it, with no undo; a webhook
+is named by its label, else its URL, else its id.
+The audit log says what was done, by whom and from where: `muster audit list --limit
+5` prints the five newest entries (one JSON line each, with `type`, `createdAt`,
+`actor`, `ip`, `countryCode` and Linear's `metadata`), `muster audit list --type
+projectDeleted` the deletions, `muster audit list --actor me --since
+2026-11-01T00:00:00Z` your own since a time. Linear reserves the log for owners on
+its Enterprise plan; where it refuses, the exit code is 6 and the message is Linear's.
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):

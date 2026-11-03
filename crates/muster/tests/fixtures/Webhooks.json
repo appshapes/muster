@@ -1,0 +1,31 @@
+{
+  "webhooks": {
+    "nodes": [
+      {
+        "allPublicTeams": true,
+        "archivedAt": null,
+        "createdAt": "<string>",
+        "creator": {
+          "displayName": "<string>",
+          "id": "<string>",
+          "name": "<string>"
+        },
+        "enabled": true,
+        "id": "<string>",
+        "label": "<string>",
+        "resourceTypes": [
+          "<string>"
+        ],
+        "team": {
+          "id": "<string>",
+          "key": "<string>"
+        },
+        "updatedAt": "<string>",
+        "url": "<string>"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": true
+    }
+  }
+}

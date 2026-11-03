@@ -9,7 +9,7 @@ Every command prints one JSON object per line on stdout with Linear's own field 
 | Flag | Value | Meaning |
 | --- | --- | --- |
 | `--human` |  | Render the answer as text for a person; one JSON object per line is the default |
-| `--trace` |  | Print every request and answer to stderr; the key is never printed |
+| `--trace` |  | Print every request and answer to stderr; the key and a webhook's secret are never printed |
 | `--team` | `<KEY>` | The team key (APP); else MUSTER_TEAM; else the workspace's only team |
 
 ## Commands
@@ -476,6 +476,168 @@ Change a cycle's name, description, start or end.
 | `--starts-at` | `<TIME>` | no |  | A new start, a time (2026-11-10T00:00:00Z) |
 | `--ends-at` | `<TIME>` | no |  | A new end, a time (2026-11-24T00:00:00Z) |
 
+### muster document list
+
+List documents, one JSON object per line, without their content.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--project` | `<NAME>` | no |  | Only documents of this project, by name |
+| `--issue` | `<ISSUE>` | no |  | Only documents of this issue, by identifier (APP-12) |
+| `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
+### muster document get
+
+One document with its content, by title.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<TITLE>` | `<TITLE>` | yes |  | The document, by title |
+
+### muster document create
+
+Create a document; a title a document already has is refused unless --allow-duplicate.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--title` | `<TEXT>` | yes |  | The title |
+| `--content` | `<TEXT>` | no |  | The content, markdown |
+| `--content-file` | `<PATH>` | no |  | The content, markdown, from a file, or from stdin when PATH is `-` |
+| `--project` | `<NAME>` | no |  | The project it belongs to, by name |
+| `--issue` | `<ISSUE>` | no |  | The issue it belongs to, by identifier (APP-12) |
+| `--allow-duplicate` |  | no |  | Create it even when a document has the title |
+
+### muster document update
+
+Change a document's title, content, project or issue.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<TITLE>` | `<TITLE>` | yes |  | The document, by title |
+| `--title` | `<TEXT>` | no |  | A new title |
+| `--content` | `<TEXT>` | no |  | New content, markdown |
+| `--content-file` | `<PATH>` | no |  | New content, markdown, from a file, or from stdin when PATH is `-` |
+| `--project` | `<NAME>` | no |  | A new project, by name, or `none` |
+| `--issue` | `<ISSUE>` | no |  | A new issue, by identifier, or `none` |
+
+### muster document delete
+
+Put a document in the trash; `document unarchive` brings it back.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<TITLE>` | `<TITLE>` | yes |  | The document, by title |
+
+### muster document unarchive
+
+Bring a trashed document back.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<TITLE>` | `<TITLE>` | yes |  | The document, by title |
+
+### muster template list
+
+List the team's and the workspace's templates, one JSON object per line.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--type` | `<issue\|project\|document>` | no |  | Only templates of this kind |
+| `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
+### muster template get
+
+One template with its data, by name, the team's own before the workspace's; `templateData` is a string of JSON, as Linear returns it.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The template, by name, among the team's own and the workspace's |
+
+### muster template create
+
+Create a template for the team, or for the workspace with --workspace, from a JSON data file; a name a template of the same scope has is refused unless --allow-duplicate.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--name` | `<TEXT>` | yes |  | The name |
+| `--type` | `<issue\|project\|document>` | yes |  | What the template makes |
+| `--data-file` | `<PATH>` | yes |  | The template's data, JSON as Linear's `templateData`, from a file, or from stdin when PATH is `-` |
+| `--workspace` |  | no |  | A template every team shares, rather than the team's own |
+| `--description` | `<TEXT>` | no |  | The description |
+| `--allow-duplicate` |  | no |  | Create it even when a template of the same scope has the name |
+
+### muster template update
+
+Change a template's name, description or data.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The template, by name, among the team's own and the workspace's |
+| `--name` | `<TEXT>` | no |  | A new name |
+| `--description` | `<TEXT>` | no |  | A new description |
+| `--data-file` | `<PATH>` | no |  | New data, JSON as Linear's `templateData`, from a file, or from stdin when PATH is `-` |
+
+### muster template delete
+
+Delete a template; there is no undo.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The template, by name, among the team's own and the workspace's |
+
+### muster webhook list
+
+List the workspace's webhooks, one JSON object per line, never with their secret.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
+### muster webhook create
+
+Create a webhook for the team, or for every public team; a URL a webhook already has is refused unless --allow-duplicate.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--url` | `<URL>` | yes |  | The URL Linear posts to |
+| `--resource-type` | `<TYPE>` | yes |  | A kind of change to post, as Linear names it (Issue, Comment, Project, Cycle, IssueLabel, ...); repeatable |
+| `--label` | `<TEXT>` | no |  | A name for it |
+| `--all-public-teams` |  | no |  | Every public team's changes, rather than the team's by the usual rule |
+| `--secret-file` | `<PATH>` | no |  | The signing secret, from a file, or from stdin when PATH is `-`; never on the command line, never printed |
+| `--allow-duplicate` |  | no |  | Create it even when a webhook posts to the URL |
+
+### muster webhook update
+
+Change a webhook's URL, label, switch, resource types or secret.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WEBHOOK>` | `<WEBHOOK>` | yes |  | The webhook: its label, else its URL, else its id |
+| `--url` | `<URL>` | no |  | A new URL |
+| `--label` | `<TEXT>` | no |  | A new label |
+| `--enabled` | `<true\|false>` | no |  | Whether Linear posts to it; `false` is the reversible stop |
+| `--resource-type` | `<TYPE>` | no |  | The kinds of change to post, replacing the list; repeatable |
+| `--secret-file` | `<PATH>` | no |  | A new signing secret, from a file, or from stdin when PATH is `-` |
+
+### muster webhook delete
+
+Delete a webhook; there is no undo (`--enabled false` on `update` is the reversible stop).
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WEBHOOK>` | `<WEBHOOK>` | yes |  | The webhook: its label, else its URL, else its id |
+
+### muster audit list
+
+List the workspace's audit entries, newest first, one JSON object per line.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--type` | `<TYPE>` | no |  | Only entries of this kind, as Linear names it (login, issueDeleted, projectDeleted, ...) |
+| `--actor` | `<WHO>` | no |  | Only entries by this user: `me`, an email address or a name |
+| `--since` | `<TIME>` | no |  | Only entries at or after this time (2026-11-01T00:00:00Z) |
+| `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
 ### muster milestone list
 
 List a project's milestones, one JSON object per line.
@@ -907,6 +1069,12 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `InitiativeLinks` | query |
 | `Cycles` | query |
 | `CycleByNumber` | query |
+| `Documents` | query |
+| `DocumentByTitle` | query |
+| `Templates` | query |
+| `TemplateByName` | query |
+| `Webhooks` | query |
+| `AuditEntries` | query |
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
@@ -950,6 +1118,16 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `InitiativeToProjectCreate` | mutation |
 | `InitiativeToProjectDelete` | mutation |
 | `CycleUpdate` | mutation |
+| `DocumentCreate` | mutation |
+| `DocumentUpdate` | mutation |
+| `DocumentDelete` | mutation |
+| `DocumentUnarchive` | mutation |
+| `TemplateCreate` | mutation |
+| `TemplateUpdate` | mutation |
+| `TemplateDelete` | mutation |
+| `WebhookCreate` | mutation |
+| `WebhookUpdate` | mutation |
+| `WebhookDelete` | mutation |
 | `IssueArchive` | mutation |
 | `IssueUnarchive` | mutation |
 | `IssueDelete` | mutation |

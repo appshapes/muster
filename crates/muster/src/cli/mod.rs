@@ -23,7 +23,7 @@ pub struct Cli {
     /// Render the answer as text for a person; one JSON object per line is the default
     #[arg(long, global = true)]
     pub human: bool,
-    /// Print every request and answer to stderr; the key is never printed
+    /// Print every request and answer to stderr; the key and a webhook's secret are never printed
     #[arg(long, global = true)]
     pub trace: bool,
     /// The team key (APP); else MUSTER_TEAM; else the workspace's only team
@@ -86,6 +86,30 @@ pub enum Command {
         /// The cycle command.
         #[command(subcommand)]
         command: CycleCommand,
+    },
+    /// Documents, Linear's pages of markdown on a project or an issue: list, get, create, update, delete, unarchive
+    Document {
+        /// The document command.
+        #[command(subcommand)]
+        command: DocumentCommand,
+    },
+    /// Templates for issues, projects and documents: list, get, create, update, delete
+    Template {
+        /// The template command.
+        #[command(subcommand)]
+        command: TemplateCommand,
+    },
+    /// Webhooks, the URLs Linear posts changes to: list, create, update, delete
+    Webhook {
+        /// The webhook command.
+        #[command(subcommand)]
+        command: WebhookCommand,
+    },
+    /// The workspace's audit log, what was done, by whom, from where: list
+    Audit {
+        /// The audit command.
+        #[command(subcommand)]
+        command: AuditCommand,
     },
     /// A project's milestones: list, create, update, delete
     Milestone {
@@ -1219,6 +1243,290 @@ pub struct CycleUpdateArgs {
     /// A new end, a time (2026-11-24T00:00:00Z)
     #[arg(long, value_name = "TIME")]
     pub ends_at: Option<String>,
+}
+
+/// The document commands (ADR 0014, group 14).
+#[derive(Subcommand, Debug)]
+pub enum DocumentCommand {
+    /// List documents, one JSON object per line, without their content
+    List(DocumentListArgs),
+    /// One document with its content, by title
+    Get(DocumentRefArgs),
+    /// Create a document; a title a document already has is refused unless --allow-duplicate
+    Create(Box<DocumentCreateArgs>),
+    /// Change a document's title, content, project or issue
+    Update(Box<DocumentUpdateArgs>),
+    /// Put a document in the trash; `document unarchive` brings it back
+    Delete(DocumentRefArgs),
+    /// Bring a trashed document back
+    Unarchive(DocumentRefArgs),
+}
+
+/// `document list`.
+#[derive(Args, Debug)]
+pub struct DocumentListArgs {
+    /// Only documents of this project, by name
+    #[arg(long, value_name = "NAME")]
+    pub project: Option<String>,
+    /// Only documents of this issue, by identifier (APP-12)
+    #[arg(long, value_name = "ISSUE")]
+    pub issue: Option<String>,
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+}
+
+/// A document, by title.
+#[derive(Args, Debug)]
+pub struct DocumentRefArgs {
+    /// The document, by title
+    #[arg(value_name = "TITLE")]
+    pub title: String,
+}
+
+/// `document create`.
+#[derive(Args, Debug, Default)]
+pub struct DocumentCreateArgs {
+    /// The title
+    #[arg(long, value_name = "TEXT")]
+    pub title: String,
+    /// The content, markdown
+    #[arg(long, value_name = "TEXT", conflicts_with = "content_file")]
+    pub content: Option<String>,
+    /// The content, markdown, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub content_file: Option<String>,
+    /// The project it belongs to, by name
+    #[arg(long, value_name = "NAME")]
+    pub project: Option<String>,
+    /// The issue it belongs to, by identifier (APP-12)
+    #[arg(long, value_name = "ISSUE")]
+    pub issue: Option<String>,
+    /// Create it even when a document has the title
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `document update`.
+#[derive(Args, Debug, Default)]
+pub struct DocumentUpdateArgs {
+    /// The document, by title
+    #[arg(value_name = "TITLE")]
+    pub document: String,
+    /// A new title
+    #[arg(long, value_name = "TEXT")]
+    pub title: Option<String>,
+    /// New content, markdown
+    #[arg(long, value_name = "TEXT", conflicts_with = "content_file")]
+    pub content: Option<String>,
+    /// New content, markdown, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub content_file: Option<String>,
+    /// A new project, by name, or `none`
+    #[arg(long, value_name = "NAME")]
+    pub project: Option<String>,
+    /// A new issue, by identifier, or `none`
+    #[arg(long, value_name = "ISSUE")]
+    pub issue: Option<String>,
+}
+
+/// The template commands (ADR 0014, group 15).
+#[derive(Subcommand, Debug)]
+pub enum TemplateCommand {
+    /// List the team's and the workspace's templates, one JSON object per line
+    List(TemplateListArgs),
+    /// One template with its data, by name, the team's own before the workspace's; `templateData` is a string of JSON, as Linear returns it
+    Get(TemplateRefArgs),
+    /// Create a template for the team, or for the workspace with --workspace, from a JSON data file; a name a template of the same scope has is refused unless --allow-duplicate
+    Create(Box<TemplateCreateArgs>),
+    /// Change a template's name, description or data
+    Update(Box<TemplateUpdateArgs>),
+    /// Delete a template; there is no undo
+    Delete(TemplateRefArgs),
+}
+
+/// `template list`.
+#[derive(Args, Debug)]
+pub struct TemplateListArgs {
+    /// Only templates of this kind
+    #[arg(long, value_name = "TYPE", value_enum)]
+    pub r#type: Option<TemplateType>,
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+}
+
+/// A template, by name.
+#[derive(Args, Debug)]
+pub struct TemplateRefArgs {
+    /// The template, by name, among the team's own and the workspace's
+    #[arg(value_name = "NAME")]
+    pub name: String,
+}
+
+/// `template create`.
+#[derive(Args, Debug, Default)]
+pub struct TemplateCreateArgs {
+    /// The name
+    #[arg(long, value_name = "TEXT")]
+    pub name: String,
+    /// What the template makes
+    #[arg(long, value_name = "TYPE", value_enum)]
+    pub r#type: TemplateType,
+    /// The template's data, JSON as Linear's `templateData`, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub data_file: String,
+    /// A template every team shares, rather than the team's own
+    #[arg(long)]
+    pub workspace: bool,
+    /// The description
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// Create it even when a template of the same scope has the name
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `template update`.
+#[derive(Args, Debug, Default)]
+pub struct TemplateUpdateArgs {
+    /// The template, by name, among the team's own and the workspace's
+    #[arg(value_name = "NAME")]
+    pub template: String,
+    /// A new name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new description
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// New data, JSON as Linear's `templateData`, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub data_file: Option<String>,
+}
+
+/// What a template makes, as Linear's `type` spells it.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TemplateType {
+    /// An issue.
+    #[default]
+    Issue,
+    /// A project.
+    Project,
+    /// A document.
+    Document,
+}
+
+impl TemplateType {
+    /// The value Linear takes and returns.
+    pub fn linear(self) -> &'static str {
+        match self {
+            TemplateType::Issue => "issue",
+            TemplateType::Project => "project",
+            TemplateType::Document => "document",
+        }
+    }
+}
+
+/// The webhook commands (ADR 0014, group 16). The secret comes from a file and is never
+/// printed; `--enabled false` is the reversible stop, `delete` has no undo.
+#[derive(Subcommand, Debug)]
+pub enum WebhookCommand {
+    /// List the workspace's webhooks, one JSON object per line, never with their secret
+    List(WebhookListArgs),
+    /// Create a webhook for the team, or for every public team; a URL a webhook already has is refused unless --allow-duplicate
+    Create(Box<WebhookCreateArgs>),
+    /// Change a webhook's URL, label, switch, resource types or secret
+    Update(Box<WebhookUpdateArgs>),
+    /// Delete a webhook; there is no undo (`--enabled false` on `update` is the reversible stop)
+    Delete(WebhookRefArgs),
+}
+
+/// `webhook list`.
+#[derive(Args, Debug)]
+pub struct WebhookListArgs {
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+}
+
+/// A webhook: by label, else by URL, else by id.
+#[derive(Args, Debug)]
+pub struct WebhookRefArgs {
+    /// The webhook: its label, else its URL, else its id
+    #[arg(value_name = "WEBHOOK")]
+    pub webhook: String,
+}
+
+/// `webhook create`.
+#[derive(Args, Debug, Default)]
+pub struct WebhookCreateArgs {
+    /// The URL Linear posts to
+    #[arg(long, value_name = "URL")]
+    pub url: String,
+    /// A kind of change to post, as Linear names it (Issue, Comment, Project, Cycle, IssueLabel, ...); repeatable
+    #[arg(long, value_name = "TYPE", required = true)]
+    pub resource_type: Vec<String>,
+    /// A name for it
+    #[arg(long, value_name = "TEXT")]
+    pub label: Option<String>,
+    /// Every public team's changes, rather than the team's by the usual rule
+    #[arg(long)]
+    pub all_public_teams: bool,
+    /// The signing secret, from a file, or from stdin when PATH is `-`; never on the command line, never printed
+    #[arg(long, value_name = "PATH")]
+    pub secret_file: Option<String>,
+    /// Create it even when a webhook posts to the URL
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `webhook update`.
+#[derive(Args, Debug, Default)]
+pub struct WebhookUpdateArgs {
+    /// The webhook: its label, else its URL, else its id
+    #[arg(value_name = "WEBHOOK")]
+    pub webhook: String,
+    /// A new URL
+    #[arg(long, value_name = "URL")]
+    pub url: Option<String>,
+    /// A new label
+    #[arg(long, value_name = "TEXT")]
+    pub label: Option<String>,
+    /// Whether Linear posts to it; `false` is the reversible stop
+    #[arg(long, value_name = "true|false")]
+    pub enabled: Option<bool>,
+    /// The kinds of change to post, replacing the list; repeatable
+    #[arg(long, value_name = "TYPE")]
+    pub resource_type: Vec<String>,
+    /// A new signing secret, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub secret_file: Option<String>,
+}
+
+/// The audit commands (ADR 0014, group 17). Linear's pages reserve the audit log for
+/// owners on the Enterprise plan; the command prints Linear's answer, or its refusal
+/// as exit 6. On 2026-11-03 a Free workspace answered its owner's key.
+#[derive(Subcommand, Debug)]
+pub enum AuditCommand {
+    /// List the workspace's audit entries, newest first, one JSON object per line
+    List(AuditListArgs),
+}
+
+/// `audit list`.
+#[derive(Args, Debug)]
+pub struct AuditListArgs {
+    /// Only entries of this kind, as Linear names it (login, issueDeleted, projectDeleted, ...)
+    #[arg(long, value_name = "TYPE")]
+    pub r#type: Option<String>,
+    /// Only entries by this user: `me`, an email address or a name
+    #[arg(long, value_name = "WHO")]
+    pub actor: Option<String>,
+    /// Only entries at or after this time (2026-11-01T00:00:00Z)
+    #[arg(long, value_name = "TIME")]
+    pub since: Option<String>,
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
 }
 
 /// The milestone commands (ADR 0014, group 10): the steps inside a project.
