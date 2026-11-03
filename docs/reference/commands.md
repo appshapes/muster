@@ -233,11 +233,70 @@ Create a project for the team; a name a project of the workspace already has is 
 
 ### muster user list
 
-List them, one JSON object per line.
+List the workspace's users, one JSON object per line; the active ones unless --all.
 
 | Argument or flag | Value | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+| `--all` |  | no |  | The suspended users too, not only the active ones |
+
+### muster user get
+
+One user with their role flags, profile, status and when they were last seen.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WHO>` | `<WHO>` | yes |  | The user: `me`, an email address or a name |
+
+### muster user update
+
+Change a user's profile; your own, or anyone's as a workspace admin; a flag left out leaves its field alone.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WHO>` | `<WHO>` | yes |  | The user: `me`, an email address or a name |
+| `--name` | `<TEXT>` | no |  | A new full name |
+| `--display-name` | `<TEXT>` | no |  | A new display name, unique in the workspace |
+| `--title` | `<TEXT>` | no |  | A new job title |
+| `--description` | `<TEXT>` | no |  | A new short bio |
+| `--timezone` | `<TZ>` | no |  | The user's timezone, an IANA name (Europe/London) |
+| `--status-emoji` | `<TEXT>` | no |  | The emoji of the user's status |
+| `--status-label` | `<TEXT>` | no |  | The text of the user's status |
+| `--status-until` | `<TIME\|none>` | no |  | When the status clears, a time (2026-11-10T09:00:00Z), or `none` to keep it |
+| `--avatar-url` | `<URL>` | no |  | A new avatar, by URL |
+
+### muster user change-role
+
+Change a user's workspace role; a workspace admin's command, and the caller's role must be at least the new one.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WHO>` | `<WHO>` | yes |  | The user: `me`, an email address or a name |
+| `--role` | `<owner\|admin\|user\|guest>` | yes |  | The new role |
+
+### muster user suspend
+
+Suspend a user: their account is deactivated and their sessions end; a workspace admin's command.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WHO>` | `<WHO>` | yes |  | The user: `me`, an email address or a name |
+
+### muster user unsuspend
+
+Reactivate a suspended user; a workspace admin's command.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WHO>` | `<WHO>` | yes |  | The user: `me`, an email address or a name |
+
+### muster user revoke-sessions
+
+End every session of a user, so that they sign in again; a workspace admin's command.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<WHO>` | `<WHO>` | yes |  | The user: `me`, an email address or a name |
 
 ### muster issue get
 
@@ -359,8 +418,8 @@ The table is append-only (ADR 0008). `0` is success; `2` is also what `clap` ret
 | 3 | `authentication` | no key was found, or Linear refused it (HTTP 401, AUTHENTICATION_ERROR) | put a Linear API key in LINEAR_API_KEY or in ~/.config/muster/key (docs/reference/commands.md#the-key); `muster whoami` says which source was read |
 | 4 | `not_found` | no such issue, team, state, label, project or user (Linear's "Entity not found", or no match for a number, a title or a name) | check the name or identifier; `muster team list`, `state list`, `label list`, `project list`, `user list` and `issue list --search` show what exists |
 | 5 | `rate_limited` | Linear's rate limit; the request was not served (HTTP 429 or RATELIMITED); the message carries the reset time | wait until the reset time in the message, then run the command again; muster never waits for you |
-| 6 | `refused` | the input was refused: Linear's validation (INPUT_ERROR), a body over BODY_MAX_BYTES, or a muster guard such as a duplicate title | fix the input the message names; for a duplicate title pass --allow-duplicate if a second issue is wanted |
-| 7 | `network` | the request was not sent (name resolution, connection, TLS, a timeout before sending), or a query's answer never came; nothing changed in Linear | check the network and MUSTER_ENDPOINT; the command can be run again as it is |
+| 6 | `refused` | the input was refused: Linear's validation (INPUT_ERROR), a body over BODY_MAX_BYTES, a muster guard such as a duplicate title, or what the workspace's plan or the key's role does not allow (FORBIDDEN, FEATURE_NOT_ACCESSIBLE) | fix the input the message names; for a duplicate title pass --allow-duplicate if a second issue is wanted; for a plan or role refusal `muster whoami` shows the key's role |
+| 7 | `network` | the request was not sent (name resolution, connection, TLS, a timeout before sending), or a query's answer never came; nothing changed in Linear, unless the message says a mutation sent before the query landed | check the network and MUSTER_ENDPOINT; the command can be run again as it is |
 | 8 | `unknown` | a mutation was sent and no answer came: the request may have landed; check before repeating it | read the issue back (`muster issue get`, `issue list --search`) before running the mutation again |
 
 ## Notices
@@ -429,6 +488,7 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `Workspace` | query |
 | `TeamByKey` | query |
 | `TeamMembers` | query |
+| `UserById` | query |
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
@@ -441,3 +501,8 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `TeamUnarchive` | mutation |
 | `TeamMembershipCreate` | mutation |
 | `TeamMembershipDelete` | mutation |
+| `UserUpdate` | mutation |
+| `UserChangeRole` | mutation |
+| `UserSuspend` | mutation |
+| `UserUnsuspend` | mutation |
+| `UserRevokeAllSessions` | mutation |

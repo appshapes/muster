@@ -35,6 +35,12 @@ hour=$("$bin" workspace get | jq -r .projectUpdateRemindersHour)
 "$bin" workspace update --project-update-reminders-hour "$hour" | jq -c '{urlKey, projectUpdateRemindersHour, updatedAt}' | tee "$tmp/workspace-update.json"
 jq -e --argjson hour "$hour" '.projectUpdateRemindersHour == $hour' "$tmp/workspace-update.json" >/dev/null
 echo
+echo "smoke: muster user get me, then user update me with a status that clears at once (ADR 0014)"
+"$bin" user get me | jq -c '{displayName, admin, owner, guest, active, timezone}' | tee "$tmp/user.json"
+jq -e --slurpfile who "$tmp/whoami.json" '.displayName == $who[0].viewer.displayName and .active == true' "$tmp/user.json" >/dev/null
+"$bin" user update me --status-emoji "🧪" --status-label "Smoke test at $stamp" --status-until "$stamp" | jq -c '{displayName, statusEmoji, statusLabel, statusUntilAt}' | tee "$tmp/user-update.json"
+jq -e --arg stamp "Smoke test at $stamp" '.statusLabel == $stamp' "$tmp/user-update.json" >/dev/null
+echo
 echo "smoke: muster team create --name 'Smoke tests' --key SMK (exit 6 after the first run: the duplicate guard; ADR 0014)"
 set +e
 "$bin" team create --name "Smoke tests" --key SMK --description "The smoke test's own team (ADR 0014): where its cycles, members and lifecycle are tested, so that APP is never touched." --timezone Etc/UTC > "$tmp/team.json" 2> "$tmp/team.err"

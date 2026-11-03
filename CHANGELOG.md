@@ -65,6 +65,21 @@ user-visible change, added in the same commit as the change. The format follows
   a muster guard, rather than called a non-member; the team is the usual rule,
   `--team`, `MUSTER_TEAM` or the only one (ADR 0014, group 3;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `user get <WHO>` prints one user with their role flags (`admin`, `owner`, `guest`,
+  `app`), `active` and `disableReason`, profile, status and `lastSeen`; `user list`
+  now prints `owner`, `guest` and `app` too and leaves suspended users out unless
+  `--all`. `user update <WHO>` changes a profile through Linear's `userUpdate` (your
+  own, or anyone's as a workspace admin): `--name`, `--display-name`, `--title`,
+  `--description`, `--timezone`, `--status-emoji`, `--status-label`, `--status-until
+  <TIME|none>` and `--avatar-url`; a flag left out leaves its field alone. The admin's
+  commands `user change-role <WHO> --role <owner|admin|user|guest>`, `user suspend`,
+  `user unsuspend` and `user revoke-sessions` print Linear's `success`, then the user
+  read back, two JSON lines; when the read-back fails after the mutation landed, the
+  exit code is the read-back's (7 for a dropped query) and the error says the mutation
+  landed and names `user get`, rather than "nothing changed in Linear". A suspended
+  user is still found by email or name, by every command that names a user, so that
+  `unsuspend` reaches them (ADR 0014, group 4;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ### Changed
 
@@ -72,6 +87,11 @@ user-visible change, added in the same commit as the change. The format follows
   flag takes, `<owner|admin|user|guest>` and `<Sunday|Monday|...|Saturday>` rather than
   `<ROLE>` and `<DAY>`, for every flag whose values `clap` knows, so a flag added later
   cannot leave them out ([the reference](docs/reference/commands.md)).
+- Linear's `FORBIDDEN` and `FEATURE_NOT_ACCESSIBLE` answers, to what the workspace's
+  plan or the key's role does not allow ("Not allowed on free plan", "Not allowed to
+  access feature 'guestAccounts'"), are a refusal, exit 6, with Linear's code and
+  message and a hint naming the plan and the role; they were exit 1, muster's own
+  failure (ADR 0014; [the reference](docs/reference/commands.md#exit-codes)).
 
 ## 0.2.0 - 2026-11-03
 

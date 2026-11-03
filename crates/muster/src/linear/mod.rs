@@ -198,6 +198,19 @@ fn classify_linear(
         )
         .from_linear(linear);
     }
+    // What the workspace's plan or the key's role does not allow: guest accounts on
+    // the Free plan (`FEATURE_NOT_ACCESSIBLE`, "Not allowed to access feature
+    // 'guestAccounts'") and invitations through the API on it (`FORBIDDEN`, "Not
+    // allowed on free plan"), both read on appshapes on 2026-11-03. A refusal, exit
+    // 6, not muster's failure.
+    if code == "FEATURE_NOT_ACCESSIBLE" || code == "FORBIDDEN" {
+        return Error::with_hint(
+            ErrorCode::Refused,
+            format!("Linear refused: {}", linear.message),
+            "the workspace's plan or the key's role does not allow it; `muster whoami` shows the role, and Linear's pricing page the plans",
+        )
+        .from_linear(linear);
+    }
     if code.starts_with("GRAPHQL_") {
         return Error::new(
             ErrorCode::Failed,
@@ -406,6 +419,24 @@ mod tests {
         );
         assert_eq!(e.code, ErrorCode::RateLimited);
         assert!(e.message.contains("2026-11-03T01:42:22Z"), "{}", e.message);
+        let plan = LinearError {
+            code: Some("FEATURE_NOT_ACCESSIBLE".into()),
+            message: "Not allowed to access feature 'guestAccounts'".into(),
+            request_id: None,
+        };
+        assert_eq!(
+            classify_linear(200, plan, None, None, &operations::ISSUE_CREATE).code,
+            ErrorCode::Refused
+        );
+        let forbidden = LinearError {
+            code: Some("FORBIDDEN".into()),
+            message: "Not allowed on free plan".into(),
+            request_id: None,
+        };
+        assert_eq!(
+            classify_linear(200, forbidden, None, None, &operations::ISSUE_CREATE).code,
+            ErrorCode::Refused
+        );
         let gql = LinearError {
             code: Some("GRAPHQL_VALIDATION_FAILED".into()),
             message: "bad field".into(),
