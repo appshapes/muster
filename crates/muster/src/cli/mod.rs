@@ -81,6 +81,12 @@ pub enum Command {
         #[command(subcommand)]
         command: InitiativeCommand,
     },
+    /// A link on an issue, by the id `issue get` prints: update, delete
+    Attachment {
+        /// The attachment command.
+        #[command(subcommand)]
+        command: AttachmentCommand,
+    },
     /// A project's milestones: list, create, update, delete
     Milestone {
         /// The milestone command.
@@ -1155,6 +1161,38 @@ impl InitiativeStatus {
             InitiativeStatus::Canceled => "Canceled",
         }
     }
+}
+
+/// The attachment commands (ADR 0014, group 20); `issue attach` makes one, and the id
+/// is the one `issue get` prints under `attachments`.
+#[derive(Subcommand, Debug)]
+pub enum AttachmentCommand {
+    /// Change an attachment's title and subtitle; Linear's input requires the title
+    Update(AttachmentUpdateArgs),
+    /// Delete an attachment; there is no undo
+    Delete(AttachmentRefArgs),
+}
+
+/// `attachment update`.
+#[derive(Args, Debug)]
+pub struct AttachmentUpdateArgs {
+    /// The attachment's id, as `issue get` prints it
+    #[arg(value_name = "ID")]
+    pub id: String,
+    /// The title; Linear requires it on every update
+    #[arg(long, value_name = "TEXT")]
+    pub title: String,
+    /// The second line under the title
+    #[arg(long, value_name = "TEXT")]
+    pub subtitle: Option<String>,
+}
+
+/// An attachment, by id.
+#[derive(Args, Debug)]
+pub struct AttachmentRefArgs {
+    /// The attachment's id, as `issue get` prints it
+    #[arg(value_name = "ID")]
+    pub id: String,
 }
 
 /// The milestone commands (ADR 0014, group 10): the steps inside a project.

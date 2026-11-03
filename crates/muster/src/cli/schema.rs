@@ -663,6 +663,8 @@ mod tests {
             "milestone delete",
             "project-update list",
             "project-update create",
+            "attachment update",
+            "attachment delete",
             "initiative list",
             "initiative get",
             "initiative create",

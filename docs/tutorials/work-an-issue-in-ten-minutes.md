@@ -139,6 +139,11 @@ its Business plan and refuses below it), `muster initiative add-project Growth
 --project "Trying muster"` puts the project in it, `muster initiative get Growth`
 prints it with its `projects` (bounded by `PROJECTS_PER_INITIATIVE`), and `muster
 initiative archive Growth` puts it away (`unarchive` brings it back).
+A link on an issue is changed or removed by the id `issue get` prints under
+`attachments` (and `issue attach` prints for a new one): `muster attachment update
+<ID> --title "The spec, v2" --subtitle "revised"` changes its title and subtitle
+(Linear requires the title every time), and `muster attachment delete <ID>` deletes
+it, with no undo.
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):

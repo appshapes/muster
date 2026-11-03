@@ -2817,6 +2817,39 @@ impl Workspace {
                     json!({ "data": { "projectCreate": { "success": true, "project": Workspace::project_view(&project, teams) } } }),
                 )
             }
+            "AttachmentUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.attachments.iter().position(|a| a["id"] == id) else {
+                    return not_found("Attachment");
+                };
+                let Some(title) = vars["input"]["title"].as_str().filter(|t| !t.is_empty()) else {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "title should not be empty" } } ], "data": null }),
+                    );
+                };
+                self.attachments[index]["title"] = json!(title);
+                if let Some(subtitle) = vars["input"].get("subtitle") {
+                    self.attachments[index]["subtitle"] = subtitle.clone();
+                }
+                let mut attachment = self.attachments[index].clone();
+                attachment.as_object_mut().unwrap().remove("issueId");
+                (
+                    200,
+                    json!({ "data": { "attachmentUpdate": { "success": true, "attachment": attachment } } }),
+                )
+            }
+            "AttachmentDelete" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.attachments.iter().position(|a| a["id"] == id) else {
+                    return not_found("Attachment");
+                };
+                self.attachments.remove(index);
+                (
+                    200,
+                    json!({ "data": { "attachmentDelete": { "success": true, "entityId": id } } }),
+                )
+            }
             "AttachmentCreate" => {
                 let input = &vars["input"];
                 let issue_id = input["issueId"].clone();

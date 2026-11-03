@@ -84,6 +84,13 @@ step "muster project get and update"
 "$bin" project get "Trying muster" | tee "$tmp/project-get.json"
 jq -e '.name == "Trying muster" and .status.name == "In Progress" and (.members.nodes | type) == "array"' "$tmp/project-get.json" >/dev/null
 
+step "muster issue attach $id, then attachment update and attachment delete by id"
+"$bin" issue attach "$id" --url https://example.com/spec --title "The spec" | tee "$tmp/attach.json"
+jq -e '.title == "The spec" and .url == "https://example.com/spec"' "$tmp/attach.json" >/dev/null
+aid=$(jq -r .id "$tmp/attach.json")
+"$bin" attachment update "$aid" --title "The spec, v2" --subtitle "revised" | jq -e '.title == "The spec, v2" and .subtitle == "revised"' >/dev/null
+"$bin" attachment delete "$aid" | jq -e '.success == true' >/dev/null
+
 step "muster issue list --project"
 "$bin" issue update "$id" --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
 "$bin" issue list --project "Trying muster" | tee "$tmp/in-project.jsonl"
