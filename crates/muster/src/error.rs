@@ -22,7 +22,8 @@ pub enum ErrorCode {
     NotFound,
     /// Linear's rate limit: the request was not served.
     RateLimited,
-    /// Linear's validation refused the input, or a muster guard did.
+    /// Linear's validation refused the input, a muster guard did, or the workspace's
+    /// plan or the key's role does not allow the operation.
     Refused,
     /// The request was not sent: name resolution, connection, TLS or a timeout before
     /// sending; or a query whose answer never came.
@@ -92,7 +93,7 @@ impl ErrorCode {
                 "Linear's rate limit; the request was not served (HTTP 429 or RATELIMITED); the message carries the reset time"
             }
             ErrorCode::Refused => {
-                "the input was refused: Linear's validation (INPUT_ERROR), a body over BODY_MAX_BYTES, or a muster guard such as a duplicate title"
+                "the input was refused: Linear's validation (INPUT_ERROR), a body over BODY_MAX_BYTES, a muster guard such as a duplicate title, or what the workspace's plan or the key's role does not allow (FORBIDDEN, FEATURE_NOT_ACCESSIBLE)"
             }
             ErrorCode::Network => {
                 "the request was not sent (name resolution, connection, TLS, a timeout before sending), or a query's answer never came; nothing changed in Linear"
@@ -123,7 +124,7 @@ impl ErrorCode {
                 "wait until the reset time in the message, then run the command again; muster never waits for you"
             }
             ErrorCode::Refused => {
-                "fix the input the message names; for a duplicate title pass --allow-duplicate if a second issue is wanted"
+                "fix the input the message names; for a duplicate title pass --allow-duplicate if a second issue is wanted; for a plan or role refusal `muster whoami` shows the key's role"
             }
             ErrorCode::Network => {
                 "check the network and MUSTER_ENDPOINT; the command can be run again as it is"
