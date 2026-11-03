@@ -4,7 +4,7 @@
 Two modes:
 
   lint-docs.py          every check below, including the change check over a diff range
-  lint-docs.py links    the pages, links and ADR checks only; what `just docs` runs
+  lint-docs.py links    the pages, links, ADR and glossary checks only; what `just docs` runs
 
 Checks:
 
@@ -20,7 +20,9 @@ Checks:
           (`label` of `--add-label`, `description` of `--description-file`), read from
           docs/reference/commands.md, which `just lint-commands` holds equal to `muster
           schema`; a one-word command names an action, and the flags in NOT_TERMS name a
-          switch or a mode, so neither needs a row (ADR 0006, Revisit)
+          switch or a mode, so neither needs a row. Output fields are not checked:
+          `muster schema` lists commands and flags, not the fields an answer carries, so
+          their rows stay by hand, and that clause of ADR 0006's Revisit stays open
   change  over the range: a change to a public item (a line with `pub ` in a crate's
           src/), or any change to the command tree (crates/muster/src/main.rs or
           crates/muster/src/cli/), needs a change under docs/ or to a README; an ADR
@@ -229,38 +231,57 @@ def flag_noun(flag: str) -> str:
     return flag
 
 
-def reference_terms() -> list[tuple[str, str]]:
+def reference_terms() -> tuple[list[tuple[str, str]], int, int]:
     """Every (term, where) the generated reference introduces: the noun of a command
-    group and the noun of a flag, each with the command it was read under."""
+    group and the noun of a flag, each with the command it was read under (`muster
+    --team` for a global flag); and how many commands and flags were parsed, so that a
+    reference whose shape moved cannot pass as one with nothing to check."""
     out: list[tuple[str, str]] = []
     command = ""
+    commands = flags = 0
     for line in REFERENCE.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## Global flags"):
+            command = ""
+            continue
         m = re.match(r"^### muster (.+?)\s*$", line)
         if m:
             command = m.group(1)
+            commands += 1
             words = command.split()
             if len(words) > 1:
                 out.append((words[0], f"muster {command}"))
             continue
-        m = re.match(r"^\| `--([a-z-]+)` \|", line)
-        if m and m.group(1) not in NOT_TERMS:
-            out.append((flag_noun(m.group(1)), f"muster {command} --{m.group(1)}"))
-    return out
+        m = re.match(r"^\| `--([^` ]+)` \|", line)
+        if m:
+            flags += 1
+            if m.group(1) not in NOT_TERMS:
+                where = " ".join(part for part in ("muster", command, f"--{m.group(1)}") if part)
+                out.append((flag_noun(m.group(1)), where))
+    return out, commands, flags
 
 
 def check_glossary() -> int:
-    if not REFERENCE.exists():
-        find(f"glossary: {rel(REFERENCE)} is missing; run just gen-commands")
+    for path, fix in ((REFERENCE, "run just gen-commands"), (GLOSSARY, "restore it")):
+        if not path.exists():
+            find(f"glossary: {rel(path)} is missing; {fix}")
+            return 0
+    terms, commands, flags = reference_terms()
+    if commands == 0 or flags == 0:
+        find(f"glossary: {commands} commands and {flags} flags parsed from {rel(REFERENCE)}; "
+             "its headings or flag cells changed shape, so reference_terms() in this script "
+             "must follow before the check means anything")
         return 0
     have = glossary_terms()
     seen: set[str] = set()
-    for term, where in reference_terms():
+    for term, where in terms:
         if term in have or term in seen:
             continue
         seen.add(term)
-        find(f"glossary: `{term}` (from `{where}`) has no row in {rel(GLOSSARY)} "
-             "(.claude/rules/docs.md, Glossary: every term a command or flag introduces has one)")
-    return len({term for term, _ in reference_terms()})
+        find(f"glossary: `{term}` (from `{where}`) has no row in {rel(GLOSSARY)}; add the row "
+             "(.claude/rules/docs.md, Glossary), or, for a switch or a mode, list the flag in "
+             "scripts/lint-docs.py NOT_TERMS with its reason (docs/how-to/implement-a-feature.md, "
+             "When it does not work)")
+    return len({term for term, _ in terms})
 
 
 # ---- change -----------------------------------------------------------------------

@@ -69,8 +69,9 @@ record-fixtures:
     cargo run --quiet -p muster-linear -- fixtures crates/muster/tests/fixtures
 
 # rustdoc with warnings denied; the mdBook under target/book with any warning denied;
-# the book's Rust code blocks; and every relative link and anchor in docs/ and the
-# READMEs (scripts/lint-docs.py links). External links are `just docs-links`, not a
+# the book's Rust code blocks; every relative link and anchor in docs/ and the READMEs;
+# and a glossary row for every command group and flag noun of the reference
+# (scripts/lint-docs.py links). External links are `just docs-links`, not a
 # gate: a site going down is not a bug in this repository (ADR 0006). The mdbook
 # version named below is the one CI pins in .github/workflows/ci.yml; bump both.
 docs:
@@ -85,8 +86,9 @@ docs:
     python3 scripts/lint-docs.py links
 
 # Fail if a public item or a command changed without docs, a page is missing from
-# docs/SUMMARY.md, an ADR is malformed, or an accepted ADR was edited. The range it
-# checks is described in the script's header. What CI runs.
+# docs/SUMMARY.md, an ADR is malformed, an accepted ADR was edited, or a command group
+# or flag noun has no glossary row. The range it checks is described in the script's
+# header. What CI runs.
 lint-docs:
     python3 scripts/lint-docs.py
 
