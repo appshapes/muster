@@ -108,7 +108,7 @@ next ones [ADR 0013](../decisions/0013-build-the-second-slice-sub-issues-attachm
   command needs `just gen-commands` run (step 3.5).
 - `just lint-docs` says an ADR `was Accepted at ... and changed beyond its Status line`:
   accepted ADRs are immutable. Write a new one that supersedes it.
-- `just lint-docs` or `just docs` says `glossary: \`x\` (from \`muster ...\`) has no row`:
+- `just lint-docs` or `just docs` says ``glossary: `x` (from `muster ...`) has no row``:
   every term a command or a flag introduces has a row in `docs/glossary.md` (step
   3.5): the command group's noun and the flag's noun. Add the row with its definition,
   Linear's name and the Trello word; a flag that is a switch or a mode, not a thing,
