@@ -835,8 +835,9 @@ impl Workspace {
             ),
             "WorkspaceUpdate" => {
                 // Only what is sent changes; the security and auth settings merge key by
-                // key, as Linear's nested inputs do; a new URL key keeps the old one
-                // among the last three previous keys, as Linear does.
+                // key, which is the fake's model of Linear's nested inputs, not a
+                // recorded fact (the smoke run proved the hour path only); a new URL key
+                // keeps the old one among the last three previous keys, as Linear does.
                 let Some(input) = vars["input"].as_object().cloned() else {
                     return missing_variable("input", "OrganizationUpdateInput!");
                 };

@@ -115,12 +115,25 @@ fn describe_arg(arg: &clap::Arg) -> Value {
         | ArgAction::HelpShort
         | ArgAction::HelpLong
         | ArgAction::Version => None,
-        _ => Some(
-            arg.get_value_names()
-                .and_then(|v| v.first())
-                .map(ToString::to_string)
-                .unwrap_or_else(|| arg.get_id().to_string().to_uppercase()),
-        ),
+        _ => {
+            // The values clap knows, `owner|admin|user|guest` for a `ValueEnum` and
+            // `true|false` for a bool, so that no enumerated flag can leave them out of
+            // the reference; a flag clap cannot enumerate keeps its value's name.
+            let known: Vec<String> = arg
+                .get_possible_values()
+                .iter()
+                .filter(|v| !v.is_hide_set())
+                .map(|v| v.get_name().to_string())
+                .collect();
+            Some(if known.is_empty() {
+                arg.get_value_names()
+                    .and_then(|v| v.first())
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| arg.get_id().to_string().to_uppercase())
+            } else {
+                known.join("|")
+            })
+        }
     };
     let defaults: Vec<String> = arg
         .get_default_values()
@@ -318,9 +331,11 @@ pub fn markdown(schema: &Value) -> String {
     md
 }
 
+/// The Value column: `<TEXT>`, or the values the flag takes, `<owner|admin|user|guest>`,
+/// with the pipes escaped as a table cell needs even inside a code span.
 fn value_cell(arg: &Value) -> String {
     str_at(arg, "value")
-        .map(|v| format!("`<{v}>`"))
+        .map(|v| format!("`<{}>`", cell(v)))
         .unwrap_or_default()
 }
 
@@ -547,6 +562,52 @@ mod tests {
             s["environment"].as_array().map(Vec::len),
             Some(ENVIRONMENT.len())
         );
+    }
+
+    /// A flag whose values clap knows lists them in the reference, so that a stranger
+    /// learns there that a day is spelt `Monday` and what the four roles are called
+    /// without leaving for `--help`; a flag it cannot enumerate keeps its value's name.
+    #[test]
+    fn an_enumerated_flag_lists_its_values() {
+        let s = schema();
+        let flags: Vec<&Value> = s["commands"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|c| str_at(c, "path") == Some("workspace update"))
+            .flat_map(|c| c["flags"].as_array().into_iter().flatten())
+            .collect();
+        let value = |long: &str| {
+            flags
+                .iter()
+                .find(|f| str_at(f, "long") == Some(long))
+                .and_then(|f| str_at(f, "value"))
+                .unwrap_or("?")
+                .to_string()
+        };
+        assert_eq!(value("--invitations-role"), "owner|admin|user|guest");
+        assert_eq!(
+            value("--project-update-reminders-day"),
+            "Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday"
+        );
+        assert_eq!(
+            value("--pull-request-issue-mode"),
+            "off|suggest|autoOnMerge"
+        );
+        assert_eq!(value("--roadmap"), "true|false", "clap's own bool parser");
+        assert_eq!(value("--git-branch-format"), "TEXT|none");
+        assert_eq!(
+            value("--project-update-reminders-hour"),
+            "0-23",
+            "a range is not enumerated; its value name says the bounds"
+        );
+        assert_eq!(value("--name"), "TEXT");
+        let md = markdown(&s);
+        assert!(
+            md.contains("| `--invitations-role` | `<owner\\|admin\\|user\\|guest>` |"),
+            "the pipes are escaped, so the row keeps its five cells"
+        );
+        assert!(md.contains("| `--format` | `<json\\|markdown>` |"));
     }
 
     #[test]

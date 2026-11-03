@@ -35,34 +35,34 @@ Change the workspace's settings; a flag left out leaves its setting alone, a boo
 | `--name` | `<TEXT>` | no |  | A new name |
 | `--url-key` | `<KEY>` | no |  | A new URL key, the `appshapes` of linear.app/appshapes; Linear keeps the last three previous keys redirecting |
 | `--logo-url` | `<URL>` | no |  | A new logo, by URL |
-| `--git-branch-format` | `<TEXT>` | no |  | The template for the branch name Linear suggests for an issue, or `none` for Linear's default |
-| `--git-linkback-messages` | `<true|false>` | no |  | Whether the git integration posts a linkback comment on a private repository's pull request |
-| `--git-public-linkback-messages` | `<true|false>` | no |  | Whether the git integration posts a linkback comment on a public repository's pull request |
-| `--git-linkback-descriptions` | `<true|false>` | no |  | Whether a linkback comment carries the issue's description |
-| `--suggested-branch-name` | `<true|false>` | no |  | Whether copying an issue, or opening it in a coding tool, suggests a branch name |
-| `--roadmap` | `<true|false>` | no |  | Whether the roadmap is on |
+| `--git-branch-format` | `<TEXT\|none>` | no |  | The template for the branch name Linear suggests for an issue, or `none` for Linear's default |
+| `--git-linkback-messages` | `<true\|false>` | no |  | Whether the git integration posts a linkback comment on a private repository's pull request |
+| `--git-public-linkback-messages` | `<true\|false>` | no |  | Whether the git integration posts a linkback comment on a public repository's pull request |
+| `--git-linkback-descriptions` | `<true\|false>` | no |  | Whether a linkback comment carries the issue's description |
+| `--suggested-branch-name` | `<true\|false>` | no |  | Whether copying an issue, or opening it in a coding tool, suggests a branch name |
+| `--roadmap` | `<true\|false>` | no |  | Whether the roadmap is on |
 | `--project-update-reminder-weeks` | `<N>` | no |  | How many weeks apart Linear asks for project updates |
-| `--project-update-reminders-day` | `<DAY>` | no |  | The weekday project update reminders go out |
+| `--project-update-reminders-day` | `<Sunday\|Monday\|Tuesday\|Wednesday\|Thursday\|Friday\|Saturday>` | no |  | The weekday project update reminders go out |
 | `--project-update-reminders-hour` | `<0-23>` | no |  | The hour project update reminders go out, 0 to 23 |
 | `--fiscal-year-start-month` | `<0-11>` | no |  | The month the fiscal year starts, 0 for January to 11 for December |
-| `--feed` | `<true|false>` | no |  | Whether the activity feed is on |
-| `--pull-request-tour` | `<true|false>` | no |  | Whether Linear writes an AI guide for a new pull request |
-| `--pull-request-issue-mode` | `<MODE>` | no |  | How Linear links an issue to a pull request that names none |
-| `--ai-thread-summaries` | `<true|false>` | no |  | Whether a resolved comment thread gets an AI summary |
-| `--ai-discussion-summaries` | `<true|false>` | no |  | Whether an issue's discussion gets an AI summary |
+| `--feed` | `<true\|false>` | no |  | Whether the activity feed is on |
+| `--pull-request-tour` | `<true\|false>` | no |  | Whether Linear writes an AI guide for a new pull request |
+| `--pull-request-issue-mode` | `<off\|suggest\|autoOnMerge>` | no |  | How Linear links an issue to a pull request that names none |
+| `--ai-thread-summaries` | `<true\|false>` | no |  | Whether a resolved comment thread gets an AI summary |
+| `--ai-discussion-summaries` | `<true\|false>` | no |  | Whether an issue's discussion gets an AI summary |
 | `--allowed-file-upload-content-types` | `<TYPE,...>` | no |  | The content types an upload may have, comma-separated (image/png,application/pdf); repeatable |
-| `--invitations-role` | `<ROLE>` | no |  | The least role that may invite users |
-| `--team-creation-role` | `<ROLE>` | no |  | The least role that may create a team |
-| `--label-management-role` | `<ROLE>` | no |  | The least role that may manage workspace labels |
-| `--personal-api-keys-role` | `<ROLE>` | no |  | The least role that may create a personal API key |
-| `--admin-management-role` | `<ROLE>` | no |  | The least role that may grant or revoke the admin role |
-| `--template-management-role` | `<ROLE>` | no |  | The least role that may manage workspace templates |
-| `--integration-creation-role` | `<ROLE>` | no |  | The least role that may install an integration |
-| `--import-role` | `<ROLE>` | no |  | The least role that may import data |
-| `--api-settings-role` | `<ROLE>` | no |  | The least role that may manage API settings |
-| `--workspace-initiatives-role` | `<ROLE>` | no |  | The least role that may create a workspace-wide initiative |
-| `--allowed-auth-services` | `<SERVICE,...|all>` | no |  | The sign-in services allowed, comma-separated (google,saml), or `all` |
-| `--hide-non-primary-organizations` | `<true|false>` | no |  | Whether a new user whose email domain this workspace claims is shown no other workspace at sign-up |
+| `--invitations-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may invite users |
+| `--team-creation-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may create a team |
+| `--label-management-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may manage workspace labels |
+| `--personal-api-keys-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may create a personal API key |
+| `--admin-management-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may grant or revoke the admin role |
+| `--template-management-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may manage workspace templates |
+| `--integration-creation-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may install an integration |
+| `--import-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may import data |
+| `--api-settings-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may manage API settings |
+| `--workspace-initiatives-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may create a workspace-wide initiative |
+| `--allowed-auth-services` | `<SERVICE,...\|all>` | no |  | The sign-in services allowed, comma-separated (google,saml), or `all` for every one; a value that names none is a usage error, exit 2 |
+| `--hide-non-primary-organizations` | `<true\|false>` | no |  | Whether a new user whose email domain this workspace claims is shown no other workspace at sign-up |
 
 ### muster team list
 
@@ -90,7 +90,7 @@ Create a team: its creator becomes a member and Linear makes its default states 
 | `--key` | `<KEY>` | no |  | The key, the prefix of the team's identifiers (APP); Linear makes one from the name when absent |
 | `--description` | `<TEXT>` | no |  | The description, plain text |
 | `--timezone` | `<TZ>` | no |  | The team's timezone, an IANA name (Europe/London) |
-| `--cycles-enabled` | `<true|false>` | no |  | Whether the team uses cycles |
+| `--cycles-enabled` | `<true\|false>` | no |  | Whether the team uses cycles |
 | `--parent` | `<KEY>` | no |  | The parent team, by key, which makes this a sub-team |
 | `--copy-settings-from` | `<KEY>` | no |  | A team, by key, whose settings the new team copies |
 | `--allow-duplicate` |  | no |  | Create it even when a team has the same name |
@@ -107,39 +107,39 @@ Change a team's settings; a flag left out leaves its setting alone, a boolean ta
 | `--description` | `<TEXT>` | no |  | A new description, plain text |
 | `--icon` | `<TEXT>` | no |  | The team's icon |
 | `--color` | `<HEX>` | no |  | The team's colour, a hex string (#4ea7fc) |
-| `--private` | `<true|false>` | no |  | Whether the team is private, visible to its members alone |
+| `--private` | `<true\|false>` | no |  | Whether the team is private, visible to its members alone |
 | `--timezone` | `<TZ>` | no |  | The team's timezone, an IANA name (Europe/London) |
 | `--parent` | `<KEY>` | no |  | The parent team, by key, or `none` to take the team out from under its parent |
-| `--cycles-enabled` | `<true|false>` | no |  | Whether the team uses cycles; Linear makes the cycles from the settings below |
+| `--cycles-enabled` | `<true\|false>` | no |  | Whether the team uses cycles; Linear makes the cycles from the settings below |
 | `--cycle-start-day` | `<0-6>` | no |  | The weekday a cycle starts, 0 for Sunday to 6 for Saturday |
 | `--cycle-duration` | `<WEEKS>` | no |  | How many weeks a cycle lasts |
 | `--cycle-cooldown` | `<WEEKS>` | no |  | How many weeks of cooldown follow a cycle |
-| `--cycle-auto-assign-started` | `<true|false>` | no |  | Whether an issue that is started is put in the active cycle |
-| `--cycle-auto-assign-completed` | `<true|false>` | no |  | Whether an issue that is completed is put in the active cycle |
-| `--cycle-lock-to-active` | `<true|false>` | no |  | Whether only issues in a cycle may be active |
+| `--cycle-auto-assign-started` | `<true\|false>` | no |  | Whether an issue that is started is put in the active cycle |
+| `--cycle-auto-assign-completed` | `<true\|false>` | no |  | Whether an issue that is completed is put in the active cycle |
+| `--cycle-lock-to-active` | `<true\|false>` | no |  | Whether only issues in a cycle may be active |
 | `--cycle-enabled-start-date` | `<TIME>` | no |  | When cycles begin, a time (2026-11-10T00:00:00Z) |
 | `--upcoming-cycle-count` | `<N>` | no |  | How many upcoming cycles Linear keeps made |
-| `--triage-enabled` | `<true|false>` | no |  | Whether new issues from outside the team land in triage |
-| `--require-priority-to-leave-triage` | `<true|false>` | no |  | Whether an issue needs a priority before it leaves triage |
+| `--triage-enabled` | `<true\|false>` | no |  | Whether new issues from outside the team land in triage |
+| `--require-priority-to-leave-triage` | `<true\|false>` | no |  | Whether an issue needs a priority before it leaves triage |
 | `--default-issue-state` | `<NAME>` | no |  | The state a new issue starts in, by name |
-| `--issue-estimation-type` | `<TYPE>` | no |  | How issues are estimated |
-| `--issue-estimation-allow-zero` | `<true|false>` | no |  | Whether an estimate may be zero |
-| `--issue-estimation-extended` | `<true|false>` | no |  | Whether the estimate scale has its extra points |
+| `--issue-estimation-type` | `<notUsed\|exponential\|fibonacci\|linear\|tShirt>` | no |  | How issues are estimated |
+| `--issue-estimation-allow-zero` | `<true\|false>` | no |  | Whether an estimate may be zero |
+| `--issue-estimation-extended` | `<true\|false>` | no |  | Whether the estimate scale has its extra points |
 | `--default-issue-estimate` | `<N>` | no |  | The estimate an issue has when none is set |
-| `--auto-close-period` | `<MONTHS|none>` | no |  | The months after which an idle issue is closed, or `none` to never close one |
+| `--auto-close-period` | `<MONTHS\|none>` | no |  | The months after which an idle issue is closed, or `none` to never close one |
 | `--auto-close-state` | `<NAME>` | no |  | The canceled state an auto-closed issue goes to, by name |
-| `--auto-close-parent-issues` | `<true|false>` | no |  | Whether a parent issue closes when every sub-issue is closed |
-| `--auto-close-child-issues` | `<true|false>` | no |  | Whether the sub-issues close when their parent is closed |
+| `--auto-close-parent-issues` | `<true\|false>` | no |  | Whether a parent issue closes when every sub-issue is closed |
+| `--auto-close-child-issues` | `<true\|false>` | no |  | Whether the sub-issues close when their parent is closed |
 | `--auto-archive-period` | `<MONTHS>` | no |  | The months after which a closed issue is archived |
-| `--join-by-default` | `<true|false>` | no |  | Whether a new user joins the team by default; a workspace admin's setting |
-| `--all-members-can-join` | `<true|false>` | no |  | Whether every member of the workspace may join the team |
-| `--initiatives-enabled` | `<true|false>` | no |  | Whether initiatives show in the team's sidebar |
-| `--group-issue-history` | `<true|false>` | no |  | Whether an issue's recent history entries are grouped |
-| `--team-management-role` | `<ROLE>` | no |  | The least team role that may change the team's settings |
-| `--member-management-role` | `<ROLE>` | no |  | The least team role that may add or remove members |
-| `--label-management-role` | `<ROLE>` | no |  | The least team role that may manage the team's labels |
-| `--template-management-role` | `<ROLE>` | no |  | The least team role that may manage the team's templates |
-| `--issue-sharing-role` | `<ROLE>` | no |  | The least team role that may share an issue outside the team |
+| `--join-by-default` | `<true\|false>` | no |  | Whether a new user joins the team by default; a workspace admin's setting |
+| `--all-members-can-join` | `<true\|false>` | no |  | Whether every member of the workspace may join the team |
+| `--initiatives-enabled` | `<true\|false>` | no |  | Whether initiatives show in the team's sidebar |
+| `--group-issue-history` | `<true\|false>` | no |  | Whether an issue's recent history entries are grouped |
+| `--team-management-role` | `<owner\|member>` | no |  | The least team role that may change the team's settings |
+| `--member-management-role` | `<owner\|member>` | no |  | The least team role that may add or remove members |
+| `--label-management-role` | `<owner\|member>` | no |  | The least team role that may manage the team's labels |
+| `--template-management-role` | `<owner\|member>` | no |  | The least team role that may manage the team's templates |
+| `--issue-sharing-role` | `<owner\|member>` | no |  | The least team role that may share an issue outside the team |
 
 ### muster team retire
 
@@ -313,7 +313,7 @@ The command tree, exit codes, notices, bounds and environment variables, as JSON
 
 | Argument or flag | Value | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `--format` | `<FORMAT>` | no | `json` | `json`, one object; or `markdown`, the text of docs/reference/commands.md |
+| `--format` | `<json\|markdown>` | no | `json` | `json`, one object; or `markdown`, the text of docs/reference/commands.md |
 
 ### muster fixtures
 

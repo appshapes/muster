@@ -1715,6 +1715,21 @@ fn workspace_update_changes_only_what_is_passed_and_reads_back() {
         "the day is spelt as Linear's enum spells it: {}",
         someday.stderr
     );
+    for empty in ["", ","] {
+        let none = muster(
+            &fake,
+            &["workspace", "update", "--allowed-auth-services", empty],
+        );
+        assert_eq!(
+            none.code, 2,
+            "{empty:?} is the empty list too, which only `all` may send: {}",
+            none.stderr
+        );
+        assert_eq!(
+            none.error()["message"],
+            "--allowed-auth-services names no service"
+        );
+    }
     assert_eq!(
         fake.operations()
             .iter()

@@ -3,8 +3,9 @@
 A how-to page: one task, a feature from a Linear issue to its commits on `master`, for a
 person with write access or for the agent. The rules are in `CLAUDE.md` and the gates
 enforce them; this page is the order of work. Why the first features are the ones they
-are is [ADR 0007](../decisions/0007-build-the-trello-command-set-first.md), and the
-next ones [ADR 0013](../decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md).
+are is [ADR 0007](../decisions/0007-build-the-trello-command-set-first.md), the next
+ones [ADR 0013](../decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md),
+and the administrative ones [ADR 0014](../decisions/0014-build-the-third-slice-administrative-commands.md).
 
 ## Prerequisites
 
@@ -60,14 +61,17 @@ next ones [ADR 0013](../decisions/0013-build-the-second-slice-sub-issues-attachm
       from 3.2; glossary rows; a `CHANGELOG.md` line. The reference page is generated,
       never written by hand.
    6. If a gate prints `not built yet` and would check this change, building it is
-      part of this commit. The slice's ADR (ADR 0007, then ADR 0013) names which feature
-      builds which gate.
-   7. One command per pull request where the work goes through the review loop, and
-      none over about a thousand changed lines, generated files aside. The reviewer
-      reads a pull request whole and the fixer applies every blocker of a review in one
-      run, so the blocker count of a first review must fit one run. Split by command,
-      then by file within a command, so that each pull request passes the four gates on
-      its own; the rest waits on its own branch until the first merges.
+      part of this commit. The slice's ADR (ADR 0007, ADR 0013, then ADR 0014) names
+      which feature builds which gate.
+   7. One group of related verbs per pull request where the work goes through the
+      review loop (`label create`, `label update`, `label retire`, `label restore` and
+      `label delete` land together; a command with a large flag list, such as
+      `team update`, lands alone), and none over about a thousand changed lines,
+      generated files aside (ADR 0014). The reviewer reads a pull request whole and the
+      fixer applies every blocker of a review in one run, so the blocker count of a
+      first review must fit one run. Split by command, then by file within a command,
+      when a group would pass the cap, so that each pull request passes the four gates
+      on its own; the rest waits on its own branch until the first merges.
 
 4. **Run the gates and commit.**
    - A person: `/commit APP-12` runs the four gates, then `git add`, `git commit`,
