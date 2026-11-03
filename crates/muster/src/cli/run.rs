@@ -9,16 +9,16 @@ use crate::bounds::{
 };
 use crate::cli::{
     AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
-    IssueListArgs, ListArgs, ListCommand, ProjectCommand, ProjectCreateArgs, UpdateArgs,
-    WorkspaceCommand, WorkspaceUpdateArgs,
+    IssueListArgs, ListArgs, ListCommand, ProjectCommand, ProjectCreateArgs, TeamCommand,
+    TeamCreateArgs, TeamRefArgs, UpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
-use crate::linear::Linear;
 use crate::linear::operations as ops;
 use crate::linear::select::{
     Filter, at, find_by, has_next_page, is_identifier, is_uuid, names, need_str, nodes, str_at,
 };
+use crate::linear::{Linear, now_iso};
 use crate::output::{Output, Text, check_body, read_body};
 use crate::{DOCS_URL, VERSION};
 
@@ -38,9 +38,18 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 WorkspaceCommand::Update(args) => workspace_update(&session, args, out),
             }
         }
-        Command::Team {
-            command: ListCommand::List(args),
-        } => list_teams(&Session::open(&config)?, args, out),
+        Command::Team { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                TeamCommand::List(args) => list_teams(&session, args, out),
+                TeamCommand::Get(args) => team_get(&session, args, out),
+                TeamCommand::Create(args) => team_create(&session, args, out),
+                TeamCommand::Retire(args) => team_retire(&session, args, true, out),
+                TeamCommand::Unretire(args) => team_retire(&session, args, false, out),
+                TeamCommand::Delete(args) => team_delete(&session, args, out),
+                TeamCommand::Unarchive(args) => team_unarchive(&session, args, out),
+            }
+        }
         Command::State {
             command: ListCommand::List(args),
         } => list_states(&Session::open(&config)?, args, out),
@@ -127,6 +136,31 @@ impl Session {
     fn team_key(&self) -> Result<String, Error> {
         let (team, _) = self.team()?;
         need_str(&team, "key", "Teams")
+    }
+
+    /// The key a team command works on: the key given, else the usual rule.
+    fn team_key_of(&self, key: &Option<String>) -> Result<String, Error> {
+        match key.as_deref().map(str::trim) {
+            Some(key) if !key.is_empty() => Ok(key.to_string()),
+            _ => self.team_key(),
+        }
+    }
+
+    /// One team with every setting, by key, in one `TeamByKey` request; an archived
+    /// team only when asked, as Linear lists them (ADR 0014, group 2).
+    fn team_full(&self, key: &str, include_archived: bool) -> Result<Value, Error> {
+        let data = self.linear.run(
+            &ops::TEAM_BY_KEY,
+            json!({ "key": key, "includeArchived": include_archived }),
+        )?;
+        match nodes(&data, "teams").into_iter().next() {
+            Some(team) => Ok(team),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("no team with key {key:?}"),
+                "`muster team list` shows the keys; a deleted team is reached by `team unarchive <KEY>` within Linear's grace period",
+            )),
+        }
     }
 
     fn states(&self, team_key: &str) -> Result<Vec<Value>, Error> {
@@ -576,6 +610,144 @@ fn workspace_update(
         json!({ "input": Value::Object(input) }),
     )?;
     out.emit(&payload(&data, "organizationUpdate", "organization")?);
+    Ok(())
+}
+
+fn team_get(session: &Session, args: &TeamRefArgs, out: &Output) -> Result<(), Error> {
+    let key = session.team_key_of(&args.key)?;
+    out.emit(&session.team_full(&key, false)?);
+    Ok(())
+}
+
+/// The input of `teamCreate` but its `parentId`: the flags, each checked before any
+/// request; an empty key is a usage error, since Linear would make one from the name
+/// and muster sends what it was given.
+fn team_input(args: &TeamCreateArgs) -> Result<Map<String, Value>, Error> {
+    check_body(Text::Name, &args.name)?;
+    let mut input = Map::new();
+    input.insert("name".into(), json!(args.name));
+    if let Some(key) = &args.key {
+        let key = key.trim();
+        if key.is_empty() {
+            return Err(Error::with_hint(
+                ErrorCode::Usage,
+                "--key must not be empty",
+                "leave --key out and Linear makes a key from the name",
+            ));
+        }
+        input.insert("key".into(), json!(key));
+    }
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if let Some(timezone) = &args.timezone {
+        input.insert("timezone".into(), json!(timezone));
+    }
+    if let Some(cycles) = args.cycles_enabled {
+        input.insert("cyclesEnabled".into(), json!(cycles));
+    }
+    Ok(input)
+}
+
+fn team_create(session: &Session, args: &TeamCreateArgs, out: &Output) -> Result<(), Error> {
+    let mut input = team_input(args)?;
+    // The guard is on the name: `--team` and `MUSTER_TEAM` resolve a key, which Linear
+    // keeps unique itself, and a reader resolves a name.
+    if !args.allow_duplicate
+        && let Some(existing) = find_by(&session.teams()?, "name", &args.name)
+    {
+        return Err(Error::with_hint(
+            ErrorCode::Refused,
+            format!(
+                "a team named {:?} exists: its key is {}",
+                str_at(existing, "name").unwrap_or(&args.name),
+                str_at(existing, "key").unwrap_or("?")
+            ),
+            "use that team, or pass --allow-duplicate if a second one is wanted",
+        )
+        .at("muster-team-create"));
+    }
+    if let Some(parent) = &args.parent {
+        let parent = session.team_full(parent, false)?;
+        input.insert(
+            "parentId".into(),
+            json!(need_str(&parent, "id", "TeamByKey")?),
+        );
+    }
+    let copy = match &args.copy_settings_from {
+        Some(key) => json!(need_str(
+            &session.team_full(key, false)?,
+            "id",
+            "TeamByKey"
+        )?),
+        None => Value::Null,
+    };
+    let data = session.linear.run(
+        &ops::TEAM_CREATE,
+        json!({ "input": Value::Object(input), "copySettingsFromTeamId": copy }),
+    )?;
+    out.emit(&payload(&data, "teamCreate", "team")?);
+    Ok(())
+}
+
+/// `team retire` and `team unretire`: `teamUpdate` with `retiredAt` set to now, or
+/// cleared, and the team as Linear returns it.
+fn team_retire(
+    session: &Session,
+    args: &TeamRefArgs,
+    retire: bool,
+    out: &Output,
+) -> Result<(), Error> {
+    let key = session.team_key_of(&args.key)?;
+    let team = session.team_full(&key, false)?;
+    let id = need_str(&team, "id", "TeamByKey")?;
+    let value = if retire {
+        json!(now_iso())
+    } else {
+        Value::Null
+    };
+    let data = session.linear.run(
+        &ops::TEAM_UPDATE,
+        json!({ "id": id, "input": { "retiredAt": value } }),
+    )?;
+    out.emit(&payload(&data, "teamUpdate", "team")?);
+    Ok(())
+}
+
+/// A delete payload, after checking `success`: Linear's own object, `success` and the
+/// `entityId`, printed as it is.
+fn delete_payload(data: &Value, field: &str) -> Result<Value, Error> {
+    match at(data, &format!("{field}.success")).as_bool() {
+        Some(true) => Ok(at(data, field).clone()),
+        Some(false) => Err(Error::new(
+            ErrorCode::Refused,
+            format!("Linear answered {field} with success false"),
+        )),
+        None => Err(Error::new(
+            ErrorCode::Failed,
+            format!("Linear's answer to {field} has no success"),
+        )),
+    }
+}
+
+fn team_delete(session: &Session, args: &TeamRefArgs, out: &Output) -> Result<(), Error> {
+    let key = session.team_key_of(&args.key)?;
+    let team = session.team_full(&key, false)?;
+    let id = need_str(&team, "id", "TeamByKey")?;
+    let data = session.linear.run(&ops::TEAM_DELETE, json!({ "id": id }))?;
+    out.emit(&delete_payload(&data, "teamDelete")?);
+    Ok(())
+}
+
+fn team_unarchive(session: &Session, args: &TeamRefArgs, out: &Output) -> Result<(), Error> {
+    let key = session.team_key_of(&args.key)?;
+    let team = session.team_full(&key, true)?;
+    let id = need_str(&team, "id", "TeamByKey")?;
+    let data = session
+        .linear
+        .run(&ops::TEAM_UNARCHIVE, json!({ "id": id }))?;
+    out.emit(&payload(&data, "teamUnarchive", "entity")?);
     Ok(())
 }
 
@@ -1416,6 +1588,56 @@ mod tests {
             workspace_input(&long)
                 .err()
                 .is_some_and(|e| e.code == ErrorCode::Refused && e.message.starts_with("the name")),
+        );
+    }
+
+    #[test]
+    fn a_team_input_is_checked_before_any_request() {
+        let args = TeamCreateArgs {
+            name: "Smoke tests".into(),
+            key: Some(" SMK ".into()),
+            cycles_enabled: Some(true),
+            ..TeamCreateArgs::default()
+        };
+        let input = team_input(&args).unwrap_or_default();
+        assert_eq!(input.get("key"), Some(&json!("SMK")), "trimmed");
+        assert_eq!(input.get("cyclesEnabled"), Some(&json!(true)));
+        assert_eq!(input.get("timezone"), None, "a flag left out is not sent");
+        assert_eq!(
+            input.get("parentId"),
+            None,
+            "the parent is resolved after the checks"
+        );
+        let empty = TeamCreateArgs {
+            name: "x".into(),
+            key: Some(" ".into()),
+            ..TeamCreateArgs::default()
+        };
+        assert_eq!(
+            team_input(&empty).err().map(|e| e.code),
+            Some(ErrorCode::Usage)
+        );
+        let long = TeamCreateArgs {
+            name: "n".repeat(BODY_MAX_BYTES + 1),
+            ..TeamCreateArgs::default()
+        };
+        assert!(
+            team_input(&long)
+                .err()
+                .is_some_and(|e| e.code == ErrorCode::Refused)
+        );
+        assert!(
+            delete_payload(
+                &json!({ "teamDelete": { "success": true, "entityId": "x" } }),
+                "teamDelete"
+            )
+            .is_ok_and(|v| v["entityId"] == "x")
+        );
+        assert_eq!(
+            delete_payload(&json!({ "teamDelete": { "success": false } }), "teamDelete")
+                .err()
+                .map(|e| e.code),
+            Some(ErrorCode::Refused)
         );
     }
 

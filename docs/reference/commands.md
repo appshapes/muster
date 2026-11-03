@@ -72,6 +72,61 @@ List them, one JSON object per line.
 | --- | --- | --- | --- | --- |
 | `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
 
+### muster team get
+
+One team with every setting, by key; without a key, the team muster would use.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<KEY>` | `<KEY>` | no |  | The team key (APP); when absent, --team, MUSTER_TEAM or the workspace's only team |
+
+### muster team create
+
+Create a team: its creator becomes a member and Linear makes its default states and labels; a name a team already has is refused unless --allow-duplicate.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--name` | `<TEXT>` | yes |  | The name |
+| `--key` | `<KEY>` | no |  | The key, the prefix of the team's identifiers (APP); Linear makes one from the name when absent |
+| `--description` | `<TEXT>` | no |  | The description, plain text |
+| `--timezone` | `<TZ>` | no |  | The team's timezone, an IANA name (Europe/London) |
+| `--cycles-enabled` | `<true\|false>` | no |  | Whether the team uses cycles |
+| `--parent` | `<KEY>` | no |  | The parent team, by key, which makes this a sub-team |
+| `--copy-settings-from` | `<KEY>` | no |  | A team, by key, whose settings the new team copies |
+| `--allow-duplicate` |  | no |  | Create it even when a team has the same name |
+
+### muster team retire
+
+Retire a team: it keeps its issues and accepts no new ones (`retiredAt` set to now).
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<KEY>` | `<KEY>` | no |  | The team key (APP); when absent, --team, MUSTER_TEAM or the workspace's only team |
+
+### muster team unretire
+
+Take a retired team back into use (`retiredAt` cleared).
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<KEY>` | `<KEY>` | no |  | The team key (APP); when absent, --team, MUSTER_TEAM or the workspace's only team |
+
+### muster team delete
+
+Archive a team and schedule its data for deletion after Linear's grace period; `team unarchive` cancels that within the period.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<KEY>` | `<KEY>` | no |  | The team key (APP); when absent, --team, MUSTER_TEAM or the workspace's only team |
+
+### muster team unarchive
+
+Cancel a team's deletion within Linear's grace period and bring it back.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<KEY>` | `<KEY>` | no |  | The team key (APP); when absent, --team, MUSTER_TEAM or the workspace's only team |
+
 ### muster state list
 
 List them, one JSON object per line.
@@ -302,9 +357,14 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `IssueById` | query |
 | `Issues` | query |
 | `Workspace` | query |
+| `TeamByKey` | query |
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
 | `AttachmentCreate` | mutation |
 | `ProjectCreate` | mutation |
 | `WorkspaceUpdate` | mutation |
+| `TeamCreate` | mutation |
+| `TeamUpdate` | mutation |
+| `TeamDelete` | mutation |
+| `TeamUnarchive` | mutation |

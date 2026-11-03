@@ -572,7 +572,64 @@ impl Workspace {
             let sid = self.id();
             self.states.push(json!({ "id": sid, "name": state, "type": kind, "position": pos as f64, "color": "#bec2c8", "description": null, "team": { "id": id, "key": key } }));
         }
-        json!({ "id": id, "key": key, "name": name, "description": null, "private": false })
+        let backlog = self
+            .states
+            .iter()
+            .find(|s| s["team"]["id"] == id && s["name"] == "Backlog")
+            .map(|s| json!({ "id": s["id"], "name": s["name"], "type": s["type"] }))
+            .unwrap_or(Value::Null);
+        let now = self.now();
+        // Every field `TeamFields` asks for, with Linear's defaults for a new team
+        // (ADR 0014, group 2), in three parts since one `json!` of them all passes the
+        // macro recursion limit; `issueCount` is computed when the team is answered.
+        let mut team = json!({
+            "id": id, "key": key, "name": name, "displayName": name, "description": null, "icon": null, "color": null,
+            "createdAt": now, "updatedAt": now, "archivedAt": null, "retiredAt": null,
+            "visibility": "public", "private": false, "timezone": "Etc/UTC",
+            "defaultIssueState": backlog, "triageIssueState": null, "parent": null, "activeCycle": null,
+        });
+        merge(
+            &mut team,
+            json!({
+                "cyclesEnabled": false, "cycleStartDay": 1, "cycleDuration": 2, "cycleCooldownTime": 0,
+                "cycleIssueAutoAssignStarted": false, "cycleIssueAutoAssignCompleted": false, "cycleLockToActive": false, "upcomingCycleCount": 2,
+                "triageEnabled": false, "requirePriorityToLeaveTriage": false,
+                "inheritIssueEstimation": false, "issueEstimationType": "notUsed", "issueEstimationAllowZero": true, "issueEstimationExtended": false, "defaultIssueEstimate": 0,
+            }),
+        );
+        merge(
+            &mut team,
+            json!({
+                "autoClosePeriod": null, "autoCloseStateId": null, "autoCloseParentIssues": null, "autoCloseChildIssues": null, "autoArchivePeriod": 6,
+                "allMembersCanJoin": true, "initiativesEnabled": true, "groupIssueHistory": true,
+                "securitySettings": {}, "scimManaged": false, "scimGroupName": null,
+            }),
+        );
+        team
+    }
+
+    /// A team as `TeamFields` answers it: with its `issueCount`, and without the
+    /// deprecated `private`, which only the `Teams` projection asks for.
+    fn team_view(&self, team: &Value) -> Value {
+        let mut view = team.clone();
+        if let Some(map) = view.as_object_mut() {
+            map.remove("private");
+        }
+        view["issueCount"] = json!(
+            self.issues
+                .iter()
+                .filter(|i| i["team"]["id"] == team["id"] && i["archivedAt"].is_null())
+                .count()
+        );
+        view
+    }
+
+    /// The teams `Teams` lists: the ones not archived, unless asked.
+    fn live_teams(&self, include_archived: bool) -> Vec<&Value> {
+        self.teams
+            .iter()
+            .filter(|t| include_archived || t["archivedAt"].is_null())
+            .collect()
     }
 
     fn team_by_key(&self, key: &str) -> Option<&Value> {
@@ -826,10 +883,186 @@ impl Workspace {
                     json!({ "data": { "organizationUpdate": { "success": true, "organization": self.organization } } }),
                 )
             }
-            "Teams" => (
-                200,
-                json!({ "data": { "teams": Workspace::page(self.teams.clone(), first) } }),
-            ),
+            "Teams" => {
+                let teams: Vec<Value> = self
+                    .live_teams(false)
+                    .into_iter()
+                    .map(|t| json!({ "id": t["id"], "key": t["key"], "name": t["name"], "description": t["description"], "private": t["private"], "visibility": t["visibility"], "cyclesEnabled": t["cyclesEnabled"], "retiredAt": t["retiredAt"], "timezone": t["timezone"] }))
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "teams": Workspace::page(teams, first) } }),
+                )
+            }
+            "TeamByKey" => {
+                let key = vars["key"].as_str().unwrap_or("");
+                let include_archived = vars["includeArchived"].as_bool().unwrap_or(false);
+                let found: Vec<Value> = self
+                    .live_teams(include_archived)
+                    .into_iter()
+                    .filter(|t| {
+                        t["key"]
+                            .as_str()
+                            .is_some_and(|k| k.eq_ignore_ascii_case(key))
+                    })
+                    .map(|t| self.team_view(t))
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "teams": Workspace::page(found, 1) } }),
+                )
+            }
+            "TeamCreate" => {
+                let input = vars["input"].clone();
+                let Some(name) = input["name"].as_str().filter(|n| !n.trim().is_empty()) else {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "name should not be empty" } } ], "data": null }),
+                    );
+                };
+                let key = match input["key"].as_str() {
+                    Some(key) => key.to_string(),
+                    None => name
+                        .chars()
+                        .filter(|c| c.is_ascii_alphanumeric())
+                        .take(3)
+                        .collect::<String>()
+                        .to_ascii_uppercase(),
+                };
+                if self.teams.iter().any(|t| {
+                    t["key"]
+                        .as_str()
+                        .is_some_and(|k| k.eq_ignore_ascii_case(&key))
+                }) {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "The team key is already in use." } } ], "data": null }),
+                    );
+                }
+                let parent = match input["parentId"].as_str() {
+                    Some(pid) => match self.teams.iter().find(|t| t["id"] == pid) {
+                        Some(p) => json!({ "id": p["id"], "key": p["key"], "name": p["name"] }),
+                        None => return not_found("Team"),
+                    },
+                    None => Value::Null,
+                };
+                if let Some(copy) = vars["copySettingsFromTeamId"].as_str()
+                    && !self.teams.iter().any(|t| t["id"] == copy)
+                {
+                    return not_found("Team");
+                }
+                let mut team = self.new_team(&key, name);
+                team["parent"] = parent;
+                for field in ["description", "timezone", "cyclesEnabled"] {
+                    if let Some(value) = input.get(field) {
+                        team[field] = value.clone();
+                    }
+                }
+                self.teams.push(team.clone());
+                (
+                    200,
+                    json!({ "data": { "teamCreate": { "success": true, "team": self.team_view(&team) } } }),
+                )
+            }
+            "TeamUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "TeamUpdateInput!");
+                };
+                let Some(index) = self.teams.iter().position(|t| t["id"] == id) else {
+                    return not_found("Team");
+                };
+                let now = self.now();
+                let mut team = self.teams[index].clone();
+                for (field, value) in input {
+                    match field.as_str() {
+                        // Only what is sent changes; the nested and the referenced
+                        // settings are answered as `TeamFields` answers them.
+                        "securitySettings" => {
+                            if let (Some(have), Some(given)) =
+                                (team["securitySettings"].as_object_mut(), value.as_object())
+                            {
+                                for (k, v) in given {
+                                    have.insert(k.clone(), v.clone());
+                                }
+                            }
+                        }
+                        "parentId" => {
+                            team["parent"] = match value.as_str() {
+                                Some(pid) => match self.teams.iter().find(|t| t["id"] == pid) {
+                                    Some(p) => {
+                                        json!({ "id": p["id"], "key": p["key"], "name": p["name"] })
+                                    }
+                                    None => return not_found("Team"),
+                                },
+                                None => Value::Null,
+                            };
+                        }
+                        "defaultIssueStateId" => {
+                            team["defaultIssueState"] = match value.as_str() {
+                                Some(sid) => match self.states.iter().find(|s| s["id"] == sid) {
+                                    Some(s) => {
+                                        json!({ "id": s["id"], "name": s["name"], "type": s["type"] })
+                                    }
+                                    None => return not_found("WorkflowState"),
+                                },
+                                None => Value::Null,
+                            };
+                        }
+                        "private" => {
+                            let private = value.as_bool().unwrap_or(false);
+                            team["private"] = json!(private);
+                            team["visibility"] = json!(if private { "private" } else { "public" });
+                        }
+                        "key" => {
+                            if let Some(key) = value.as_str() {
+                                team["key"] = json!(key);
+                            }
+                        }
+                        "name" => {
+                            team["name"] = value.clone();
+                            team["displayName"] = value;
+                        }
+                        other => {
+                            team[other] = value;
+                        }
+                    }
+                }
+                team["updatedAt"] = json!(now);
+                self.teams[index] = team.clone();
+                (
+                    200,
+                    json!({ "data": { "teamUpdate": { "success": true, "team": self.team_view(&team) } } }),
+                )
+            }
+            "TeamDelete" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self
+                    .teams
+                    .iter()
+                    .position(|t| t["id"] == id && t["archivedAt"].is_null())
+                else {
+                    return not_found("Team");
+                };
+                let now = self.now();
+                self.teams[index]["archivedAt"] = json!(now);
+                (
+                    200,
+                    json!({ "data": { "teamDelete": { "success": true, "entityId": id } } }),
+                )
+            }
+            "TeamUnarchive" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.teams.iter().position(|t| t["id"] == id) else {
+                    return not_found("Team");
+                };
+                self.teams[index]["archivedAt"] = Value::Null;
+                let team = self.teams[index].clone();
+                (
+                    200,
+                    json!({ "data": { "teamUnarchive": { "success": true, "entity": self.team_view(&team) } } }),
+                )
+            }
             "WorkflowStates" => {
                 let mut states: Vec<Value> = self
                     .states
@@ -1204,6 +1437,15 @@ impl Workspace {
                 400,
                 json!({ "errors": [ { "message": format!("Unknown operation {other:?}"), "extensions": { "code": "GRAPHQL_VALIDATION_FAILED", "type": "graphql error", "userError": true } } ] }),
             ),
+        }
+    }
+}
+
+/// Put every field of `more` on `object`.
+fn merge(object: &mut Value, more: Value) {
+    if let (Some(have), Some(given)) = (object.as_object_mut(), more.as_object()) {
+        for (k, v) in given {
+            have.insert(k.clone(), v.clone());
         }
     }
 }

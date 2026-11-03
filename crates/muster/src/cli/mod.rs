@@ -45,11 +45,11 @@ pub enum Command {
         #[command(subcommand)]
         command: WorkspaceCommand,
     },
-    /// Teams of the workspace
+    /// Teams: list, get, create, retire, unretire, delete, unarchive
     Team {
-        /// `list`.
+        /// The team command.
         #[command(subcommand)]
-        command: ListCommand,
+        command: TeamCommand,
     },
     /// Workflow states of the team
     State {
@@ -285,7 +285,63 @@ impl PullRequestIssueMode {
     }
 }
 
-/// `list` under `team`, `state`, `label`, `project` and `user`.
+/// The team commands (ADR 0007; ADR 0014, group 2).
+#[derive(Subcommand, Debug)]
+pub enum TeamCommand {
+    /// List them, one JSON object per line
+    List(ListArgs),
+    /// One team with every setting, by key; without a key, the team muster would use
+    Get(TeamRefArgs),
+    /// Create a team: its creator becomes a member and Linear makes its default states and labels; a name a team already has is refused unless --allow-duplicate
+    Create(Box<TeamCreateArgs>),
+    /// Retire a team: it keeps its issues and accepts no new ones (`retiredAt` set to now)
+    Retire(TeamRefArgs),
+    /// Take a retired team back into use (`retiredAt` cleared)
+    Unretire(TeamRefArgs),
+    /// Archive a team and schedule its data for deletion after Linear's grace period; `team unarchive` cancels that within the period
+    Delete(TeamRefArgs),
+    /// Cancel a team's deletion within Linear's grace period and bring it back
+    Unarchive(TeamRefArgs),
+}
+
+/// A team named by key, or the usual team when none is given.
+#[derive(Args, Debug)]
+pub struct TeamRefArgs {
+    /// The team key (APP); when absent, --team, MUSTER_TEAM or the workspace's only team
+    #[arg(value_name = "KEY")]
+    pub key: Option<String>,
+}
+
+/// `team create`.
+#[derive(Args, Debug, Default)]
+pub struct TeamCreateArgs {
+    /// The name
+    #[arg(long, value_name = "TEXT")]
+    pub name: String,
+    /// The key, the prefix of the team's identifiers (APP); Linear makes one from the name when absent
+    #[arg(long, value_name = "KEY")]
+    pub key: Option<String>,
+    /// The description, plain text
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// The team's timezone, an IANA name (Europe/London)
+    #[arg(long, value_name = "TZ")]
+    pub timezone: Option<String>,
+    /// Whether the team uses cycles
+    #[arg(long, value_name = "true|false")]
+    pub cycles_enabled: Option<bool>,
+    /// The parent team, by key, which makes this a sub-team
+    #[arg(long, value_name = "KEY")]
+    pub parent: Option<String>,
+    /// A team, by key, whose settings the new team copies
+    #[arg(long, value_name = "KEY")]
+    pub copy_settings_from: Option<String>,
+    /// Create it even when a team has the same name
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `list` under `state`, `label` and `user`.
 #[derive(Subcommand, Debug)]
 pub enum ListCommand {
     /// List them, one JSON object per line

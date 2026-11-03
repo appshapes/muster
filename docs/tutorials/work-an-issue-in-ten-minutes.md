@@ -51,6 +51,19 @@ takes `true` or `false`, and `muster workspace update --help` lists every settin
 of them need a workspace admin: Linear's refusal is exit 6, `"code":"refused"`, with
 Linear's message.
 
+The team itself is `muster team get`: one JSON line with every setting of the team
+muster would use (`muster team get SMK` for another), from `cyclesEnabled` and the
+cycle settings to the `defaultIssueState`, the `timezone`, the `visibility` and the
+`issueCount`. `muster team create --name "Trying muster" --key TRY` makes a team:
+you become its member and Linear makes its default states and labels; a name
+a team already has is exit 6 unless `--allow-duplicate`, and Linear keeps the key
+unique itself. The team's lifecycle is four commands: `muster team retire TRY` sets
+`retiredAt`, so the team keeps its issues and takes no new ones, `muster team unretire
+TRY` clears it, `muster team delete TRY` archives the team and schedules its data for
+deletion after Linear's grace period (one JSON line, Linear's `success` and
+`entityId`), and `muster team unarchive TRY` cancels that within the period
+([ADR 0014](../decisions/0014-build-the-third-slice-administrative-commands.md)).
+
 If you see `"code":"authentication"` on stderr and exit 3, the key was not found or
 was refused; the `hint` says where to put it. If the `team` is `null` with a `warn`
 check, the workspace has several teams: add `--team <KEY>` to the commands below, or

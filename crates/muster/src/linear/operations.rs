@@ -76,6 +76,23 @@ pub const ORGANIZATION_FIELDS: &str = "fragment OrganizationFields on Organizati
   subscription { id type seats seatsMinimum seatsMaximum collectionMethod nextBillingAt canceledAt cancelAt pendingChangeType }
 }";
 
+/// The fields every team answer carries (ADR 0014, group 2): every setting
+/// `team update` can change, read back, with the team's states and parent by id and
+/// name. `private` and `joinByDefault` are left out: Linear marks the first deprecated
+/// on `Team` (`visibility` replaces it) and the second Internal.
+pub const TEAM_FIELDS: &str = "fragment TeamFields on Team {
+  id key name displayName description icon color createdAt updatedAt archivedAt retiredAt
+  visibility timezone issueCount
+  cyclesEnabled cycleStartDay cycleDuration cycleCooldownTime cycleIssueAutoAssignStarted cycleIssueAutoAssignCompleted cycleLockToActive upcomingCycleCount
+  triageEnabled requirePriorityToLeaveTriage
+  defaultIssueState { id name type } triageIssueState { id name type }
+  inheritIssueEstimation issueEstimationType issueEstimationAllowZero issueEstimationExtended defaultIssueEstimate
+  autoClosePeriod autoCloseStateId autoCloseParentIssues autoCloseChildIssues autoArchivePeriod
+  allMembersCanJoin initiativesEnabled groupIssueHistory securitySettings scimManaged scimGroupName
+  parent { id key name }
+  activeCycle { id number name }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -121,7 +138,7 @@ op!(
     "Teams",
     Kind::Query,
     "query Teams($first: Int!) {
-  teams(first: $first) { nodes { id key name description private } pageInfo { hasNextPage } }
+  teams(first: $first) { nodes { id key name description private visibility cyclesEnabled retiredAt timezone } pageInfo { hasNextPage } }
 }"
 );
 
@@ -183,6 +200,16 @@ op!(ISSUE_BY_ID, "IssueById", Kind::Query, "query IssueById($id: String!, $comme
 op!(ISSUES, "Issues", Kind::Query, "query Issues($first: Int!, $filter: IssueFilter, $orderBy: PaginationOrderBy) {
   issues(first: $first, filter: $filter, orderBy: $orderBy) { nodes { ...IssueFields } pageInfo { hasNextPage } }
 }", &[ISSUE_FIELDS]);
+
+op!(
+    TEAM_BY_KEY,
+    "TeamByKey",
+    Kind::Query,
+    "query TeamByKey($key: String!, $includeArchived: Boolean) {
+  teams(first: 1, filter: { key: { eqIgnoreCase: $key } }, includeArchived: $includeArchived) { nodes { ...TeamFields } }
+}",
+    &[TEAM_FIELDS]
+);
 
 op!(
     WORKSPACE,
@@ -255,6 +282,45 @@ op!(
     &[ORGANIZATION_FIELDS]
 );
 
+op!(
+    TEAM_CREATE,
+    "TeamCreate",
+    Kind::Mutation,
+    "mutation TeamCreate($input: TeamCreateInput!, $copySettingsFromTeamId: String) {
+  teamCreate(input: $input, copySettingsFromTeamId: $copySettingsFromTeamId) { success team { ...TeamFields } }
+}",
+    &[TEAM_FIELDS]
+);
+
+op!(
+    TEAM_UPDATE,
+    "TeamUpdate",
+    Kind::Mutation,
+    "mutation TeamUpdate($id: String!, $input: TeamUpdateInput!) {
+  teamUpdate(id: $id, input: $input) { success team { ...TeamFields } }
+}",
+    &[TEAM_FIELDS]
+);
+
+op!(
+    TEAM_DELETE,
+    "TeamDelete",
+    Kind::Mutation,
+    "mutation TeamDelete($id: String!) {
+  teamDelete(id: $id) { success entityId }
+}"
+);
+
+op!(
+    TEAM_UNARCHIVE,
+    "TeamUnarchive",
+    Kind::Mutation,
+    "mutation TeamUnarchive($id: String!) {
+  teamUnarchive(id: $id) { success entity { ...TeamFields } }
+}",
+    &[TEAM_FIELDS]
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -266,6 +332,7 @@ pub static READS: &[&Operation] = &[
     &ISSUE_BY_ID,
     &ISSUES,
     &WORKSPACE,
+    &TEAM_BY_KEY,
 ];
 
 /// Every write operation.
@@ -276,6 +343,10 @@ pub static WRITES: &[&Operation] = &[
     &ATTACHMENT_CREATE,
     &PROJECT_CREATE,
     &WORKSPACE_UPDATE,
+    &TEAM_CREATE,
+    &TEAM_UPDATE,
+    &TEAM_DELETE,
+    &TEAM_UNARCHIVE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -321,6 +392,7 @@ mod tests {
                 "CommentFields",
                 "ProjectFields",
                 "OrganizationFields",
+                "TeamFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));
