@@ -25,7 +25,7 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 | title | An issue's one-line name, or an attachment's; `--title` on `issue create`, `issue update` and `issue attach`. | `title` | name | `docs/reference/commands.md#muster-issue-create` |
 | description | An issue's text, markdown; `--description` or `--description-file`. | `description` | desc | `docs/reference/commands.md#muster-issue-create` |
 | body | A comment's text, markdown; `--body` or `--body-file`. | `body` | text | `docs/reference/commands.md#muster-issue-comment` |
-| parent | The issue a sub-issue belongs to; `--parent` on `issue create`, `issue update` and `issue list`. | `parent`, `parentId` | checklist item (the nearest) | `docs/reference/commands.md#muster-issue-get` |
+| parent | The issue a sub-issue belongs to; `--parent` on `issue create`, `issue update` and `issue list`. | `parent`, `parentId` | the card that holds the checklist (the nearest) | `docs/reference/commands.md#muster-issue-get` |
 | name | What a team, state, label or project is called; the value of `--state`, `--label` and `--project`. | `name` | name | `docs/reference/commands.md#muster-state-list` |
 | url | A link's address, on an attachment; `url` is also every issue's own web address. | `url` | attachment URL | `docs/reference/commands.md#muster-issue-get` |
 | subtitle | A link's second line, under its title, on an attachment. | `subtitle` | none | `docs/reference/commands.md#muster-issue-get` |
