@@ -28,8 +28,8 @@ for a new product does all of that in a browser, and the house has no browser in
 agents' path.
 
 Linear's schema, introspected on 2026-11-03 with the house's key by a read-only
-research session (every `Query` and `Mutation` field and 660 types, saved beside the
-session's report), has every piece and marks what it does not support. The facts that
+research session (every `Query` and `Mutation` field and 660 types; Evidence names the
+ones read), has every piece and marks what it does not support. The facts that
 shape the set: roles change through one mutation,
 `userChangeRole(id, role: owner | admin | user | guest | app)`, and there is no promote
 or demote mutation; the schema exposes no API-key query or mutation at all; labels have
@@ -180,11 +180,21 @@ project is made of, 0.5.0 for the rest.
    `createdAt`), `members` and `projectMilestones`, the last two bounded by
    `MEMBERS_PER_PROJECT` and `MILESTONES_PER_PROJECT` with a `truncated` notice.
    `project update <NAME>` (`projectUpdate`): `--name`, `--description`,
-   `--content-file <PATH>`, `--status <NAME>`, `--lead <WHO|none>`,
+   `--content <TEXT>|--content-file <PATH>`, `--status <NAME>`, `--lead <WHO|none>`,
    `--start-date <DATE|none>`, `--target-date <DATE|none>`, `--priority <0-4>`,
-   `--team <KEY>...` (which replaces the teams), `--add-member <WHO>` and
-   `--remove-member <WHO>` (Linear replaces `memberIds`, so muster reads the members
-   first, as `issue update` does for labels), `--color` and `--icon`.
+   `--team <KEY>...` (which replaces the teams), `--add-member <WHO>`,
+   `--remove-member <WHO>`, `--color` and `--icon`. `ProjectUpdateInput` has
+   `memberIds`, the whole list, and no added or removed form; `IssueUpdateInput` has
+   `addedLabelIds` and `removedLabelIds`, which is why `issue update` sends the
+   change and never reads the labels back. So `--add-member` and `--remove-member`
+   read the project's `members` first, through the `project` query `project get`
+   sends, one page of `MEMBERS_PER_PROJECT` with `pageInfo.hasNextPage`, and send
+   that list with the one member added or taken out. When `hasNextPage` is true the
+   command refuses before any mutation, exit 6, a muster guard like the duplicate
+   title: the message says the project has more members than `MEMBERS_PER_PROJECT`,
+   and the hint names the browser as the way to change them. A `memberIds` shorter
+   than the project's members would drop every member past the bound, which
+   invariant 3 forbids.
    `project delete <NAME>` (`projectDelete`: the trash, thirty days) and
    `project unarchive <NAME>` (`projectUnarchive`); the deprecated `projectArchive` is
    not used.
@@ -220,9 +230,10 @@ project is made of, 0.5.0 for the rest.
     and the `projects`, bounded by `PROJECTS_PER_INITIATIVE`. `initiative create
     --name <TEXT> [--description] [--owner <WHO>] [--lead-team <KEY>]
     [--status <Proposed|Planned|Active|Completed|Canceled>] [--target-date <DATE>]
-    [--priority <0-4>] [--content-file <PATH>]` (`initiativeCreate`, the duplicate
-    guard on the name). `initiative update <NAME> [...]` (`initiativeUpdate`; `none`
-    clears the owner, the lead team and the target date). `initiative archive <NAME>`
+    [--priority <0-4>] [--content <TEXT>|--content-file <PATH>]` (`initiativeCreate`,
+    the duplicate guard on the name). `initiative update <NAME> [...]`
+    (`initiativeUpdate`; `none` clears the owner, the lead team and the target date).
+    `initiative archive <NAME>`
     and `initiative unarchive <NAME>` (`initiativeArchive`, `initiativeUnarchive`).
     `initiative add-project <NAME> --project <NAME>` and
     `initiative remove-project <NAME> --project <NAME>` (`initiativeToProjectCreate`,
@@ -246,10 +257,10 @@ project is made of, 0.5.0 for the rest.
     `trashed`. `document create --title <TEXT> [--content <TEXT>|--content-file <PATH>]
     [--project <NAME>] [--issue <ISSUE>]` (`documentCreate`, the duplicate guard on
     the title; the initiative and team links are Internal and stay out).
-    `document update <TITLE> [--title] [--content-file] [--project <NAME|none>]
-    [--issue <ISSUE|none>]` (`documentUpdate`). `document delete <TITLE>`
-    (`documentDelete`: the trash) and `document unarchive <TITLE>`
-    (`documentUnarchive`).
+    `document update <TITLE> [--title] [--content|--content-file]
+    [--project <NAME|none>] [--issue <ISSUE|none>]` (`documentUpdate`).
+    `document delete <TITLE>` (`documentDelete`: the trash) and
+    `document unarchive <TITLE>` (`documentUnarchive`).
 15. `template list [--type <issue|project|document>]` and `template get <NAME>`
     (`templateSearch` with `first` and the team-or-workspace filter, asked for one
     more than the limit so that a cut list is known; `template`): `name`, `type`,
@@ -289,7 +300,9 @@ project is made of, 0.5.0 for the rest.
 
 **Rules every group follows.** A setting that is a boolean in Linear takes `true` or
 `false` as its value, so one flag sets it either way and a flag left out leaves the
-setting alone. `none` clears a nullable field, as `--assignee none` does. A name
+setting alone; the listing above writes such a flag bare, `--private` for
+`--private <true|false>`, except where the value matters to the sentence. `none`
+clears a nullable field, as `--assignee none` does. A name
 resolves to one thing as `issue create --project` resolves a project: a team by key, a
 user by `me`, an email address or a name, a label, state, project, milestone,
 initiative, template or document by name in its scope, a cycle by number, an invite by
@@ -302,12 +315,16 @@ that removes something prints what Linear returned and nothing muster reconstruc
 muster never sends `permanentlyDelete`. Every list is a bounded connection with
 `--limit` up to `PAGE_CAP` and a `truncated` notice; the nested bounds are
 `MEMBERS_PER_PROJECT`, `MILESTONES_PER_PROJECT`, `PROJECTS_PER_INITIATIVE` and
-`ISSUES_PER_CYCLE`, and `ISSUES_PER_BATCH` is fifty. A secret, a template's data or a
-document's content comes from a file or stdin, never argv, through `read_body` and its
-bound. A value Linear marks Internal, Alpha or deprecated is not a flag and not a
-field. An operation that needs a role the key lacks is Linear's refusal, printed as
-exit 6 with Linear's message; muster checks no role itself, since the schema documents
-none and `whoami` already prints `admin`.
+`ISSUES_PER_CYCLE`, and `ISSUES_PER_BATCH` is fifty. A body or a content comes
+inline, `--body <TEXT>`, or from a file or stdin through its `-file` form,
+`--body-file <PATH>` with `-` for stdin, as `issue comment` takes a body today; a
+description comes inline, as every `--description` does today, with a `-file` form
+where the listing names one. Each is checked against `BODY_MAX_BYTES`, a file through
+`read_body`. A secret and a template's data come from a file or stdin only,
+`--secret-file` and `--data-file`, never argv. A value Linear marks Internal, Alpha or
+deprecated is not a flag and not a field. An operation that needs a role the key lacks
+is Linear's refusal, printed as exit 6 with Linear's message; muster checks no role
+itself, since the schema documents none and `whoami` already prints `admin`.
 
 **Where the fixtures come from.** `just smoke` creates, once, a team `Smoke tests`
 with key `SMK`, enables its cycles with `team update --cycles-enabled true
@@ -368,6 +385,11 @@ until a skill needs one; and every operation Linear marks deprecated.
   warning instead.
 - **`user promote` and `user demote`.** Lost: the schema has one mutation,
   `userChangeRole`, and one command per operation is the rule.
+- **`organization get` and `organization update`, after Linear's API type.** Lost:
+  Linear's product, its settings page and its documentation say workspace, the
+  glossary row maps the word to the type, and `whoami` keeps printing `organization`,
+  since a field is Linear's and a command name is the reader's; a reader who has never
+  used the API looks for the product's word.
 - **Every field of `TeamUpdateInput` and `OrganizationUpdateInput` as a flag.** Lost:
   the Internal, Alpha, deprecated and integration-coupled fields change under a released
   flag, which invariant 2 forbids; each flag costs a glossary row and a reference row
