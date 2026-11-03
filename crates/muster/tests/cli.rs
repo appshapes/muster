@@ -1813,6 +1813,21 @@ fn initiative_list_get_create_update_archive_and_projects() {
     assert_eq!(planned.lines()[0]["name"], "Later");
     let bad = muster(&fake, &["initiative", "list", "--status", "active"]);
     assert_eq!(bad.code, 2, "Linear's spelling: {}", bad.stderr);
+    let cut = muster(&fake, &["initiative", "list", "--limit", "1"]);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(cut.notices()[0]["code"], "truncated");
+    // The guard reports a failed read as itself rather than as "no duplicate".
+    fake.fail_next("InitiativeByName", Failure::Drop);
+    let unread = muster(&fake, &["initiative", "create", "--name", "Unread"]);
+    assert_eq!(unread.code, 7, "{}", unread.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "InitiativeCreate")
+            .count(),
+        2,
+        "no create after the guard's read failed"
+    );
 
     let got = muster(&fake, &["initiative", "get", "launch"]);
     assert_eq!(got.code, 0, "{}", got.stderr);
@@ -1886,6 +1901,24 @@ fn initiative_list_get_create_update_archive_and_projects() {
         &["initiative", "add-project", "Growth", "--project", "Nope"],
     );
     assert_eq!(no_project.code, 4, "{}", no_project.stderr);
+
+    // The projects of `initiative get` are bounded by PROJECTS_PER_INITIATIVE.
+    fake.add_initiative_projects("Growth", 51);
+    let full = muster(&fake, &["initiative", "get", "Growth"]);
+    assert_eq!(full.code, 0, "{}", full.stderr);
+    assert_eq!(
+        full.one()["projects"]["nodes"].as_array().unwrap().len(),
+        50,
+        "PROJECTS_PER_INITIATIVE"
+    );
+    assert_eq!(full.notices()[0]["code"], "truncated");
+    assert_eq!(
+        muster(&fake, &["initiative", "get", "Launch"])
+            .notices()
+            .len(),
+        0,
+        "one project, no notice"
+    );
 
     let dir = temp_dir();
     let content = write(&dir, "content.md", "# Growth\n\nWhy and how.\n");

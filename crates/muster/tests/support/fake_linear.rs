@@ -163,6 +163,32 @@ impl Fake {
         st.ws.projects.push(project);
     }
 
+    /// Put `n` new projects in an initiative, for the bound test of `initiative get`.
+    pub fn add_initiative_projects(&self, initiative: &str, n: usize) {
+        let mut st = self.state.lock().unwrap();
+        let initiative_id = st
+            .ws
+            .initiatives
+            .iter()
+            .find(|i| i["name"] == initiative)
+            .map(|i| i["id"].clone())
+            .expect("the initiative exists");
+        let team = st.ws.teams[0].clone();
+        let backlog = st.ws.project_statuses[0].clone();
+        for k in 1..=n {
+            let project = st.ws.new_project(
+                &format!("Project {k}"),
+                "for the bound",
+                std::slice::from_ref(&team),
+                &backlog,
+            );
+            let project_id = project["id"].clone();
+            st.ws.projects.push(project);
+            let (id, now) = (st.ws.id(), st.ws.now());
+            st.ws.initiative_links.push(json!({ "id": id, "createdAt": now, "initiativeId": initiative_id, "projectId": project_id }));
+        }
+    }
+
     /// Add `n` new users as members of a project, for the bound tests.
     pub fn add_project_members(&self, project: &str, n: usize) {
         let mut st = self.state.lock().unwrap();

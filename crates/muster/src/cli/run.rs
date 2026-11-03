@@ -1800,19 +1800,25 @@ fn initiative_create(
         &args.content_file,
     )?;
     // The guard: `initiative get <NAME>` and `--project`'s kin resolve a name to one.
-    if !args.allow_duplicate
-        && let Ok(existing) = session.initiative_full(&args.name, false)
-    {
-        return Err(Error::with_hint(
-            ErrorCode::Refused,
-            format!(
-                "an initiative named {:?} exists: {}",
-                str_at(&existing, "name").unwrap_or(&args.name),
-                str_at(&existing, "url").unwrap_or("?")
-            ),
-            "use that initiative, or pass --allow-duplicate if a second one is wanted",
-        )
-        .at("muster-initiative-create"));
+    // Only a missing initiative lets the create go on; any other failure of the read
+    // (a timeout, the rate limit, a dropped connection) is reported as itself.
+    if !args.allow_duplicate {
+        match session.initiative_full(&args.name, false) {
+            Ok(existing) => {
+                return Err(Error::with_hint(
+                    ErrorCode::Refused,
+                    format!(
+                        "an initiative named {:?} exists: {}",
+                        str_at(&existing, "name").unwrap_or(&args.name),
+                        str_at(&existing, "url").unwrap_or("?")
+                    ),
+                    "use that initiative, or pass --allow-duplicate if a second one is wanted",
+                )
+                .at("muster-initiative-create"));
+            }
+            Err(error) if error.code == ErrorCode::NotFound => {}
+            Err(error) => return Err(error),
+        }
     }
     if let Some(owner) = &args.owner {
         input.insert("ownerId".into(), json!(session.user_id(owner)?));
