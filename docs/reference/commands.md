@@ -331,7 +331,8 @@ Change a project's name, description, content, status, lead, dates, priority, te
 | `<NAME>` | `<NAME>` | yes |  | The project, by name |
 | `--name` | `<TEXT>` | no |  | A new name |
 | `--description` | `<TEXT>` | no |  | A new description, plain text |
-| `--content-file` | `<PATH>` | no |  | The project's content, markdown, from a file, or from stdin when PATH is `-` |
+| `--content` | `<TEXT>` | no |  | The project's content, markdown |
+| `--content-file` | `<PATH>` | no |  | The content from a file, or from stdin when PATH is `-` |
 | `--status` | `<NAME>` | no |  | A new status, by name, one of the workspace's project statuses |
 | `--lead` | `<WHO>` | no |  | A new lead: `me`, an email address, a name, or `none` |
 | `--start-date` | `<DATE>` | no |  | The planned start, a date (2026-11-10), or `none` |

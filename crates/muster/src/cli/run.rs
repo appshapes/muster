@@ -1718,8 +1718,8 @@ fn project_update_input(args: &ProjectUpdateArgs) -> Result<Map<String, Value>, 
         check_body(Text::Body, description)?;
         input.insert("description".into(), json!(description));
     }
-    if let Some(path) = &args.content_file {
-        input.insert("content".into(), json!(read_body(path)?));
+    if let Some(content) = body_from(&args.content, &args.content_file)? {
+        input.insert("content".into(), json!(content));
     }
     if let Some(date) = &args.start_date {
         input.insert("startDate".into(), date_or_none(date));
@@ -1801,7 +1801,7 @@ fn project_update(session: &Session, args: &ProjectUpdateArgs, out: &Output) -> 
         return Err(Error::with_hint(
             ErrorCode::Usage,
             "nothing to change",
-            "pass at least one of --name, --description, --content-file, --status, --lead, --start-date, --target-date, --priority, --teams, --add-member, --remove-member, --color, --icon",
+            "pass at least one of --name, --description, --content, --content-file, --status, --lead, --start-date, --target-date, --priority, --teams, --add-member, --remove-member, --color, --icon",
         ));
     }
     let data = session.linear.run(
@@ -2837,6 +2837,7 @@ mod tests {
         let args = ProjectUpdateArgs {
             project: "Smoke tests".into(),
             name: Some("Smoke".into()),
+            content: Some("# The plan".into()),
             start_date: Some("none".into()),
             target_date: Some(" 2026-12-01 ".into()),
             priority: Some(2),
@@ -2844,6 +2845,11 @@ mod tests {
         };
         let input = project_update_input(&args).unwrap_or_default();
         assert_eq!(input.get("name"), Some(&json!("Smoke")));
+        assert_eq!(
+            input.get("content"),
+            Some(&json!("# The plan")),
+            "--content inline, as it is"
+        );
         assert_eq!(
             input.get("startDate"),
             Some(&Value::Null),
@@ -2865,16 +2871,25 @@ mod tests {
             None,
             "the status is resolved after the checks"
         );
-        let long = ProjectUpdateArgs {
-            project: "x".into(),
-            name: Some("n".repeat(BODY_MAX_BYTES + 1)),
-            ..ProjectUpdateArgs::default()
-        };
-        assert!(
-            project_update_input(&long)
-                .err()
-                .is_some_and(|e| e.code == ErrorCode::Refused)
-        );
+        for long in [
+            ProjectUpdateArgs {
+                project: "x".into(),
+                name: Some("n".repeat(BODY_MAX_BYTES + 1)),
+                ..ProjectUpdateArgs::default()
+            },
+            ProjectUpdateArgs {
+                project: "x".into(),
+                content: Some("c".repeat(BODY_MAX_BYTES + 1)),
+                ..ProjectUpdateArgs::default()
+            },
+        ] {
+            assert!(
+                project_update_input(&long)
+                    .err()
+                    .is_some_and(|e| e.code == ErrorCode::Refused),
+                "a name or a content over BODY_MAX_BYTES is refused before any request"
+            );
+        }
     }
 
     #[test]

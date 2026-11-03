@@ -1984,6 +1984,33 @@ Three steps.
         2,
         "me and other"
     );
+    let inline = muster(
+        &fake,
+        &["project", "update", "Muster", "--content", "One line."],
+    );
+    assert_eq!(inline.code, 0, "{}", inline.stderr);
+    assert_eq!(
+        muster(&fake, &["project", "get", "Muster"]).one()["content"],
+        "One line.",
+        "--content inline, as --content-file from a file"
+    );
+    let both = muster(
+        &fake,
+        &[
+            "project",
+            "update",
+            "Muster",
+            "--content",
+            "x",
+            "--content-file",
+            &content,
+        ],
+    );
+    assert_eq!(
+        both.code, 2,
+        "--content and --content-file conflict: {}",
+        both.stderr
+    );
     let fewer = muster(
         &fake,
         &[
@@ -2013,7 +2040,7 @@ Three steps.
             .iter()
             .filter(|o| *o == "ProjectUpdate")
             .count(),
-        2,
+        3,
         "the refusals sent nothing"
     );
 

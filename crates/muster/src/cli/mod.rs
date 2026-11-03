@@ -833,7 +833,10 @@ pub struct ProjectUpdateArgs {
     /// A new description, plain text
     #[arg(long, value_name = "TEXT")]
     pub description: Option<String>,
-    /// The project's content, markdown, from a file, or from stdin when PATH is `-`
+    /// The project's content, markdown
+    #[arg(long, value_name = "TEXT", conflicts_with = "content_file")]
+    pub content: Option<String>,
+    /// The content from a file, or from stdin when PATH is `-`
     #[arg(long, value_name = "PATH")]
     pub content_file: Option<String>,
     /// A new status, by name, one of the workspace's project statuses

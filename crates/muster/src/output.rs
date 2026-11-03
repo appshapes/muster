@@ -125,8 +125,8 @@ pub fn read_body(path: &str) -> Result<String, Error> {
 /// fits it, since a title cannot be split over several comments as a body can.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Text {
-    /// A description or a comment: `--description`, `--body`, `--comment`, or the file
-    /// or stdin their `-file` twins read.
+    /// A description, a comment or a project's content: `--description`, `--body`,
+    /// `--comment`, `--content`, or the file or stdin their `-file` twins read.
     Body,
     /// An issue's or a link's `--title`.
     Title,

@@ -36,8 +36,8 @@ user-visible change, added in the same commit as the change. The format follows
   `members` and `projectMilestones`, each bounded by a new constant,
   `MEMBERS_PER_PROJECT` and `MILESTONES_PER_PROJECT`, with a `truncated` notice past
   it. `project update <NAME>` changes a project through Linear's `projectUpdate`:
-  `--name`, `--description`, `--content-file`, `--status <NAME>` (one of the
-  workspace's project statuses), `--lead <WHO|none>`, `--start-date` and
+  `--name`, `--description`, `--content` or `--content-file`, `--status <NAME>` (one
+  of the workspace's project statuses), `--lead <WHO|none>`, `--start-date` and
   `--target-date` (a date or `none`), `--priority`, `--teams <KEY,...>` (which
   replaces the list), `--add-member` and `--remove-member` (Linear replaces the
   member list whole, so muster reads it first and refuses, exit 6, before any

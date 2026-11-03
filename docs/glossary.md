@@ -90,7 +90,7 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 | lead | The user responsible for a project; `--lead` on `project update`, `none` to clear. | `lead`, `leadId` | none | `docs/reference/commands.md#muster-project-update` |
 | start date | The day a project is planned to start; `--start-date` on `project update`, a date or `none`. | `startDate` | start date | `docs/reference/commands.md#muster-project-update` |
 | target date | The day a project is planned to end; `--target-date` on `project update`, a date or `none`. | `targetDate` | due date | `docs/reference/commands.md#muster-project-update` |
-| content | A project's long text, markdown, under its description; `--content-file` on `project update`, from a file or stdin. | `content` | none | `docs/reference/commands.md#muster-project-update` |
+| content | A project's long text, markdown, under its description; `--content` on `project update`, or `--content-file` from a file or stdin. | `content` | none | `docs/reference/commands.md#muster-project-update` |
 | teams | Several teams, by key, comma-separated: the ones a project spans on `project update --teams`, which replaces the list (the global `--team` names the one team a command works in). | `teamIds` | none | `docs/reference/commands.md#muster-project-update` |
 | milestone | A named step inside a project, with a target date, which an issue can belong to; `project get` lists a project's under `projectMilestones`. | `projectMilestone`, `projectMilestones` | none | `docs/reference/commands.md#muster-project-get` |
 | comment | A markdown note on an issue, by a user; `issue get` prints them newest first, as Linear orders them. | `comment` | comment | `docs/reference/commands.md#muster-issue-comment` |
