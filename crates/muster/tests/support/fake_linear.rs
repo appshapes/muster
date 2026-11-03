@@ -44,6 +44,7 @@ struct Workspace {
     users: Vec<Value>,
     issues: Vec<Value>,
     comments: Vec<Value>,
+    attachments: Vec<Value>,
 }
 
 struct State {
@@ -131,6 +132,26 @@ impl Fake {
                     CHILDREN_PER_ISSUE,
                 )
             })
+    }
+
+    /// Add `n` links to an issue, for the bound tests.
+    pub fn add_attachments(&self, issue: &str, n: usize) {
+        let mut st = self.state.lock().unwrap();
+        let id = st
+            .ws
+            .issues
+            .iter()
+            .find(|i| i["identifier"] == issue)
+            .map(|i| i["id"].clone())
+            .expect("the issue exists");
+        for k in 1..=n {
+            st.ws.new_attachment(
+                &id,
+                &format!("Link {k}"),
+                None,
+                &format!("https://example.com/{k}"),
+            );
+        }
     }
 
     /// Add `n` sub-issues under an issue, in its team, for the bound tests.
@@ -395,6 +416,7 @@ impl Workspace {
             users: Vec::new(),
             issues: Vec::new(),
             comments: Vec::new(),
+            attachments: Vec::new(),
         };
         ws.organization = json!({ "id": ws.id(), "name": "Fake Workspace", "urlKey": "fake" });
         let me = json!({ "id": ws.id(), "name": "Fake Person", "displayName": "fake", "email": "fake@example.com", "active": true, "admin": true, "isMe": true });
@@ -591,6 +613,29 @@ impl Workspace {
         comment
     }
 
+    fn new_attachment(
+        &mut self,
+        issue_id: &Value,
+        title: &str,
+        subtitle: Option<&str>,
+        url: &str,
+    ) -> Value {
+        let (id, now) = (self.id(), self.now());
+        let identifier = self
+            .issues
+            .iter()
+            .find(|i| &i["id"] == issue_id)
+            .map(|i| i["identifier"].clone())
+            .unwrap_or(Value::Null);
+        let attachment = json!({
+            // `sourceType` is `"unknown"` for a link the API made (appshapes, 2026-11-03).
+            "id": id, "title": title, "subtitle": subtitle, "url": url, "sourceType": "unknown", "createdAt": now,
+            "issueId": issue_id, "issue": { "id": issue_id, "identifier": identifier },
+        });
+        self.attachments.push(attachment.clone());
+        attachment
+    }
+
     fn full_issue(
         &self,
         issue: &Value,
@@ -615,8 +660,14 @@ impl Workspace {
         all.reverse();
         let cut = all.len() > comments;
         full["comments"] = json!({ "nodes": all.into_iter().take(comments).collect::<Vec<_>>(), "pageInfo": { "hasNextPage": cut } });
-        full["attachments"] =
-            json!({ "nodes": [], "pageInfo": { "hasNextPage": attachments == 0 } });
+        let mut links: Vec<Value> = self
+            .attachments
+            .iter()
+            .filter(|a| a["issueId"] == issue["id"])
+            .map(|a| json!({ "id": a["id"], "title": a["title"], "subtitle": a["subtitle"], "url": a["url"], "sourceType": a["sourceType"], "createdAt": a["createdAt"] }))
+            .collect();
+        links.reverse();
+        full["attachments"] = Workspace::page(links, attachments);
         let mut kids: Vec<Value> = self
             .issues
             .iter()
@@ -917,6 +968,46 @@ impl Workspace {
                 (
                     200,
                     json!({ "data": { "issueUpdate": { "success": true, "issue": issue } } }),
+                )
+            }
+            "AttachmentCreate" => {
+                let input = &vars["input"];
+                let issue_id = input["issueId"].clone();
+                if !self.issues.iter().any(|i| i["id"] == issue_id) {
+                    return not_found("Issue");
+                }
+                let (Some(title), Some(url)) = (
+                    input["title"].as_str().filter(|t| !t.is_empty()),
+                    input["url"].as_str().filter(|u| !u.is_empty()),
+                ) else {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "title and url should not be empty" } } ], "data": null }),
+                    );
+                };
+                // A URL the issue already carries is updated in place, same id, as
+                // Linear does (appshapes, 2026-11-03: a second `attachmentCreate` with
+                // the URL returned the first attachment's id with the new title).
+                let existing = self
+                    .attachments
+                    .iter()
+                    .position(|a| a["issueId"] == issue_id && a["url"] == url);
+                let mut attachment = match existing {
+                    Some(index) => {
+                        let now = self.now();
+                        let a = &mut self.attachments[index];
+                        a["title"] = json!(title);
+                        a["subtitle"] = json!(input["subtitle"].as_str());
+                        a["updatedAt"] = json!(now);
+                        a.clone()
+                    }
+                    None => self.new_attachment(&issue_id, title, input["subtitle"].as_str(), url),
+                };
+                attachment.as_object_mut().unwrap().remove("issueId");
+                attachment.as_object_mut().unwrap().remove("updatedAt");
+                (
+                    200,
+                    json!({ "data": { "attachmentCreate": { "success": true, "attachment": attachment } } }),
                 )
             }
             "CommentCreate" => {

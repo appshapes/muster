@@ -68,7 +68,11 @@ and the Collaborating section below does not apply:
    on origin's `master` and the `ci` run on it is green (`gh run list --commit <full sha>`). Muster
    has no deployment, and a release is not part of this skill. A red job is part of the issue until
    it is fixed.
-5. **Land it on the issue**: the landing comment and the close in one command, `muster issue close
+5. **Land it on the issue**: first the pull request as a link, `muster issue attach <identifier>
+   --url <pull request URL> --title "Pull request <n>: <subject>"`, unless `muster issue get
+   <identifier>` already lists that URL (Linear's GitHub integration links a pull request whose
+   branch, title or body names the identifier); then the landing comment and the
+   close in one command, `muster issue close
    <identifier> --comment-file comment.md`, the comment saying where the work landed (the commit on
    `master` and the pull request number), what changed, every existing file touched and why, how
    each "Done when" item was checked, and what is still open and who owns it, with the session stamp

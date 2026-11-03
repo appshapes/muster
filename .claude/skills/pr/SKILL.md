@@ -169,6 +169,11 @@ gh pr checks <number>
   each "Done when" item was checked, what is still open and who owns it, and the
   session stamp as its last line, `Session stamp: <team>/<session name>, <YYYY-MM-DD>`,
   as the `linear-done` skill describes), then
+  `muster issue attach <identifier> --url <pull request URL> --title "Pull request <n>: <subject>"`
+  unless `muster issue get <identifier>` already lists that URL under `attachments.nodes`
+  (Linear's GitHub integration links a pull request whose branch, title or body names
+  the identifier, and `issue attach` on the same URL would rename its link), so that
+  Linear shows the pull request where it keeps links,
   `muster issue comment <identifier> --body-file <file>` and
   `muster issue close <identifier>`; each prints one JSON line and exits 0. Then run
   `just tidy`: it retires the branch locally, with its worktree, and GitHub has already

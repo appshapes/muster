@@ -940,6 +940,144 @@ fn a_parent_with_more_sub_issues_than_the_bound_writes_a_notice_and_exits_0() {
     assert!(run.notices().is_empty(), "at the bound is not over it");
 }
 
+// ---- attachments (ADR 0013, feature 2) ----------------------------------------------------
+
+#[test]
+fn issue_attach_adds_a_link_that_issue_get_prints_newest_first() {
+    let fake = Fake::start().unwrap();
+    let run = muster(
+        &fake,
+        &[
+            "issue",
+            "attach",
+            "APP-1",
+            "--url",
+            "https://github.com/appshapes/muster/pull/3",
+            "--title",
+            "Pull request 3",
+            "--subtitle",
+            "sub-issues",
+        ],
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let v = run.one();
+    assert_eq!(v["url"], "https://github.com/appshapes/muster/pull/3");
+    assert_eq!(v["title"], "Pull request 3");
+    assert_eq!(v["subtitle"], "sub-issues");
+    assert_eq!(v["issue"]["identifier"], "APP-1");
+    assert!(v["id"].is_string() && v["createdAt"].is_string());
+    assert_eq!(
+        fake.operations(),
+        vec!["Issues", "AttachmentCreate"],
+        "one request resolves the identifier, one creates the link"
+    );
+
+    let by_number = muster(
+        &fake,
+        &[
+            "issue",
+            "attach",
+            "1",
+            "--url",
+            "https://example.com/second",
+            "--title",
+            "Second",
+        ],
+    );
+    assert_eq!(by_number.code, 0, "{}", by_number.stderr);
+    assert!(by_number.one()["subtitle"].is_null());
+
+    let get = muster(&fake, &["issue", "get", "APP-1"]);
+    let links = get.one()["attachments"]["nodes"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(links.len(), 2);
+    assert_eq!(
+        links[0]["title"], "Second",
+        "newest first, as Linear orders them"
+    );
+    assert_eq!(
+        links[1]["url"],
+        "https://github.com/appshapes/muster/pull/3"
+    );
+
+    let unknown = muster(
+        &fake,
+        &[
+            "issue",
+            "attach",
+            "APP-999",
+            "--url",
+            "https://example.com",
+            "--title",
+            "x",
+        ],
+    );
+    assert_eq!(unknown.code, 4, "{}", unknown.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "AttachmentCreate")
+            .count(),
+        2,
+        "an unknown issue is refused before any mutation"
+    );
+    let untitled = muster(
+        &fake,
+        &["issue", "attach", "APP-1", "--url", "https://example.com"],
+    );
+    assert_eq!(untitled.code, 2, "clap refuses a link without a title");
+
+    // A URL the issue already has is updated in place, not added again (Linear's own
+    // behaviour, read on 2026-11-03): the same id comes back with the new title.
+    let again = muster(
+        &fake,
+        &[
+            "issue",
+            "attach",
+            "APP-1",
+            "--url",
+            "https://example.com/second",
+            "--title",
+            "Renamed",
+        ],
+    );
+    assert_eq!(again.code, 0, "{}", again.stderr);
+    assert_eq!(again.one()["id"], links[0]["id"]);
+    assert_eq!(again.one()["title"], "Renamed");
+    let get = muster(&fake, &["issue", "get", "APP-1"]);
+    let links = get.one()["attachments"]["nodes"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(links.len(), 2, "still two");
+    assert_eq!(links[0]["title"], "Renamed");
+}
+
+#[test]
+fn an_issue_with_more_attachments_than_the_bound_writes_a_notice_and_exits_0() {
+    let fake = Fake::start().unwrap();
+    fake.add_attachments("APP-2", 51);
+    let run = muster(&fake, &["issue", "get", "APP-2"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let v = run.one();
+    assert_eq!(v["attachments"]["nodes"].as_array().unwrap().len(), 50);
+    assert_eq!(v["attachments"]["nodes"][0]["title"], "Link 51");
+    assert_eq!(v["attachments"]["pageInfo"]["hasNextPage"], true);
+    let notices = run.notices();
+    assert_eq!(notices.len(), 1, "{}", run.stderr);
+    assert_eq!(notices[0]["code"], "truncated");
+    assert!(
+        notices[0]["hint"]
+            .as_str()
+            .unwrap()
+            .contains("ATTACHMENTS_PER_ISSUE"),
+        "{}",
+        run.stderr
+    );
+}
+
 // ---- failures: network, unknown, rate limit, server -------------------------------------
 
 #[test]
@@ -955,6 +1093,22 @@ fn a_mutation_whose_answer_never_came_exits_8_and_a_query_exits_7() {
         "{e}"
     );
     assert!(e["hint"].as_str().unwrap().contains("issue get"), "{e}");
+
+    fake.fail_next("AttachmentCreate", Failure::Drop);
+    let run = muster(
+        &fake,
+        &[
+            "issue",
+            "attach",
+            "APP-1",
+            "--url",
+            "https://example.com",
+            "--title",
+            "Dropped",
+        ],
+    );
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    assert_eq!(run.error()["code"], "unknown");
 
     fake.fail_next("Teams", Failure::Drop);
     let run = muster(&fake, &["team", "list"]);

@@ -18,6 +18,11 @@ user-visible change, added in the same commit as the change. The format follows
   `MUSTER_TEAM` names one, and an issue named as its own parent is a usage error,
   exit 2, before any request (ADR 0013, feature 1;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `issue attach <ISSUE> --url <URL> --title <TEXT> [--subtitle <TEXT>]` adds a link to an
+  issue through Linear's `attachmentCreate` and prints the attachment as Linear returned
+  it, with its `issue.identifier`; `issue get` lists it under `attachments.nodes`, newest
+  first. A URL the issue already has is updated in place, same id, as Linear does
+  (ADR 0013, feature 2; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 - `muster fixtures` records `IssueById` on an issue that has comments, attachments and
   sub-issues when the workspace has one, and writes a `partial` notice saying what the
   recording lacks; `skipped` and `partial` join the notices table of the reference.

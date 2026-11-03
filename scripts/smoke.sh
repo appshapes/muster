@@ -37,6 +37,18 @@ echo "smoke: muster issue get $id (children)"
 "$bin" issue get "$id" | jq -c '{identifier, children: [.children.nodes[] | {identifier, state: .state.name}]}' | tee "$tmp/children.json"
 jq -e '.children[0].identifier == "'"$child"'"' "$tmp/children.json" >/dev/null
 echo
+echo "smoke: muster issue attach $id"
+"$bin" issue attach "$id" --url "https://github.com/appshapes/muster/blob/master/scripts/smoke.sh" --title "The smoke script" --subtitle "attached at $stamp" | tee "$tmp/attach.json"
+jq -e '.issue.identifier == "'"$id"'" and .title == "The smoke script"' "$tmp/attach.json" >/dev/null
+echo
+echo "smoke: muster issue attach $id, the same URL again"
+"$bin" issue attach "$id" --url "https://github.com/appshapes/muster/blob/master/scripts/smoke.sh" --title "The smoke script, renamed" | jq -c '{id, title}' | tee "$tmp/attach2.json"
+jq -e --slurpfile first "$tmp/attach.json" '.id == $first[0].id and .title == "The smoke script, renamed"' "$tmp/attach2.json" >/dev/null
+echo
+echo "smoke: muster issue get $id (attachments)"
+"$bin" issue get "$id" | jq -c '{identifier, attachments: [.attachments.nodes[] | {title, url}]}' | tee "$tmp/attachments.json"
+jq -e '(.attachments | length) == 1 and .attachments[0].title == "The smoke script, renamed"' "$tmp/attachments.json" >/dev/null
+echo
 echo "smoke: muster issue list --parent $id"
 "$bin" issue list --parent "$id" | jq -c '{identifier, parent: .parent.identifier}'
 echo

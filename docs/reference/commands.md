@@ -110,6 +110,17 @@ Add a comment to an issue.
 | `--body` | `<TEXT>` | no |  | The comment, markdown |
 | `--body-file` | `<PATH>` | no |  | The comment from a file, or from stdin when PATH is `-` |
 
+### muster issue attach
+
+Add a link to an issue: a URL with a title, which Linear shows as an attachment.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<ISSUE>` | `<ISSUE>` | yes |  | The identifier (APP-12), the number alone (12, in the team) or the id |
+| `--url` | `<URL>` | yes |  | The link; a URL the issue already has is updated in place, with the same id, not added again |
+| `--title` | `<TEXT>` | yes |  | The title Linear shows for the link; required, because Linear requires one and muster invents none |
+| `--subtitle` | `<TEXT>` | no |  | A line under the title |
+
 ### muster issue close
 
 Move an issue to the team's completed state, or to --state, or with --cancel to its canceled state, after an optional comment; prints the comment, then the issue.
@@ -237,3 +248,4 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
+| `AttachmentCreate` | mutation |

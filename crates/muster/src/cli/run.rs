@@ -6,8 +6,8 @@ use serde_json::{Value, json};
 
 use crate::bounds::{ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, PAGE_CAP};
 use crate::cli::{
-    Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand, IssueListArgs,
-    ListArgs, ListCommand, UpdateArgs,
+    AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
+    IssueListArgs, ListArgs, ListCommand, UpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -50,6 +50,7 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 IssueCommand::List(args) => issue_list(&session, args, out),
                 IssueCommand::Create(args) => issue_create(&session, args, out),
                 IssueCommand::Comment(args) => issue_comment(&session, args, out),
+                IssueCommand::Attach(args) => issue_attach(&session, args, out),
                 IssueCommand::Close(args) => issue_close(&session, args, out),
                 IssueCommand::Update(args) => issue_update(&session, args, out),
             }
@@ -737,6 +738,20 @@ fn issue_comment(session: &Session, args: &CommentArgs, out: &Output) -> Result<
         json!({ "input": { "issueId": issue_id, "body": body } }),
     )?;
     out.emit(&payload(&data, "commentCreate", "comment")?);
+    Ok(())
+}
+
+fn issue_attach(session: &Session, args: &AttachArgs, out: &Output) -> Result<(), Error> {
+    let issue = session.issue_brief(&args.issue)?;
+    let issue_id = need_str(&issue, "id", "Issues")?;
+    let mut input = json!({ "issueId": issue_id, "url": args.url, "title": args.title });
+    if let (Some(subtitle), Some(map)) = (&args.subtitle, input.as_object_mut()) {
+        map.insert("subtitle".into(), json!(subtitle));
+    }
+    let data = session
+        .linear
+        .run(&ops::ATTACHMENT_CREATE, json!({ "input": input }))?;
+    out.emit(&payload(&data, "attachmentCreate", "attachment")?);
     Ok(())
 }
 

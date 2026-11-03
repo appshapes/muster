@@ -497,6 +497,7 @@ mod tests {
             "issue list",
             "issue create",
             "issue comment",
+            "issue attach",
             "issue close",
             "issue update",
             "schema",
