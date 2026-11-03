@@ -84,6 +84,13 @@ step "muster project get and update"
 "$bin" project get "Trying muster" | tee "$tmp/project-get.json"
 jq -e '.name == "Trying muster" and .status.name == "In Progress" and (.members.nodes | type) == "array"' "$tmp/project-get.json" >/dev/null
 
+step "muster webhook create, update --enabled false and list"
+printf 'quickstart-signing-secret\n' > "$tmp/secret"
+"$bin" webhook create --url https://example.com/hooks/trying --resource-type Issue --resource-type Comment --label "Trying hook" --secret-file "$tmp/secret" | tee "$tmp/webhook.json"
+jq -e '.label == "Trying hook" and .enabled == true and .team.key == "APP" and .resourceTypes == ["Issue", "Comment"] and (has("secret") | not)' "$tmp/webhook.json" >/dev/null
+"$bin" webhook update "Trying hook" --enabled false | jq -e '.enabled == false' >/dev/null
+"$bin" webhook list | jq -s -e 'map(.label) | index("Trying hook") != null' >/dev/null
+
 step "muster issue list --project"
 "$bin" issue update "$id" --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
 "$bin" issue list --project "Trying muster" | tee "$tmp/in-project.jsonl"

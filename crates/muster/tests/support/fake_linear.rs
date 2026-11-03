@@ -56,6 +56,8 @@ struct Workspace {
     initiatives: Vec<Value>,
     /// The initiative-to-project links, each with `initiativeId` and `projectId`.
     initiative_links: Vec<Value>,
+    /// The webhooks, newest first, each with its `secret`, which no answer carries.
+    webhooks: Vec<Value>,
 }
 
 struct State {
@@ -553,6 +555,7 @@ impl Workspace {
             project_updates: Vec::new(),
             initiatives: Vec::new(),
             initiative_links: Vec::new(),
+            webhooks: Vec::new(),
         };
         // Every field `Workspace` asks for, with the values a Free workspace shows; the
         // fixture holds this to the recorded shape (ADR 0010; ADR 0014, group 1).
@@ -622,6 +625,14 @@ impl Workspace {
             json!({ "id": me["id"], "name": me["name"], "displayName": me["displayName"] });
         project["memberIds"] = json!([me["id"]]);
         ws.projects.push(project.clone());
+        // One webhook of the team, so that every webhook answer has a node and the
+        // recorder finds one (ADR 0014, group 16).
+        let _ = ws
+            .new_webhook(&json!({
+                "label": "Fake hook", "url": "https://example.com/hooks/fake", "enabled": true,
+                "resourceTypes": ["Issue"], "teamId": team["id"], "secret": "seeded-secret",
+            }))
+            .expect("the seeded team exists");
         // One milestone, so that `project get` prints a node and the recorder finds
         // one (ADR 0014, group 8).
         ws.new_milestone(&project, "First cut", None, Some("2026-12-01"));
@@ -1120,6 +1131,47 @@ impl Workspace {
             .map(|i| json!({ "id": i["id"], "name": i["name"] }))
             .unwrap_or(Value::Null);
         json!({ "id": link["id"], "createdAt": link["createdAt"], "project": project, "initiative": initiative })
+    }
+
+    /// A webhook with every `WebhookFields` field (ADR 0014, group 16) and its
+    /// `secret`, which the view leaves out; `team` is `None` for every public team.
+    fn new_webhook(&mut self, input: &Value) -> Result<Value, (u16, Value)> {
+        let (id, now) = (self.id(), self.now());
+        let me = self.users[0].clone();
+        let team = if input["allPublicTeams"].as_bool() == Some(true) {
+            Value::Null
+        } else {
+            match input["teamId"].as_str() {
+                Some(tid) => match self.teams.iter().find(|t| t["id"] == tid) {
+                    Some(t) => json!({ "id": t["id"], "key": t["key"] }),
+                    None => return Err(not_found("Team")),
+                },
+                None => {
+                    return Err((
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "A webhook needs a team or allPublicTeams." } } ], "data": null }),
+                    ));
+                }
+            }
+        };
+        let hook = json!({
+            "id": id, "label": input["label"], "url": input["url"], "enabled": input["enabled"].as_bool().unwrap_or(true),
+            "resourceTypes": input["resourceTypes"], "allPublicTeams": team.is_null(),
+            "createdAt": now, "updatedAt": now, "archivedAt": null,
+            "team": team, "creator": { "id": me["id"], "name": me["name"], "displayName": me["displayName"] },
+            "secret": input["secret"],
+        });
+        self.webhooks.insert(0, hook.clone());
+        Ok(hook)
+    }
+
+    /// A webhook as `WebhookFields` answers it: without its `secret`.
+    fn webhook_view(hook: &Value) -> Value {
+        let mut view = hook.clone();
+        if let Some(map) = view.as_object_mut() {
+            map.remove("secret");
+        }
+        view
     }
 
     fn milestone_view(stone: &Value) -> Value {
@@ -2002,6 +2054,81 @@ impl Workspace {
                 (
                     200,
                     json!({ "data": { "initiativeToProjectDelete": { "success": true, "entityId": id } } }),
+                )
+            }
+            "Webhooks" => {
+                let hooks: Vec<Value> = self
+                    .webhooks
+                    .iter()
+                    .filter(|h| h["archivedAt"].is_null())
+                    .map(Workspace::webhook_view)
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "webhooks": Workspace::page(hooks, first) } }),
+                )
+            }
+            "WebhookCreate" => {
+                let input = vars["input"].clone();
+                let url = input["url"].as_str().unwrap_or("");
+                if !url.starts_with("https://") {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "url must be an https URL" } } ], "data": null }),
+                    );
+                }
+                if input["resourceTypes"]
+                    .as_array()
+                    .is_none_or(|t| t.is_empty())
+                {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "resourceTypes should not be empty" } } ], "data": null }),
+                    );
+                }
+                match self.new_webhook(&input) {
+                    Ok(hook) => (
+                        200,
+                        json!({ "data": { "webhookCreate": { "success": true, "webhook": Workspace::webhook_view(&hook) } } }),
+                    ),
+                    Err(answer) => answer,
+                }
+            }
+            "WebhookUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "WebhookUpdateInput!");
+                };
+                let Some(index) = self
+                    .webhooks
+                    .iter()
+                    .position(|h| h["id"] == id && h["archivedAt"].is_null())
+                else {
+                    return not_found("Webhook");
+                };
+                let now = self.now();
+                for (field, value) in input {
+                    if ["label", "url", "enabled", "resourceTypes", "secret"]
+                        .contains(&field.as_str())
+                    {
+                        self.webhooks[index][field] = value;
+                    }
+                }
+                self.webhooks[index]["updatedAt"] = json!(now);
+                (
+                    200,
+                    json!({ "data": { "webhookUpdate": { "success": true, "webhook": Workspace::webhook_view(&self.webhooks[index]) } } }),
+                )
+            }
+            "WebhookDelete" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.webhooks.iter().position(|h| h["id"] == id) else {
+                    return not_found("Webhook");
+                };
+                self.webhooks.remove(index);
+                (
+                    200,
+                    json!({ "data": { "webhookDelete": { "success": true, "entityId": id } } }),
                 )
             }
             "ProjectStatusCreate" => {

@@ -168,6 +168,15 @@ pub const INITIATIVE_LINK_FIELDS: &str = "fragment InitiativeLinkFields on Initi
   initiative { id name }
 }";
 
+/// The fields every webhook answer carries (ADR 0014, group 16); the `secret` is
+/// never asked for.
+pub const WEBHOOK_FIELDS: &str = "fragment WebhookFields on Webhook {
+  id label url enabled resourceTypes allPublicTeams
+  createdAt updatedAt archivedAt
+  team { id key }
+  creator { id name displayName }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -384,6 +393,16 @@ op!(
   initiativeToProjects(first: $first) { nodes { ...InitiativeLinkFields } pageInfo { hasNextPage } }
 }",
     &[INITIATIVE_LINK_FIELDS]
+);
+
+op!(
+    WEBHOOKS,
+    "Webhooks",
+    Kind::Query,
+    "query Webhooks($first: Int!) {
+  webhooks(first: $first) { nodes { ...WebhookFields } pageInfo { hasNextPage } }
+}",
+    &[WEBHOOK_FIELDS]
 );
 
 op!(
@@ -808,6 +827,35 @@ op!(
 }"
 );
 
+op!(
+    WEBHOOK_CREATE,
+    "WebhookCreate",
+    Kind::Mutation,
+    "mutation WebhookCreate($input: WebhookCreateInput!) {
+  webhookCreate(input: $input) { success webhook { ...WebhookFields } }
+}",
+    &[WEBHOOK_FIELDS]
+);
+
+op!(
+    WEBHOOK_UPDATE,
+    "WebhookUpdate",
+    Kind::Mutation,
+    "mutation WebhookUpdate($id: String!, $input: WebhookUpdateInput!) {
+  webhookUpdate(id: $id, input: $input) { success webhook { ...WebhookFields } }
+}",
+    &[WEBHOOK_FIELDS]
+);
+
+op!(
+    WEBHOOK_DELETE,
+    "WebhookDelete",
+    Kind::Mutation,
+    "mutation WebhookDelete($id: String!) {
+  webhookDelete(id: $id) { success entityId }
+}"
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -829,6 +877,7 @@ pub static READS: &[&Operation] = &[
     &INITIATIVES,
     &INITIATIVE_BY_NAME,
     &INITIATIVE_LINKS,
+    &WEBHOOKS,
 ];
 
 /// Every write operation.
@@ -875,6 +924,9 @@ pub static WRITES: &[&Operation] = &[
     &INITIATIVE_UNARCHIVE,
     &INITIATIVE_LINK_CREATE,
     &INITIATIVE_LINK_DELETE,
+    &WEBHOOK_CREATE,
+    &WEBHOOK_UPDATE,
+    &WEBHOOK_DELETE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -931,6 +983,7 @@ mod tests {
                 "ProjectUpdateFields",
                 "InitiativeFields",
                 "InitiativeLinkFields",
+                "WebhookFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));

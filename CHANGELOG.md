@@ -6,7 +6,20 @@ user-visible change, added in the same commit as the change. The format follows
 
 ## Unreleased
 
-Nothing yet.
+### Added
+- `webhook list` prints the workspace's webhooks, the URLs Linear posts changes to,
+  each with its `label`, `url`, `enabled`, `resourceTypes`, `allPublicTeams`, `team`
+  and `creator`, never with its secret; `webhook create --url <URL> --resource-type
+  <TYPE>... [--label <TEXT>] [--all-public-teams] [--secret-file <PATH>]` makes one for
+  the team, or for every public team (a URL a webhook posts to already is refused,
+  exit 6, unless `--allow-duplicate`; the secret comes from a file, or stdin as `-`,
+  never argv, and is never printed); `webhook update <WEBHOOK> [--url] [--label]
+  [--enabled <true|false>] [--resource-type <TYPE>...] [--secret-file <PATH>]`
+  changes one, `--enabled false` the reversible stop; `webhook delete <WEBHOOK>`
+  deletes one, with no undo, printing Linear's answer. `<WEBHOOK>` is a label, else a
+  URL, else an id, found among the workspace's newest `PAGE_CAP` webhooks, since
+  Linear's list takes no filter (ADR 0014, group 16;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.4.0 - 2026-11-03
 

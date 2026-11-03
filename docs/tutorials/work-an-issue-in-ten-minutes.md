@@ -139,6 +139,13 @@ its Business plan and refuses below it), `muster initiative add-project Growth
 --project "Trying muster"` puts the project in it, `muster initiative get Growth`
 prints it with its `projects` (bounded by `PROJECTS_PER_INITIATIVE`), and `muster
 initiative archive Growth` puts it away (`unarchive` brings it back).
+A webhook is a URL Linear posts changes to: `muster webhook create --url
+https://example.com/hooks/issues --resource-type Issue --resource-type Comment --label
+"Issues" --secret-file secret.txt` makes one for the team (one JSON line with its
+`url`, `enabled`, `resourceTypes` and `team`, never its secret), `muster webhook
+list` prints them, `muster webhook update Issues --enabled false` stops it without
+deleting it, and `muster webhook delete Issues` deletes it, with no undo; a webhook
+is named by its label, else its URL, else its id.
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):

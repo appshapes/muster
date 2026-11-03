@@ -81,6 +81,12 @@ pub enum Command {
         #[command(subcommand)]
         command: InitiativeCommand,
     },
+    /// Webhooks, the URLs Linear posts changes to: list, create, update, delete
+    Webhook {
+        /// The webhook command.
+        #[command(subcommand)]
+        command: WebhookCommand,
+    },
     /// A project's milestones: list, create, update, delete
     Milestone {
         /// The milestone command.
@@ -1155,6 +1161,82 @@ impl InitiativeStatus {
             InitiativeStatus::Canceled => "Canceled",
         }
     }
+}
+
+/// The webhook commands (ADR 0014, group 16). The secret comes from a file and is never
+/// printed; `--enabled false` is the reversible stop, `delete` has no undo.
+#[derive(Subcommand, Debug)]
+pub enum WebhookCommand {
+    /// List the workspace's webhooks, one JSON object per line, never with their secret
+    List(WebhookListArgs),
+    /// Create a webhook for the team, or for every public team; a URL a webhook already has is refused unless --allow-duplicate
+    Create(Box<WebhookCreateArgs>),
+    /// Change a webhook's URL, label, switch, resource types or secret
+    Update(Box<WebhookUpdateArgs>),
+    /// Delete a webhook; there is no undo (`--enabled false` on `update` is the reversible stop)
+    Delete(WebhookRefArgs),
+}
+
+/// `webhook list`.
+#[derive(Args, Debug)]
+pub struct WebhookListArgs {
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+}
+
+/// A webhook: by label, else by URL, else by id.
+#[derive(Args, Debug)]
+pub struct WebhookRefArgs {
+    /// The webhook: its label, else its URL, else its id
+    #[arg(value_name = "WEBHOOK")]
+    pub webhook: String,
+}
+
+/// `webhook create`.
+#[derive(Args, Debug, Default)]
+pub struct WebhookCreateArgs {
+    /// The URL Linear posts to
+    #[arg(long, value_name = "URL")]
+    pub url: String,
+    /// A kind of change to post, as Linear names it (Issue, Comment, Project, Cycle, IssueLabel, ...); repeatable
+    #[arg(long, value_name = "TYPE", required = true)]
+    pub resource_type: Vec<String>,
+    /// A name for it
+    #[arg(long, value_name = "TEXT")]
+    pub label: Option<String>,
+    /// Every public team's changes, rather than the team's by the usual rule
+    #[arg(long)]
+    pub all_public_teams: bool,
+    /// The signing secret, from a file, or from stdin when PATH is `-`; never on the command line, never printed
+    #[arg(long, value_name = "PATH")]
+    pub secret_file: Option<String>,
+    /// Create it even when a webhook posts to the URL
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `webhook update`.
+#[derive(Args, Debug, Default)]
+pub struct WebhookUpdateArgs {
+    /// The webhook: its label, else its URL, else its id
+    #[arg(value_name = "WEBHOOK")]
+    pub webhook: String,
+    /// A new URL
+    #[arg(long, value_name = "URL")]
+    pub url: Option<String>,
+    /// A new label
+    #[arg(long, value_name = "TEXT")]
+    pub label: Option<String>,
+    /// Whether Linear posts to it; `false` is the reversible stop
+    #[arg(long, value_name = "true|false")]
+    pub enabled: Option<bool>,
+    /// The kinds of change to post, replacing the list; repeatable
+    #[arg(long, value_name = "TYPE")]
+    pub resource_type: Vec<String>,
+    /// A new signing secret, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub secret_file: Option<String>,
 }
 
 /// The milestone commands (ADR 0014, group 10): the steps inside a project.

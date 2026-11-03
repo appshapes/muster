@@ -2297,6 +2297,276 @@ fn initiative_remove_project_refuses_a_link_past_page_cap() {
     );
 }
 
+// ---- webhooks (ADR 0014, group 16) -------------------------------------------------------
+
+#[test]
+fn webhook_list_create_update_and_delete() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds one webhook of the team, "Fake hook".
+    let seeded = muster(&fake, &["webhook", "list"]);
+    assert_eq!(seeded.code, 0, "{}", seeded.stderr);
+    assert_eq!(seeded.lines().len(), 1);
+    assert_eq!(seeded.lines()[0]["label"], "Fake hook");
+    assert_eq!(seeded.lines()[0]["enabled"], true);
+    assert_eq!(seeded.lines()[0]["team"]["key"], "APP");
+    assert_eq!(
+        seeded.lines()[0].get("secret"),
+        None,
+        "the secret is never asked for"
+    );
+    let dir = temp_dir();
+    let secret = write(&dir, "secret", "s3cr3t-signing-key\n");
+    let created = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/issues",
+            "--resource-type",
+            "Issue",
+            "--resource-type",
+            "Comment",
+            "--label",
+            "Issues and comments",
+            "--secret-file",
+            &secret,
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let v = created.one();
+    assert_eq!(v["url"], "https://example.com/hooks/issues");
+    assert_eq!(v["label"], "Issues and comments");
+    assert_eq!(v["resourceTypes"], serde_json::json!(["Issue", "Comment"]));
+    assert_eq!(v["enabled"], true);
+    assert_eq!(v["team"]["key"], "APP", "the team by the usual rule");
+    assert_eq!(v["allPublicTeams"], false);
+    assert_eq!(v.get("secret"), None);
+    assert!(
+        !created.stdout.contains("s3cr3t") && !created.stderr.contains("s3cr3t"),
+        "the secret is never printed"
+    );
+    let again = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/issues",
+            "--resource-type",
+            "Issue",
+        ],
+    );
+    assert_eq!(
+        again.code, 6,
+        "a webhook posts to that URL: {}",
+        again.stderr
+    );
+    fake.fail_next("Webhooks", Failure::Drop);
+    let unread = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/unread",
+            "--resource-type",
+            "Issue",
+        ],
+    );
+    assert_eq!(unread.code, 7, "the guard's read failed: {}", unread.stderr);
+    let no_type = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/none",
+        ],
+    );
+    assert_eq!(
+        no_type.code, 2,
+        "--resource-type is required: {}",
+        no_type.stderr
+    );
+    let empty_secret = write(&dir, "empty", "\n");
+    let blank = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/blank",
+            "--resource-type",
+            "Issue",
+            "--secret-file",
+            &empty_secret,
+        ],
+    );
+    assert_eq!(blank.code, 2, "{}", blank.stderr);
+    let http = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "http://example.com/hooks/plain",
+            "--resource-type",
+            "Issue",
+        ],
+    );
+    assert_eq!(
+        http.code, 6,
+        "Linear refuses a URL that is not https: {}",
+        http.stderr
+    );
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "WebhookCreate")
+            .count(),
+        2,
+        "the refused, failed and bad inputs sent no mutation but Linear's own refusal"
+    );
+    let public = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/all",
+            "--resource-type",
+            "Project",
+            "--all-public-teams",
+        ],
+    );
+    assert_eq!(public.code, 0, "{}", public.stderr);
+    assert!(public.one()["team"].is_null());
+    assert_eq!(public.one()["allPublicTeams"], true);
+    assert!(public.one()["label"].is_null());
+
+    assert_eq!(muster(&fake, &["webhook", "list"]).lines().len(), 3);
+    let cut = muster(&fake, &["webhook", "list", "--limit", "1"]);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(cut.notices()[0]["code"], "truncated");
+
+    // By label, by URL, by id.
+    let off = muster(
+        &fake,
+        &[
+            "webhook",
+            "update",
+            "issues and comments",
+            "--enabled",
+            "false",
+        ],
+    );
+    assert_eq!(off.code, 0, "{}", off.stderr);
+    assert_eq!(off.one()["enabled"], false);
+    assert_eq!(
+        off.one()["label"],
+        "Issues and comments",
+        "the rest left alone"
+    );
+    let by_url = muster(
+        &fake,
+        &[
+            "webhook",
+            "update",
+            "https://example.com/hooks/all",
+            "--label",
+            "Every project",
+            "--resource-type",
+            "Project",
+            "--resource-type",
+            "ProjectUpdate",
+        ],
+    );
+    assert_eq!(by_url.code, 0, "{}", by_url.stderr);
+    assert_eq!(by_url.one()["label"], "Every project");
+    assert_eq!(
+        by_url.one()["resourceTypes"],
+        serde_json::json!(["Project", "ProjectUpdate"])
+    );
+    let id = by_url.one()["id"].as_str().unwrap().to_string();
+    let new_secret = write(&dir, "secret2", "another-secret");
+    let by_id = muster(
+        &fake,
+        &[
+            "webhook",
+            "update",
+            &id,
+            "--url",
+            "https://example.com/hooks/all-2",
+            "--secret-file",
+            &new_secret,
+        ],
+    );
+    assert_eq!(by_id.code, 0, "{}", by_id.stderr);
+    assert_eq!(by_id.one()["url"], "https://example.com/hooks/all-2");
+    assert!(!by_id.stdout.contains("another-secret"));
+    let bad_bool = muster(
+        &fake,
+        &["webhook", "update", "Every project", "--enabled", "off"],
+    );
+    assert_eq!(bad_bool.code, 2, "{}", bad_bool.stderr);
+    let nothing = muster(&fake, &["webhook", "update", "Every project"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    let nope = muster(&fake, &["webhook", "update", "Nope", "--enabled", "true"]);
+    assert_eq!(nope.code, 4, "{}", nope.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "WebhookUpdate")
+            .count(),
+        3,
+        "the usage and not-found errors sent no mutation"
+    );
+
+    let deleted = muster(&fake, &["webhook", "delete", "Every project"]);
+    assert_eq!(deleted.code, 0, "{}", deleted.stderr);
+    assert_eq!(deleted.one()["success"], true);
+    assert_eq!(deleted.one()["entityId"], id);
+    assert_eq!(muster(&fake, &["webhook", "list"]).lines().len(), 2);
+    assert_eq!(
+        muster(&fake, &["webhook", "delete", "Every project"]).code,
+        4
+    );
+
+    for (op, args) in [
+        (
+            "WebhookCreate",
+            vec![
+                "webhook",
+                "create",
+                "--url",
+                "https://example.com/hooks/dropped",
+                "--resource-type",
+                "Issue",
+            ],
+        ),
+        (
+            "WebhookUpdate",
+            vec!["webhook", "update", "Fake hook", "--enabled", "false"],
+        ),
+        ("WebhookDelete", vec!["webhook", "delete", "Fake hook"]),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+    fake.fail_next("Webhooks", Failure::Drop);
+    let run = muster(&fake, &["webhook", "list"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+    fake.fail_next("Webhooks", Failure::Drop);
+    let run = muster(&fake, &["webhook", "delete", "Fake hook"]);
+    assert_eq!(
+        run.code, 7,
+        "the reference's read failed before any mutation: {}",
+        run.stderr
+    );
+}
+
 // ---- project updates (ADR 0014, group 11) ------------------------------------------------
 
 #[test]
