@@ -666,8 +666,12 @@ fn member_add(session: &Session, args: &MemberArgs, out: &Output) -> Result<(), 
     Ok(())
 }
 
-/// `member remove`: the membership is resolved from the team's list, up to
-/// `PAGE_CAP`, before the one mutation; a user who is not a member is exit 4.
+/// `member remove`: the membership is resolved from the team's list, one page of
+/// `PAGE_CAP`, before the one mutation. A user who is not in a page that holds the
+/// whole team is exit 4. When the page is cut (`pageInfo.hasNextPage`), a user who
+/// is not in it may be a member past the bound, so the command refuses before any
+/// mutation, exit 6, a muster guard, rather than call them a non-member (invariant 1;
+/// ADR 0014 settles the same case for `project update --remove-member`).
 fn member_remove(session: &Session, args: &MemberArgs, out: &Output) -> Result<(), Error> {
     let key = session.team_key()?;
     let user_id = session.user_id(&args.user)?;
@@ -676,6 +680,17 @@ fn member_remove(session: &Session, args: &MemberArgs, out: &Output) -> Result<(
         .into_iter()
         .find(|m| str_at(m, "user.id") == Some(user_id.as_str()));
     let Some(membership) = found else {
+        if has_next_page(&team, "memberships") {
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "team {key} has more than PAGE_CAP ({PAGE_CAP}) members and {:?} is not among the first {PAGE_CAP}",
+                    args.user
+                ),
+                "remove the member in the browser, on the team's members page in Linear; PAGE_CAP is the bound",
+            )
+            .at("bounds"));
+        }
         return Err(Error::with_hint(
             ErrorCode::NotFound,
             format!("{:?} is not a member of team {key}", args.user),

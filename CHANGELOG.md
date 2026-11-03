@@ -59,9 +59,11 @@ user-visible change, added in the same commit as the change. The format follows
   `owner` and `sortOrder`, bounded by `--limit` with a `truncated` notice past it;
   `member add --user <WHO>` adds a user to the team through Linear's
   `teamMembershipCreate` (a second membership is Linear's refusal, exit 6), and
-  `member remove --user <WHO>` removes one, the membership found in the team's list
-  first, so that a user who is not a member is exit 4 before any mutation; the team
-  is the usual rule, `--team`, `MUSTER_TEAM` or the only one (ADR 0014, group 3;
+  `member remove --user <WHO>` removes one, the membership found in the team's first
+  `PAGE_CAP` members first, so that a user who is not a member is exit 4 before any
+  mutation, and a user who is not among them in a team with more is refused, exit 6,
+  a muster guard, rather than called a non-member; the team is the usual rule,
+  `--team`, `MUSTER_TEAM` or the only one (ADR 0014, group 3;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ### Changed

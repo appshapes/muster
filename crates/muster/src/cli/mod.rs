@@ -528,7 +528,7 @@ pub enum MemberCommand {
     List(ListArgs),
     /// Add a user to the team
     Add(MemberArgs),
-    /// Remove a user from the team; a user may remove themselves, a team owner or a workspace admin anyone
+    /// Remove a user from the team; a user may remove themselves, a team owner or a workspace admin anyone. The membership is found in the team's first PAGE_CAP members: a user who is not among them is exit 4 when the team has no more, and exit 6, refused before any mutation, when it has
     Remove(MemberArgs),
 }
 
