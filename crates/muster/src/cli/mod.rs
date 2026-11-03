@@ -75,6 +75,12 @@ pub enum Command {
         #[command(subcommand)]
         command: ProjectCommand,
     },
+    /// The workspace's project statuses: list, create, update, archive, unarchive
+    ProjectStatus {
+        /// The project status command.
+        #[command(subcommand)]
+        command: ProjectStatusCommand,
+    },
     /// Users: list, get, update, change-role, suspend, unsuspend, revoke-sessions
     User {
         /// The user command.
@@ -869,6 +875,114 @@ pub struct ProjectUpdateArgs {
     /// A new icon
     #[arg(long, value_name = "TEXT")]
     pub icon: Option<String>,
+}
+
+/// The project status commands (ADR 0014, group 9): the workspace's project
+/// lifecycle, which `project update --status` names.
+#[derive(Subcommand, Debug)]
+pub enum ProjectStatusCommand {
+    /// List the workspace's project statuses by position, one JSON object per line
+    List(ListArgs),
+    /// Add a project status to the workspace; a name a status already has is refused unless --allow-duplicate
+    Create(ProjectStatusCreateArgs),
+    /// Change a project status's name, colour, description, position, type or whether a project may stay in it indefinitely
+    Update(ProjectStatusUpdateArgs),
+    /// Archive a project status; Linear refuses one with active projects, or the last of its type
+    Archive(ProjectStatusRefArgs),
+    /// Bring an archived project status back
+    Unarchive(ProjectStatusRefArgs),
+}
+
+/// A project status named as `--status` names one.
+#[derive(Args, Debug)]
+pub struct ProjectStatusRefArgs {
+    /// The status, by name
+    #[arg(value_name = "NAME")]
+    pub name: String,
+}
+
+/// `project-status create`.
+#[derive(Args, Debug, Default)]
+pub struct ProjectStatusCreateArgs {
+    /// The name
+    #[arg(long, value_name = "TEXT")]
+    pub name: String,
+    /// The type, which says how Linear treats projects in the status
+    #[arg(long, value_name = "TYPE", value_enum)]
+    pub r#type: ProjectStatusType,
+    /// The colour, a hex string (#4ea7fc)
+    #[arg(long, value_name = "HEX")]
+    pub color: String,
+    /// Where the status sits in the workspace's project flow: one finite number Linear orders every status by, across types, so 2.5 goes between the defaults at 2 and 3
+    #[arg(long, value_name = "N")]
+    pub position: f64,
+    /// The description, plain text
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// Whether a project may stay in the status indefinitely
+    #[arg(long, value_name = "true|false")]
+    pub indefinite: Option<bool>,
+    /// Create it even when a status has the name
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `project-status update`.
+#[derive(Args, Debug, Default)]
+pub struct ProjectStatusUpdateArgs {
+    /// The status, by name
+    #[arg(value_name = "NAME")]
+    pub status: String,
+    /// A new name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new colour, a hex string (#4ea7fc)
+    #[arg(long, value_name = "HEX")]
+    pub color: Option<String>,
+    /// A new description, plain text
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// A new position in the workspace's project flow, one finite number Linear orders every status by, across types
+    #[arg(long, value_name = "N")]
+    pub position: Option<f64>,
+    /// A new type
+    #[arg(long, value_name = "TYPE", value_enum)]
+    pub r#type: Option<ProjectStatusType>,
+    /// Whether a project may stay in the status indefinitely
+    #[arg(long, value_name = "true|false")]
+    pub indefinite: Option<bool>,
+}
+
+/// A project status's type, as Linear's `ProjectStatusType` names it.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProjectStatusType {
+    /// Not yet planned.
+    #[default]
+    Backlog,
+    /// Planned, not started.
+    Planned,
+    /// In progress.
+    Started,
+    /// On hold.
+    Paused,
+    /// Done.
+    Completed,
+    /// Not going to be done.
+    Canceled,
+}
+
+impl ProjectStatusType {
+    /// The value Linear takes.
+    pub fn linear(self) -> &'static str {
+        match self {
+            ProjectStatusType::Backlog => "backlog",
+            ProjectStatusType::Planned => "planned",
+            ProjectStatusType::Started => "started",
+            ProjectStatusType::Paused => "paused",
+            ProjectStatusType::Completed => "completed",
+            ProjectStatusType::Canceled => "canceled",
+        }
+    }
 }
 
 /// `project create`.

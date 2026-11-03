@@ -349,6 +349,10 @@ fn an_unknown_issue_exits_4_and_a_bad_reference_exits_2() {
     assert_eq!(e["code"], "not_found");
     assert_eq!(e["linear"]["code"], "INPUT_ERROR");
     assert_eq!(e["linear"]["message"], "Entity not found: Issue");
+    assert_eq!(
+        e["linear"]["userPresentableMessage"], "Could not find referenced Issue.",
+        "Linear's presentable message, verbatim (ADR 0015)"
+    );
 
     let run = muster(&fake, &["issue", "get", "999"]);
     assert_eq!(run.code, 4);
@@ -1465,7 +1469,27 @@ fn team_create_makes_a_team_with_its_states_and_refuses_a_duplicate_name() {
         "Linear keeps the key unique: {}",
         same_key.stderr
     );
-    assert!(same_key.error()["linear"]["message"].is_string());
+    // Both of Linear's messages verbatim, each under Linear's name, and muster's own
+    // message naming the reason (ADR 0015).
+    let e = same_key.error();
+    assert_eq!(
+        e["linear"]["message"], "Argument Validation Error",
+        "Linear's message as Linear sent it: {}",
+        same_key.stderr
+    );
+    assert!(
+        e["linear"]["userPresentableMessage"]
+            .as_str()
+            .unwrap()
+            .contains("already in use"),
+        "Linear's presentable reason under its own name: {}",
+        same_key.stderr
+    );
+    assert!(
+        e["message"].as_str().unwrap().contains("already in use"),
+        "muster's message names the reason: {}",
+        same_key.stderr
+    );
 
     let child = muster(
         &fake,
@@ -1836,6 +1860,230 @@ fn user_get_update_role_suspension_and_sessions() {
     }
     fake.fail_next("UserById", Failure::Drop);
     let run = muster(&fake, &["user", "get", "me"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+}
+
+// ---- project statuses (ADR 0014, group 9) ------------------------------------------------
+
+#[test]
+fn project_status_list_create_update_archive_and_unarchive() {
+    let fake = Fake::start().unwrap();
+    let listed = muster(&fake, &["project-status", "list"]);
+    assert_eq!(listed.code, 0, "{}", listed.stderr);
+    let statuses = listed.lines();
+    assert_eq!(statuses.len(), 5, "Linear's five defaults");
+    assert_eq!(statuses[0]["name"], "Backlog", "by position");
+    assert_eq!(statuses[2]["type"], "started");
+    assert!(statuses[0]["indefinite"].is_boolean() && statuses[0]["color"].is_string());
+    // The list at its bound: what fits, and a `truncated` notice, never silence.
+    let cut = muster(&fake, &["project-status", "list", "--limit", "1"]);
+    assert_eq!(cut.code, 0, "{}", cut.stderr);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(cut.lines()[0]["name"], "Backlog");
+    assert_eq!(cut.notices()[0]["code"], "truncated", "{}", cut.stderr);
+    let created = muster(
+        &fake,
+        &[
+            "project-status",
+            "create",
+            "--name",
+            "Paused",
+            "--type",
+            "planned",
+            "--color",
+            "#f2c94c",
+            "--position",
+            "2.5",
+            "--indefinite",
+            "true",
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let v = created.one();
+    assert_eq!(v["name"], "Paused");
+    assert_eq!(
+        v["type"], "planned",
+        "a second planned status, so that archiving it leaves one of the type"
+    );
+    assert_eq!(v["position"], 2.5);
+    assert_eq!(v["indefinite"], true);
+    // One order across the workspace, not one per type: Linear's `position` is "the
+    // position of the status in the workspace's project flow", and the defaults sit
+    // at 0 to 4, so a planned status at 2.5 lists between In Progress (2, started)
+    // and Completed (3, completed), the two types either side of it.
+    let listed = muster(&fake, &["project-status", "list"]).lines();
+    assert_eq!(listed.len(), 6);
+    assert_eq!(listed[2]["name"], "In Progress");
+    assert_eq!(
+        listed[3]["name"], "Paused",
+        "between In Progress and Completed, across types"
+    );
+    assert_eq!(listed[4]["name"], "Completed");
+    let again = muster(
+        &fake,
+        &[
+            "project-status",
+            "create",
+            "--name",
+            "paused",
+            "--type",
+            "paused",
+            "--color",
+            "#000000",
+            "--position",
+            "9",
+        ],
+    );
+    assert_eq!(again.code, 6, "{}", again.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "ProjectStatusCreate")
+            .count(),
+        1,
+        "refused before any mutation"
+    );
+    let moved = muster(
+        &fake,
+        &["project", "update", "Muster", "--status", "Paused"],
+    );
+    assert_eq!(
+        moved.code, 0,
+        "the new status takes projects: {}",
+        moved.stderr
+    );
+
+    let renamed = muster(
+        &fake,
+        &[
+            "project-status",
+            "update",
+            "Paused",
+            "--name",
+            "On hold",
+            "--indefinite",
+            "false",
+        ],
+    );
+    assert_eq!(renamed.code, 0, "{}", renamed.stderr);
+    assert_eq!(renamed.one()["name"], "On hold");
+    assert_eq!(renamed.one()["indefinite"], false);
+    assert_eq!(
+        muster(&fake, &["project", "get", "Muster"]).one()["status"]["name"],
+        "On hold",
+        "the project shows the new name"
+    );
+    let nothing = muster(&fake, &["project-status", "update", "On hold"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    let nope = muster(
+        &fake,
+        &["project-status", "update", "Nope", "--color", "#000000"],
+    );
+    assert_eq!(nope.code, 4, "{}", nope.stderr);
+    // `f64::from_str`, which `clap` parses `--position` with, takes `nan`, `inf` and
+    // `1e400` (which overflows to infinity), and serde_json would write each as `null`:
+    // a position the caller never typed. Each is muster's usage error, before any
+    // request, as on `state create` and `state update`; the hint names this group's
+    // list. The `=` form, since `clap` reads a bare `-inf` as flags.
+    let sent = fake.operations().len();
+    for position in ["nan", "inf", "-inf", "1e400"] {
+        let flag = format!("--position={position}");
+        let create = muster(
+            &fake,
+            &[
+                "project-status",
+                "create",
+                "--name",
+                "Nowhere",
+                "--type",
+                "backlog",
+                "--color",
+                "#000000",
+                &flag,
+            ],
+        );
+        assert_eq!(create.code, 2, "{flag}: {}", create.stderr);
+        assert_eq!(create.error()["code"], "usage", "{flag}: {}", create.stderr);
+        assert!(
+            create.error()["hint"]
+                .as_str()
+                .unwrap()
+                .contains("muster project-status list"),
+            "{flag}: {}",
+            create.stderr
+        );
+        let update = muster(&fake, &["project-status", "update", "On hold", &flag]);
+        assert_eq!(update.code, 2, "{flag}: {}", update.stderr);
+        assert_eq!(update.error()["code"], "usage", "{flag}: {}", update.stderr);
+    }
+    assert_eq!(
+        fake.operations().len(),
+        sent,
+        "refused before any request: no ProjectStatusCreate, no ProjectStatusUpdate"
+    );
+
+    let held = muster(&fake, &["project-status", "archive", "On hold"]);
+    assert_eq!(
+        held.code, 6,
+        "a status with a project in it: {}",
+        held.stderr
+    );
+    let away = muster(
+        &fake,
+        &["project", "update", "Muster", "--status", "Planned"],
+    );
+    assert_eq!(away.code, 0, "{}", away.stderr);
+    let archived = muster(&fake, &["project-status", "archive", "On hold"]);
+    assert_eq!(archived.code, 0, "{}", archived.stderr);
+    assert_eq!(archived.one()["name"], "On hold", "Linear's entity");
+    assert_eq!(muster(&fake, &["project-status", "list"]).lines().len(), 5);
+    let last = muster(&fake, &["project-status", "archive", "Backlog"]);
+    assert_eq!(last.code, 6, "the last of its type: {}", last.stderr);
+    let back = muster(&fake, &["project-status", "unarchive", "On hold"]);
+    assert_eq!(
+        back.code, 0,
+        "an archived status is still found: {}",
+        back.stderr
+    );
+    assert_eq!(back.one()["name"], "On hold");
+    assert_eq!(muster(&fake, &["project-status", "list"]).lines().len(), 6);
+
+    for (op, args) in [
+        (
+            "ProjectStatusCreate",
+            vec![
+                "project-status",
+                "create",
+                "--name",
+                "Dropped",
+                "--type",
+                "backlog",
+                "--color",
+                "#000000",
+                "--position",
+                "9",
+            ],
+        ),
+        (
+            "ProjectStatusUpdate",
+            vec!["project-status", "update", "On hold", "--color", "#000000"],
+        ),
+        (
+            "ProjectStatusArchive",
+            vec!["project-status", "archive", "On hold"],
+        ),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+    let archived = muster(&fake, &["project-status", "archive", "On hold"]);
+    assert_eq!(archived.code, 0, "{}", archived.stderr);
+    fake.fail_next("ProjectStatusUnarchive", Failure::Drop);
+    let run = muster(&fake, &["project-status", "unarchive", "On hold"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("ProjectStatuses", Failure::Drop);
+    let run = muster(&fake, &["project-status", "list"]);
     assert_eq!(run.code, 7, "{}", run.stderr);
 }
 

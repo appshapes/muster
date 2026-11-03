@@ -166,7 +166,7 @@ pub fn markdown(schema: &Value) -> String {
     );
     let _ = writeln!(
         md,
-        "Every command prints one JSON object per line on stdout with Linear's own field names, nested as Linear nests them, and exits 0. On failure it prints one error object on stderr, `{{\"error\": {{\"code\", \"exit\", \"message\", \"hint\", \"docs\", \"linear\": {{\"code\", \"message\", \"requestId\"}}}}}}`, and exits with the code below. `--human` renders the same data as text. Nothing prompts, pages or colours.\n"
+        "Every command prints one JSON object per line on stdout with Linear's own field names, nested as Linear nests them, and exits 0. On failure it prints one error object on stderr, `{{\"error\": {{\"code\", \"exit\", \"message\", \"hint\", \"docs\", \"linear\": {{\"code\", \"message\", \"userPresentableMessage\", \"requestId\"}}}}}}`, and exits with the code below; `linear` is what Linear answered, its `message` and `userPresentableMessage` (the reason behind a bare message such as \"Argument Validation Error\", `null` when Linear sent none) verbatim, and muster's `message` names both when they differ (ADR 0015). `--human` renders the same data as text. Nothing prompts, pages or colours.\n"
     );
     let _ = writeln!(md, "## Global flags\n");
     let _ = writeln!(md, "| Flag | Value | Meaning |\n| --- | --- | --- |");
@@ -504,7 +504,7 @@ pub fn fixture_variables(
         "WorkflowStates" | "IssueLabels" => json!({ "first": 5, "filter": Value::Null }),
         "Users" => json!({ "first": 5, "filter": Value::Null, "includeDisabled": true }),
         "UserById" => json!({ "id": "me" }),
-        "ProjectStatuses" => json!({ "first": 5 }),
+        "ProjectStatuses" => json!({ "first": 5, "includeArchived": false }),
         "ProjectByName" => {
             json!({ "name": first_project?, "includeArchived": false, "teams": TEAMS_PER_PROJECT, "members": MEMBERS_PER_PROJECT, "milestones": MILESTONES_PER_PROJECT })
         }
@@ -619,6 +619,11 @@ mod tests {
             "project update",
             "project delete",
             "project unarchive",
+            "project-status list",
+            "project-status create",
+            "project-status update",
+            "project-status archive",
+            "project-status unarchive",
             "state list",
             "label list",
             "project list",

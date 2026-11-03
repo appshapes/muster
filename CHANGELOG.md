@@ -45,6 +45,24 @@ user-visible change, added in the same commit as the change. The format follows
   `--icon`. `project delete <NAME>` trashes a project, which Linear keeps for thirty
   days, and `project unarchive <NAME>` brings it back; both print Linear's entity
   (ADR 0014, group 8; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `project-status list` prints the workspace's project statuses by position, each
+  with its `type`, `color`, `position` and `indefinite`; `project-status create
+  --name <TEXT> --type <backlog|planned|started|paused|completed|canceled> --color
+  <HEX> --position <N> [--description] [--indefinite <true|false>]` adds one through
+  Linear's `projectStatusCreate` (a name a status has is refused, exit 6, unless
+  `--allow-duplicate`); `project-status update <NAME>` changes it; `project-status
+  archive <NAME>` takes it out, which Linear refuses, exit 6, for a status with
+  active projects or the last of its type, and `project-status unarchive <NAME>`
+  brings it back. `--position` takes a finite number, as on `state create`: `nan`,
+  `inf` and `1e400` are usage errors, exit 2, before any request (ADR 0014, group 9;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- The error object's `linear` now carries `userPresentableMessage`: the reason Linear
+  puts beside a bare message such as "Argument Validation Error" ("name must be
+  shorter than or equal to 25 characters"), verbatim, and `null` when Linear sent
+  none. `linear.message` stays Linear's `message` as Linear sent it, and muster's
+  own `message` names the reason after it when the two differ, so that the output
+  and `--human` say what to fix
+  ([ADR 0015](docs/decisions/0015-carry-linears-user-presentable-message-on-the-error-object.md)).
 
 ## 0.3.0 - 2026-11-03
 

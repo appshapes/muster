@@ -75,6 +75,10 @@ step "muster project create"
 "$bin" project create --name "Trying muster" | tee "$tmp/project.json"
 jq -e '.name == "Trying muster" and .teams.nodes[0].key == "APP"' "$tmp/project.json" >/dev/null
 
+step "muster project-status list"
+"$bin" project-status list | tee "$tmp/statuses.jsonl"
+jq -s -e 'length == 5 and .[0].name == "Backlog" and .[2].type == "started"' "$tmp/statuses.jsonl" >/dev/null
+
 step "muster project get and update"
 "$bin" project update "Trying muster" --status "In Progress" --lead me | jq -e '.status.name == "In Progress" and .lead.id' >/dev/null
 "$bin" project get "Trying muster" | tee "$tmp/project-get.json"

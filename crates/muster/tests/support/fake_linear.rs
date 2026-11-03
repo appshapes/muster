@@ -1493,15 +1493,110 @@ impl Workspace {
                 )
             }
             "ProjectStatuses" => {
+                let include_archived = vars["includeArchived"].as_bool().unwrap_or(false);
                 let statuses: Vec<Value> = self
                     .project_statuses
                     .iter()
-                    .filter(|s| s["archivedAt"].is_null())
+                    .filter(|s| include_archived || s["archivedAt"].is_null())
                     .map(Workspace::state_view)
                     .collect();
                 (
                     200,
                     json!({ "data": { "projectStatuses": Workspace::page(statuses, first) } }),
+                )
+            }
+            "ProjectStatusCreate" => {
+                let input = &vars["input"];
+                let (Some(name), Some(kind), Some(color), Some(position)) = (
+                    input["name"].as_str().filter(|n| !n.trim().is_empty()),
+                    input["type"].as_str(),
+                    input["color"].as_str(),
+                    input["position"].as_f64(),
+                ) else {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "name, type, color and position are required" } } ], "data": null }),
+                    );
+                };
+                let sid = self.id();
+                let status = json!({ "id": sid, "name": name, "type": kind, "color": color, "description": input["description"], "position": position, "indefinite": input["indefinite"].as_bool().unwrap_or(true), "archivedAt": null });
+                self.project_statuses.push(status.clone());
+                (
+                    200,
+                    json!({ "data": { "projectStatusCreate": { "success": true, "status": Workspace::state_view(&status) } } }),
+                )
+            }
+            "ProjectStatusUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "ProjectStatusUpdateInput!");
+                };
+                let Some(index) = self
+                    .project_statuses
+                    .iter()
+                    .position(|s| s["id"] == id && s["archivedAt"].is_null())
+                else {
+                    return not_found("ProjectStatus");
+                };
+                for (field, value) in input {
+                    self.project_statuses[index][&field] = value;
+                }
+                let (sid, sname) = (
+                    self.project_statuses[index]["id"].clone(),
+                    self.project_statuses[index]["name"].clone(),
+                );
+                for project in &mut self.projects {
+                    if project["status"]["id"] == sid {
+                        project["status"]["name"] = sname.clone();
+                    }
+                }
+                (
+                    200,
+                    json!({ "data": { "projectStatusUpdate": { "success": true, "status": Workspace::state_view(&self.project_statuses[index]) } } }),
+                )
+            }
+            "ProjectStatusArchive" | "ProjectStatusUnarchive" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let archiving = op == "ProjectStatusArchive";
+                let Some(index) = self
+                    .project_statuses
+                    .iter()
+                    .position(|s| s["id"] == id && (s["archivedAt"].is_null() == archiving))
+                else {
+                    return not_found("ProjectStatus");
+                };
+                if archiving {
+                    // A status with active projects, or the last of its type, is
+                    // refused (the mutation's own description).
+                    let kind = self.project_statuses[index]["type"].clone();
+                    let in_use = self
+                        .projects
+                        .iter()
+                        .any(|p| p["status"]["id"] == id && p["archivedAt"].is_null());
+                    let last_of_type = self
+                        .project_statuses
+                        .iter()
+                        .filter(|s| s["type"] == kind && s["archivedAt"].is_null())
+                        .count()
+                        == 1;
+                    if in_use || last_of_type {
+                        return (
+                            200,
+                            json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": if in_use { "Cannot archive a project status with active projects." } else { "Cannot archive the last project status of its type." } } } ], "data": null }),
+                        );
+                    }
+                }
+                let now = self.now();
+                self.project_statuses[index]["archivedAt"] =
+                    if archiving { json!(now) } else { Value::Null };
+                let field = if archiving {
+                    "projectStatusArchive"
+                } else {
+                    "projectStatusUnarchive"
+                };
+                (
+                    200,
+                    json!({ "data": { field: { "success": true, "entity": Workspace::state_view(&self.project_statuses[index]) } } }),
                 )
             }
             "ProjectUpdate" => {

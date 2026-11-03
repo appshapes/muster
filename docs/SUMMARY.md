@@ -40,3 +40,4 @@ under `docs/` is listed here; `just lint-docs` fails on one that is not.
 - [0012. Publish as `muster-linear`: `muster-cli` is taken as well](decisions/0012-publish-as-muster-linear.md)
 - [0013. Build the second slice: sub-issues, attachments and projects, in three features](decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md)
 - [0014. Build the third slice: administrative commands, in twenty groups](decisions/0014-build-the-third-slice-administrative-commands.md)
+- [0015. Carry Linear's `userPresentableMessage` on the error object, beside its message](decisions/0015-carry-linears-user-presentable-message-on-the-error-object.md)

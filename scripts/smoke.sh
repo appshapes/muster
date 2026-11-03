@@ -117,6 +117,22 @@ jq -e '.retiredAt == null' "$tmp/label-restore.json" >/dev/null
 "$bin" label delete "Smoky $stamp" | tee "$tmp/label-delete.json"
 jq -e '.success == true' "$tmp/label-delete.json" >/dev/null
 echo
+echo "smoke: muster project-status list, then a status created, updated, archived and unarchived (ADR 0014)"
+"$bin" project-status list | jq -c '{name, type, position}' | tee "$tmp/statuses.jsonl"
+jq -s -e 'length >= 1' "$tmp/statuses.jsonl" >/dev/null
+# A project status's name is at most 25 characters (Linear's validation, read on
+# 2026-11-03), so the status is named after the run's time of day.
+short="${stamp:11:8}"
+"$bin" project-status create --name "Smoke $short" --type planned --color "#f2c94c" --position 99 --description "Made by scripts/smoke.sh at $stamp and archived by the same run; a second planned status, since Linear keeps the last of a type." | jq -c '{name, type, position, indefinite}' | tee "$tmp/status-create.json"
+jq -e --arg n "Smoke $short" '.name == $n and .type == "planned"' "$tmp/status-create.json" >/dev/null
+"$bin" project-status update "Smoke $short" --name "Smoky $short" --indefinite true | jq -c '{name, indefinite}' | tee "$tmp/status-update.json"
+jq -e --arg n "Smoky $short" '.name == $n' "$tmp/status-update.json" >/dev/null
+"$bin" project-status archive "Smoky $short" | jq -c '{name, type}' | tee "$tmp/status-archive.json"
+jq -e --arg n "Smoky $short" '.name == $n' "$tmp/status-archive.json" >/dev/null
+"$bin" project-status unarchive "Smoky $short" | jq -c '{name}' | tee "$tmp/status-unarchive.json"
+jq -e --arg n "Smoky $short" '.name == $n' "$tmp/status-unarchive.json" >/dev/null
+"$bin" project-status archive "Smoky $short" | jq -c '{name}' >/dev/null
+echo
 echo "smoke: muster project get 'Smoke tests', then a throwaway project updated, deleted, unarchived and deleted again (ADR 0014)"
 "$bin" project get "Smoke tests" | jq -c '{name, status: .status.name, members: (.members.nodes | length), milestones: (.projectMilestones.nodes | length), trashed}' | tee "$tmp/project-get.json"
 jq -e '.name == "Smoke tests"' "$tmp/project-get.json" >/dev/null
