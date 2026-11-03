@@ -1370,7 +1370,7 @@ fn team_get_prints_every_setting_by_key_or_by_the_team_rule() {
     assert_eq!(run.code, 0, "{}", run.stderr);
     let v = run.one();
     assert_eq!(v["key"], "APP");
-    assert_eq!(v["cyclesEnabled"], false);
+    assert_eq!(v["cyclesEnabled"], true, "the seeded team uses cycles");
     assert_eq!(v["visibility"], "public");
     assert!(v["timezone"].is_string());
     assert_eq!(v["defaultIssueState"]["name"], "Backlog");
@@ -1387,7 +1387,7 @@ fn team_get_prints_every_setting_by_key_or_by_the_team_rule() {
     assert_eq!(inferred.code, 0, "{}", inferred.stderr);
     assert_eq!(inferred.one()["key"], "APP");
     let listed = muster(&fake, &["team", "list"]).one();
-    assert_eq!(listed["cyclesEnabled"], false);
+    assert_eq!(listed["cyclesEnabled"], true);
     assert!(listed["retiredAt"].is_null() && listed["timezone"].is_string());
 
     let nope = muster(&fake, &["team", "get", "NOPE"]);
@@ -2294,6 +2294,200 @@ fn initiative_remove_project_refuses_a_link_past_page_cap() {
         gone.code, 4,
         "a whole list tells a missing link: {}",
         gone.stderr
+    );
+}
+
+// ---- cycles (ADR 0014, group 13) ---------------------------------------------------------
+
+#[test]
+fn cycle_list_get_update_and_the_issue_flag() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds three cycles on APP: 1 past, 2 active, 3 next; newest first.
+    let all = muster(&fake, &["cycle", "list"]);
+    assert_eq!(all.code, 0, "{}", all.stderr);
+    assert_eq!(all.lines().len(), 3);
+    assert_eq!(all.lines()[0]["number"], 3.0);
+    assert_eq!(all.lines()[0]["team"]["key"], "APP");
+    assert!(all.lines()[0]["startsAt"].is_string() && all.lines()[0]["endsAt"].is_string());
+    assert_eq!(
+        all.lines()[0].get("issues"),
+        None,
+        "the list shape has no issues"
+    );
+    let active = muster(&fake, &["cycle", "list", "--active"]);
+    assert_eq!(active.lines().len(), 1);
+    assert_eq!(active.lines()[0]["number"], 2.0);
+    assert_eq!(active.lines()[0]["isActive"], true);
+    let upcoming = muster(&fake, &["cycle", "list", "--upcoming"]);
+    assert_eq!(upcoming.lines().len(), 1);
+    assert_eq!(upcoming.lines()[0]["number"], 3.0);
+    let past = muster(&fake, &["cycle", "list", "--past"]);
+    assert_eq!(past.lines().len(), 1);
+    assert!(past.lines()[0]["completedAt"].is_string());
+    let both = muster(&fake, &["cycle", "list", "--active", "--past"]);
+    assert_eq!(both.code, 2, "{}", both.stderr);
+    let cut = muster(&fake, &["cycle", "list", "--limit", "1"]);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(cut.notices()[0]["code"], "truncated");
+
+    let got = muster(&fake, &["cycle", "get", "2"]);
+    assert_eq!(got.code, 0, "{}", got.stderr);
+    assert_eq!(got.one()["number"], 2.0);
+    assert_eq!(
+        got.one()["issues"]["nodes"][0]["identifier"],
+        "APP-2",
+        "the seeded issue in the active cycle"
+    );
+    assert_eq!(got.one()["issues"]["nodes"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        fake.operations().last().map(String::as_str),
+        Some("CycleByNumber"),
+        "one request"
+    );
+    let none = muster(&fake, &["cycle", "get", "9"]);
+    assert_eq!(none.code, 4, "{}", none.stderr);
+    let word = muster(&fake, &["cycle", "get", "active"]);
+    assert_eq!(word.code, 2, "a number: {}", word.stderr);
+
+    let updated = muster(
+        &fake,
+        &[
+            "cycle",
+            "update",
+            "2",
+            "--name",
+            "Sprint 2",
+            "--description",
+            "The one that ships.",
+            "--ends-at",
+            "2026-11-03T00:00:00.000Z",
+        ],
+    );
+    assert_eq!(updated.code, 0, "{}", updated.stderr);
+    assert_eq!(updated.one()["name"], "Sprint 2");
+    assert_eq!(updated.one()["description"], "The one that ships.");
+    assert_eq!(updated.one()["endsAt"], "2026-11-03T00:00:00.000Z");
+    assert_eq!(
+        updated.one()["startsAt"],
+        "2026-10-26T00:00:00.000Z",
+        "left alone"
+    );
+    let nothing = muster(&fake, &["cycle", "update", "2"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    let nope = muster(&fake, &["cycle", "update", "9", "--name", "x"]);
+    assert_eq!(nope.code, 4, "{}", nope.stderr);
+    assert_eq!(
+        nope.error()["message"],
+        "team APP has no cycle 9",
+        "the message a mistyped number gets"
+    );
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "CycleUpdate")
+            .count(),
+        1,
+        "the usage and not-found errors sent no mutation"
+    );
+
+    // --cycle on the issue commands: active, next, a number, none.
+    let in_active = muster(
+        &fake,
+        &[
+            "issue",
+            "create",
+            "--title",
+            "In the active cycle",
+            "--cycle",
+            "active",
+        ],
+    );
+    assert_eq!(in_active.code, 0, "{}", in_active.stderr);
+    assert_eq!(in_active.one()["cycle"]["number"], 2.0);
+    let id = in_active.one()["identifier"].as_str().unwrap().to_string();
+    let in_three = muster(
+        &fake,
+        &[
+            "issue",
+            "create",
+            "--title",
+            "In cycle three",
+            "--cycle",
+            "3",
+        ],
+    );
+    assert_eq!(in_three.one()["cycle"]["number"], 3.0);
+    let no_such = muster(
+        &fake,
+        &["issue", "create", "--title", "Nowhere", "--cycle", "9"],
+    );
+    assert_eq!(no_such.code, 4, "{}", no_such.stderr);
+    let bad_word = muster(
+        &fake,
+        &["issue", "create", "--title", "Nowhere", "--cycle", "soon"],
+    );
+    assert_eq!(bad_word.code, 2, "{}", bad_word.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "IssueCreate")
+            .count(),
+        2,
+        "the unknown cycle and the bad word sent no create"
+    );
+    let listed = muster(&fake, &["issue", "list", "--cycle", "active"]);
+    assert_eq!(listed.lines().len(), 2, "the seeded APP-2 and the new one");
+    assert!(listed.lines().iter().any(|i| i["identifier"] == id));
+    let by_number = muster(&fake, &["issue", "list", "--cycle", "3"]);
+    assert_eq!(by_number.lines().len(), 1);
+    let without = muster(&fake, &["issue", "list", "--cycle", "none", "--all"]);
+    assert!(
+        without.lines().iter().all(|i| i["cycle"].is_null()) && without.lines().len() >= 3,
+        "the other seeded issues are in no cycle"
+    );
+    let moved = muster(&fake, &["issue", "update", &id, "--cycle", "next"]);
+    assert_eq!(moved.code, 0, "{}", moved.stderr);
+    assert_eq!(moved.one()["cycle"]["number"], 3.0);
+    assert_eq!(
+        muster(&fake, &["cycle", "get", "3"]).one()["issues"]["nodes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2,
+        "`cycle get` lists the issues in it"
+    );
+    let out = muster(&fake, &["issue", "update", &id, "--cycle", "none"]);
+    assert!(out.one()["cycle"].is_null());
+
+    // The issues of `cycle get` are bounded by ISSUES_PER_CYCLE.
+    fake.add_cycle_issues("APP", 2.0, 51);
+    let full = muster(&fake, &["cycle", "get", "2"]);
+    assert_eq!(full.code, 0, "{}", full.stderr);
+    assert_eq!(
+        full.one()["issues"]["nodes"].as_array().unwrap().len(),
+        50,
+        "ISSUES_PER_CYCLE"
+    );
+    assert_eq!(full.notices()[0]["code"], "truncated");
+
+    fake.fail_next("CycleUpdate", Failure::Drop);
+    let run = muster(&fake, &["cycle", "update", "2", "--name", "Dropped"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("Cycles", Failure::Drop);
+    let run = muster(&fake, &["cycle", "list"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+    fake.fail_next("CycleByNumber", Failure::Drop);
+    let run = muster(&fake, &["cycle", "get", "2"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+    fake.fail_next("Cycles", Failure::Drop);
+    let run = muster(
+        &fake,
+        &["issue", "create", "--title", "Unread", "--cycle", "active"],
+    );
+    assert_eq!(
+        run.code, 7,
+        "the cycle's read failed before any create: {}",
+        run.stderr
     );
 }
 
@@ -4130,6 +4324,7 @@ fn the_fakes_answers_have_the_recorded_shapes() {
             Some("APP"),
             Some("Muster"),
             Some("Launch"),
+            Some(("APP", 2.0)),
         )
         .unwrap();
         let answer = post(

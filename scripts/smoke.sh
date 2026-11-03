@@ -56,9 +56,35 @@ echo "smoke: muster team get SMK"
 "$bin" team get SMK | jq -c '{key, name, cyclesEnabled, retiredAt, archivedAt, issueCount}' | tee "$tmp/team-get.json"
 jq -e '.key == "SMK" and .archivedAt == null' "$tmp/team-get.json" >/dev/null
 echo
-echo "smoke: muster team update SMK --cycles-enabled true --cycle-enabled-start-date $stamp (the smoke team's cycles; ADR 0014)"
-"$bin" team update SMK --cycles-enabled true --cycle-enabled-start-date "$stamp" --cycle-duration 1 --upcoming-cycle-count 2 --description "The smoke test's own team (ADR 0014): its cycles, members and lifecycle are tested here, so that the house's team is never touched." | jq -c '{key, cyclesEnabled, cycleDuration, upcomingCycleCount, activeCycle}' | tee "$tmp/team-update.json"
+# The start date is set once: setting it again on a team whose cycles run would shift
+# its cycles on every run (seen on 2026-11-03, one new cycle per run).
+if [ "$(jq -r '.cyclesEnabled' "$tmp/team-get.json")" = "true" ]; then cycle_start=""; else cycle_start="--cycle-enabled-start-date $stamp"; fi
+echo "smoke: muster team update SMK --cycles-enabled true ${cycle_start:-(the start date was set by an earlier run)} (the smoke team's cycles; ADR 0014)"
+"$bin" team update SMK --cycles-enabled true $cycle_start --cycle-duration 1 --upcoming-cycle-count 2 --description "The smoke test's own team (ADR 0014): its cycles, members and lifecycle are tested here, so that the house's team is never touched." | jq -c '{key, cyclesEnabled, cycleDuration, upcomingCycleCount, activeCycle}' | tee "$tmp/team-update.json"
 jq -e '.key == "SMK" and .cyclesEnabled == true and .cycleDuration == 1' "$tmp/team-update.json" >/dev/null
+echo
+echo "smoke: muster cycle list --team SMK, --active, get, update --name, then an SMK issue through --cycle active, next and none (ADR 0014)"
+"$bin" cycle list --team SMK | jq -c '{number, name, isActive, isNext, isPast}' | tee "$tmp/cycles.jsonl"
+jq -s -e 'length >= 1' "$tmp/cycles.jsonl" >/dev/null
+"$bin" cycle list --team SMK --active | jq -c '{number, isActive}' | tee "$tmp/cycle-active.json"
+jq -e '.isActive == true' "$tmp/cycle-active.json" >/dev/null
+active_cycle=$(jq -r '.number' "$tmp/cycle-active.json")
+"$bin" cycle get "$active_cycle" --team SMK | jq -c '{number, issues: (.issues.nodes | length)}' | tee "$tmp/cycle-get.json"
+jq -e --argjson n "$active_cycle" '.number == $n' "$tmp/cycle-get.json" >/dev/null
+"$bin" cycle update "$active_cycle" --team SMK --name "Smoke cycle" --description "Named by scripts/smoke.sh at $stamp." | jq -c '{number, name}' | tee "$tmp/cycle-update.json"
+jq -e '.name == "Smoke cycle"' "$tmp/cycle-update.json" >/dev/null
+"$bin" issue create --team SMK --title "Smoke cycle issue $stamp" --cycle active --description "Created by scripts/smoke.sh at $stamp in the smoke team's active cycle; canceled by the same run." | jq -c '{identifier, cycle: .cycle.number}' | tee "$tmp/cycle-issue.json"
+jq -e --argjson n "$active_cycle" '.cycle == $n' "$tmp/cycle-issue.json" >/dev/null
+cycle_issue=$(jq -r '.identifier' "$tmp/cycle-issue.json")
+"$bin" issue list --team SMK --cycle active | jq -c '{identifier, cycle: .cycle.number}' | tee "$tmp/cycle-issues.jsonl"
+jq -s -e --arg id "$cycle_issue" 'map(.identifier) | index($id) != null' "$tmp/cycle-issues.jsonl" >/dev/null
+"$bin" issue update "$cycle_issue" --cycle next | jq -c '{identifier, cycle: .cycle.number}' | tee "$tmp/cycle-next.json"
+jq -e --argjson n "$active_cycle" '.cycle > $n' "$tmp/cycle-next.json" >/dev/null
+"$bin" issue update "$cycle_issue" --cycle none | jq -c '{identifier, cycle}' | tee "$tmp/cycle-none.json"
+jq -e '.cycle == null' "$tmp/cycle-none.json" >/dev/null
+# Back into the active cycle, then canceled, so that the cycle fixture records an issue node.
+"$bin" issue update "$cycle_issue" --cycle active | jq -e --argjson n "$active_cycle" '.cycle.number == $n' >/dev/null
+"$bin" issue close "$cycle_issue" --cancel --comment "Smoke cycle issue done at $stamp; canceled so that it never counts as work." | jq -c 'select(.identifier != null) | {identifier, state: .state.name}'
 echo
 echo "smoke: muster member list --team SMK, then remove me and add me back (ADR 0014)"
 "$bin" --team SMK member list | jq -c '{user: .user.displayName, owner}' | tee "$tmp/members.jsonl"

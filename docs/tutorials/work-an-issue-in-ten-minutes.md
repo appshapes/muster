@@ -139,6 +139,15 @@ its Business plan and refuses below it), `muster initiative add-project Growth
 --project "Trying muster"` puts the project in it, `muster initiative get Growth`
 prints it with its `projects` (bounded by `PROJECTS_PER_INITIATIVE`), and `muster
 initiative archive Growth` puts it away (`unarchive` brings it back).
+A team that uses cycles (`team update --cycles-enabled true`) has
+them made by Linear: `muster cycle list` prints them newest first with their `number`
+and the `isActive` flag, `muster cycle list --active` the one running now, `muster
+cycle get 2` one with its `issues` (bounded by `ISSUES_PER_CYCLE`), and `muster cycle
+update 2 --name "Sprint 2"` names it; `--cycle active` on `issue create` or `issue
+update` puts an issue in the running cycle (`next` the one after it, a number any
+of them, and `none` on `issue update` takes it out; `issue create` does not take
+`none`, since a new issue starts in no cycle), and `muster issue list --cycle
+active` lists the cycle's issues (`--cycle none` the issues in no cycle).
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):
