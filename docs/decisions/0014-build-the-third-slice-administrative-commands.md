@@ -103,7 +103,7 @@ project is made of, 0.5.0 for the rest.
 2. `team get [<KEY>]` (`team`): every setting `team update` changes, with `issueCount`,
    `visibility`, `retiredAt`, `parent`, `defaultIssueState` and `triageIssueState` by id
    and name. `team create` (`teamCreate`): `--name`, `--key`, `--description`,
-   `--private`, `--timezone`, `--cycles-enabled`, `--parent <KEY>` and
+   `--timezone`, `--cycles-enabled`, `--parent <KEY>` and
    `--copy-settings-from <KEY>`; a name a team already has is refused, exit 6, unless
    `--allow-duplicate`, since `--team` and `MUSTER_TEAM` resolve a key and a reader
    resolves a name. `team update [<KEY>]` (`teamUpdate`): `--name`, `--key`,
@@ -121,12 +121,15 @@ project is made of, 0.5.0 for the rest.
    `--auto-close-period <MONTHS|none>`, `--auto-close-state <NAME>`,
    `--auto-close-parent-issues`, `--auto-close-child-issues` and
    `--auto-archive-period <MONTHS>`; the membership settings `--join-by-default` and
-   `--all-members-can-join`; `--initiatives-enabled`, `--issue-sharing-enabled`,
-   `--group-issue-history`; and the five `securitySettings` roles
+   `--all-members-can-join`; `--initiatives-enabled`, `--group-issue-history`; and the
+   five `securitySettings` roles
    `--team-management-role`, `--member-management-role`, `--label-management-role`,
    `--template-management-role` and `--issue-sharing-role`, each `<owner|member>`. Not
-   exposed: Slack and AI settings, default templates, SCIM, hierarchy inheritance and
-   every Internal or deprecated field. `team retire [<KEY>]` and
+   exposed: Slack and AI settings, default templates, SCIM, hierarchy inheritance,
+   `private` on `teamCreateInput` (Internal; `team update --private` sets it after),
+   `issueSharingEnabled` (which `teamUpdate` takes but `Team` does not return, so a
+   reader could not see what was set), and every Internal or deprecated field. `team
+   retire [<KEY>]` and
    `team unretire [<KEY>]` (`teamUpdate` with `retiredAt` set to now, or cleared): a
    retired team accepts no new issues. `team delete [<KEY>]` (`teamDelete`: archived
    and scheduled for deletion) and `team unarchive [<KEY>]` (`teamUnarchive`: cancels
