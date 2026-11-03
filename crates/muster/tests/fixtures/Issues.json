@@ -40,6 +40,7 @@
         "priority": 0,
         "priorityLabel": "<string>",
         "project": null,
+        "projectMilestone": null,
         "startedAt": "<string>",
         "state": {
           "id": "<string>",

@@ -11,7 +11,8 @@ use crate::bounds::{
 use crate::cli::{
     AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
     IssueListArgs, LabelCommand, LabelCreateArgs, LabelRefArgs, LabelUpdateArgs, ListArgs,
-    MemberArgs, MemberCommand, ProjectCommand, ProjectCreateArgs, ProjectRefArgs,
+    MemberArgs, MemberCommand, MilestoneCommand, MilestoneCreateArgs, MilestoneListArgs,
+    MilestoneRefArgs, MilestoneUpdateArgs, ProjectCommand, ProjectCreateArgs, ProjectRefArgs,
     ProjectStatusCommand, ProjectStatusCreateArgs, ProjectStatusRefArgs, ProjectStatusUpdateArgs,
     ProjectUpdateArgs, StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand,
     TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs,
@@ -101,6 +102,15 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 ProjectCommand::Update(args) => project_update(&session, args, out),
                 ProjectCommand::Delete(args) => project_delete(&session, args, out),
                 ProjectCommand::Unarchive(args) => project_unarchive(&session, args, out),
+            }
+        }
+        Command::Milestone { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                MilestoneCommand::List(args) => milestone_list(&session, args, out),
+                MilestoneCommand::Create(args) => milestone_create(&session, args, out),
+                MilestoneCommand::Update(args) => milestone_update(&session, args, out),
+                MilestoneCommand::Delete(args) => milestone_delete(&session, args, out),
             }
         }
         Command::ProjectStatus { command } => {
@@ -437,6 +447,32 @@ impl Session {
                     names(&statuses, "name")
                 ),
                 "name one of the workspace's project statuses",
+            )),
+        }
+    }
+
+    /// A project's milestones, `first` of them, in one `Milestones` request.
+    fn milestones(&self, project: &str, first: usize) -> Result<Value, Error> {
+        self.linear.run(
+            &ops::MILESTONES,
+            json!({ "project": project, "first": first }),
+        )
+    }
+
+    /// One milestone by name in a project, among up to `PAGE_CAP` (ADR 0014, group
+    /// 10); the first match, as `--project` resolves a name.
+    fn milestone_named(&self, project: &str, name: &str) -> Result<Value, Error> {
+        let data = self.milestones(project, PAGE_CAP)?;
+        let stones = nodes(&data, "projectMilestones");
+        match find_by(&stones, "name", name) {
+            Some(stone) => Ok(stone.clone()),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!(
+                    "project {project:?} has no milestone named {name:?} (milestones: {})",
+                    names(&stones, "name")
+                ),
+                "name one from `muster milestone list --project <NAME>`",
             )),
         }
     }
@@ -1620,6 +1656,118 @@ fn project_create(session: &Session, args: &ProjectCreateArgs, out: &Output) -> 
     Ok(())
 }
 
+fn milestone_list(session: &Session, args: &MilestoneListArgs, out: &Output) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let data = session.milestones(&args.project, n)?;
+    emit_list(
+        out,
+        nodes(&data, "projectMilestones"),
+        has_next_page(&data, "projectMilestones"),
+        "milestones",
+        n,
+    );
+    Ok(())
+}
+
+/// The input of `projectMilestoneCreate` but its `projectId`: the flags, checked
+/// before any request.
+fn milestone_input(args: &MilestoneCreateArgs) -> Result<Map<String, Value>, Error> {
+    check_body(Text::Name, &args.name)?;
+    let mut input = Map::new();
+    input.insert("name".into(), json!(args.name));
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if let Some(date) = &args.target_date {
+        input.insert("targetDate".into(), json!(date.trim()));
+    }
+    Ok(input)
+}
+
+fn milestone_create(
+    session: &Session,
+    args: &MilestoneCreateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let mut input = milestone_input(args)?;
+    let project_id = session.project_id(&args.project)?;
+    // The guard: `--milestone <NAME>` resolves a name to one milestone of the project.
+    if !args.allow_duplicate
+        && let Ok(existing) = session.milestone_named(&args.project, &args.name)
+    {
+        return Err(Error::with_hint(
+            ErrorCode::Refused,
+            format!(
+                "project {:?} has a milestone named {:?} already",
+                args.project,
+                str_at(&existing, "name").unwrap_or(&args.name)
+            ),
+            "use that milestone, or pass --allow-duplicate if a second one is wanted",
+        )
+        .at("muster-milestone-create"));
+    }
+    input.insert("projectId".into(), json!(project_id));
+    let data = session.linear.run(
+        &ops::MILESTONE_CREATE,
+        json!({ "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(
+        &data,
+        "projectMilestoneCreate",
+        "projectMilestone",
+    )?);
+    Ok(())
+}
+
+fn milestone_update(
+    session: &Session,
+    args: &MilestoneUpdateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let mut input = Map::new();
+    if let Some(name) = &args.name {
+        check_body(Text::Name, name)?;
+        input.insert("name".into(), json!(name));
+    }
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if let Some(date) = &args.target_date {
+        input.insert("targetDate".into(), date_or_none(date));
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --name, --description, --target-date",
+        ));
+    }
+    let stone = session.milestone_named(&args.project, &args.milestone)?;
+    let id = need_str(&stone, "id", "Milestones")?;
+    let data = session.linear.run(
+        &ops::MILESTONE_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(
+        &data,
+        "projectMilestoneUpdate",
+        "projectMilestone",
+    )?);
+    Ok(())
+}
+
+fn milestone_delete(session: &Session, args: &MilestoneRefArgs, out: &Output) -> Result<(), Error> {
+    let stone = session.milestone_named(&args.project, &args.name)?;
+    let id = need_str(&stone, "id", "Milestones")?;
+    let data = session
+        .linear
+        .run(&ops::MILESTONE_DELETE, json!({ "id": id }))?;
+    out.emit(&delete_payload(&data, "projectMilestoneDelete")?);
+    Ok(())
+}
+
 fn project_status_list(session: &Session, args: &ListArgs, out: &Output) -> Result<(), Error> {
     let n = limit(args.limit)?;
     let mut statuses = session.project_statuses(false)?;
@@ -2049,6 +2197,14 @@ fn issue_list(session: &Session, args: &IssueListArgs, out: &Output) -> Result<(
         };
         filter = filter.with("project", clause);
     }
+    if let Some(milestone) = &args.milestone {
+        let clause = if is_none(milestone) {
+            json!({ "null": true })
+        } else {
+            json!({ "name": { "eqIgnoreCase": milestone } })
+        };
+        filter = filter.with("projectMilestone", clause);
+    }
     let data = session.linear.run(
         &ops::ISSUES,
         json!({ "first": n, "filter": filter.build(), "orderBy": "updatedAt" }),
@@ -2156,6 +2312,13 @@ fn issue_create(session: &Session, args: &CreateArgs, out: &Output) -> Result<()
     }
     if let Some(project) = &args.project {
         input.insert("projectId".into(), json!(session.project_id(project)?));
+        if let Some(milestone) = &args.milestone {
+            let stone = session.milestone_named(project, milestone)?;
+            input.insert(
+                "projectMilestoneId".into(),
+                json!(need_str(&stone, "id", "Milestones")?),
+            );
+        }
     }
     if let Some(who) = &args.assignee {
         input.insert("assigneeId".into(), json!(session.user_id(who)?));
@@ -2304,6 +2467,32 @@ fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<()
         };
         input.insert("projectId".into(), value);
     }
+    if let Some(milestone) = &args.milestone {
+        let value = if is_none(milestone) {
+            Value::Null
+        } else {
+            // In the project `--project` names, else the issue's own.
+            let project = match &args.project {
+                Some(name) if !is_none(name) => name.clone(),
+                _ => match str_at(&issue, "project.name") {
+                    Some(name) => name.to_string(),
+                    None => {
+                        return Err(Error::with_hint(
+                            ErrorCode::Usage,
+                            format!(
+                                "{} is in no project, so it can take no milestone",
+                                str_at(&issue, "identifier").unwrap_or(&issue_id)
+                            ),
+                            "pass --project <NAME> with --milestone",
+                        ));
+                    }
+                },
+            };
+            let stone = session.milestone_named(&project, milestone)?;
+            json!(need_str(&stone, "id", "Milestones")?)
+        };
+        input.insert("projectMilestoneId".into(), value);
+    }
     if let Some(parent) = &args.parent {
         let value = if is_none(parent) {
             Value::Null
@@ -2327,7 +2516,7 @@ fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<()
         return Err(Error::with_hint(
             ErrorCode::Usage,
             "nothing to change",
-            "pass at least one of --title, --state, --add-label, --remove-label, --priority, --assignee, --project, --parent, --description, --description-file",
+            "pass at least one of --title, --state, --add-label, --remove-label, --priority, --assignee, --project, --milestone, --parent, --description, --description-file",
         ));
     }
     let data = session.linear.run(

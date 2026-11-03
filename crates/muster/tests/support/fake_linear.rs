@@ -907,8 +907,58 @@ impl Workspace {
             "assignee": assignee.map(|u| json!({ "id": u["id"], "name": u["name"], "displayName": u["displayName"], "email": u["email"] })).unwrap_or(Value::Null),
             "creator": { "id": me["id"], "name": me["name"], "displayName": me["displayName"] },
             "parent": parent.map(|p| json!({ "id": p["id"], "identifier": p["identifier"] })).unwrap_or(Value::Null),
+            "projectMilestone": null,
             "labels": { "nodes": labels },
         })
+    }
+
+    /// A milestone as `MilestoneFields` answers it; the fake keeps `projectId` beside.
+    fn new_milestone(
+        &mut self,
+        project: &Value,
+        name: &str,
+        description: Option<&str>,
+        target: Option<&str>,
+    ) -> Value {
+        let (id, now) = (self.id(), self.now());
+        let order = self
+            .milestones
+            .iter()
+            .filter(|m| m["projectId"] == project["id"])
+            .count() as f64;
+        let stone = json!({
+            "id": id, "name": name, "description": description, "targetDate": target,
+            "status": "unstarted", "progress": 0.0, "sortOrder": order, "createdAt": now,
+            "project": { "id": project["id"], "name": project["name"] }, "projectId": project["id"],
+        });
+        self.milestones.push(stone.clone());
+        stone
+    }
+
+    fn milestone_view(stone: &Value) -> Value {
+        let mut view = stone.clone();
+        if let Some(map) = view.as_object_mut() {
+            map.remove("projectId");
+        }
+        view
+    }
+
+    /// The milestone an issue input names, checked to be in the issue's project, as
+    /// Linear requires; `None` to clear.
+    fn milestone_for(&self, input: &Value, project: &Value) -> Result<Value, (u16, Value)> {
+        match input["projectMilestoneId"].as_str() {
+            Some(mid) => match self.milestones.iter().find(|m| m["id"] == mid) {
+                Some(m) if m["projectId"] == project["id"] => {
+                    Ok(json!({ "id": m["id"], "name": m["name"] }))
+                }
+                Some(_) => Err((
+                    200,
+                    json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "The milestone must belong to the issue's project." } } ], "data": null }),
+                )),
+                None => Err(not_found("ProjectMilestone")),
+            },
+            None => Ok(Value::Null),
+        }
     }
 
     fn new_comment(&mut self, issue_id: &Value, body: &str, user: &Value) -> Value {
@@ -1444,6 +1494,91 @@ impl Workspace {
                 (
                     200,
                     json!({ "data": { "projectStatuses": Workspace::page(statuses, first) } }),
+                )
+            }
+            "Milestones" => {
+                let name = vars["project"].as_str().unwrap_or("");
+                let stones: Vec<Value> = self
+                    .milestones
+                    .iter()
+                    .filter(|m| {
+                        m["project"]["name"]
+                            .as_str()
+                            .is_some_and(|n| n.eq_ignore_ascii_case(name))
+                    })
+                    .map(Workspace::milestone_view)
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "projectMilestones": Workspace::page(stones, first) } }),
+                )
+            }
+            "MilestoneCreate" => {
+                let input = &vars["input"];
+                let Some(name) = input["name"].as_str().filter(|n| !n.trim().is_empty()) else {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "name should not be empty" } } ], "data": null }),
+                    );
+                };
+                let Some(project) = self
+                    .projects
+                    .iter()
+                    .find(|p| p["id"] == input["projectId"] && p["archivedAt"].is_null())
+                    .cloned()
+                else {
+                    return not_found("Project");
+                };
+                let stone = self.new_milestone(
+                    &project,
+                    name,
+                    input["description"].as_str(),
+                    input["targetDate"].as_str(),
+                );
+                (
+                    200,
+                    json!({ "data": { "projectMilestoneCreate": { "success": true, "projectMilestone": Workspace::milestone_view(&stone) } } }),
+                )
+            }
+            "MilestoneUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "ProjectMilestoneUpdateInput!");
+                };
+                let Some(index) = self.milestones.iter().position(|m| m["id"] == id) else {
+                    return not_found("ProjectMilestone");
+                };
+                for (field, value) in input {
+                    self.milestones[index][&field] = value;
+                }
+                let (mid, mname) = (
+                    self.milestones[index]["id"].clone(),
+                    self.milestones[index]["name"].clone(),
+                );
+                for issue in &mut self.issues {
+                    if issue["projectMilestone"]["id"] == mid {
+                        issue["projectMilestone"]["name"] = mname.clone();
+                    }
+                }
+                (
+                    200,
+                    json!({ "data": { "projectMilestoneUpdate": { "success": true, "projectMilestone": Workspace::milestone_view(&self.milestones[index]) } } }),
+                )
+            }
+            "MilestoneDelete" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.milestones.iter().position(|m| m["id"] == id) else {
+                    return not_found("ProjectMilestone");
+                };
+                self.milestones.remove(index);
+                for issue in &mut self.issues {
+                    if issue["projectMilestone"]["id"] == id {
+                        issue["projectMilestone"] = Value::Null;
+                    }
+                }
+                (
+                    200,
+                    json!({ "data": { "projectMilestoneDelete": { "success": true, "entityId": id } } }),
                 )
             }
             "ProjectStatusCreate" => {
@@ -2060,7 +2195,17 @@ impl Workspace {
                     },
                     None => None,
                 };
-                let issue = self.new_issue(
+                let milestone = match input.get("projectMilestoneId") {
+                    Some(_) => match &project {
+                        Some(p) => match self.milestone_for(input, p) {
+                            Ok(m) => m,
+                            Err(answer) => return answer,
+                        },
+                        None => return not_found("ProjectMilestone"),
+                    },
+                    None => Value::Null,
+                };
+                let mut issue = self.new_issue(
                     &team_key,
                     title,
                     input["description"].as_str(),
@@ -2071,6 +2216,7 @@ impl Workspace {
                     assignee.as_ref(),
                     parent.as_ref(),
                 );
+                issue["projectMilestone"] = milestone;
                 self.issues.push(issue.clone());
                 (
                     200,
@@ -2168,6 +2314,21 @@ impl Workspace {
                         },
                         None => Value::Null,
                     };
+                }
+                if input.get("projectMilestoneId").is_some() {
+                    let project = match issue["project"]["id"].as_str() {
+                        Some(pid) => self.projects.iter().find(|p| p["id"] == pid).cloned(),
+                        None => None,
+                    };
+                    issue["projectMilestone"] =
+                        match (&project, input["projectMilestoneId"].as_str()) {
+                            (_, None) => Value::Null,
+                            (Some(p), Some(_)) => match self.milestone_for(&input, p) {
+                                Ok(m) => m,
+                                Err(answer) => return answer,
+                            },
+                            (None, Some(_)) => return not_found("ProjectMilestone"),
+                        };
                 }
                 if input.get("parentId").is_some() {
                     issue["parent"] = match input["parentId"].as_str() {

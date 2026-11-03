@@ -117,6 +117,12 @@ list` shows them by position, `muster project-status create --name "On hold" --t
 paused --color "#f2c94c" --position 2.5` adds one, `muster project-status update "On
 hold" --name "Paused"` changes it, and `muster project-status archive Paused` takes
 it out once no project is in it (`unarchive` brings it back).
+Inside a project, `muster milestone create --project "Trying muster" --name "Alpha"
+--target-date 2026-12-01` makes a milestone (one JSON line with its `name`,
+`targetDate`, `status` and `progress`), `muster milestone list --project "Trying
+muster"` shows them, and an issue joins one with `--milestone Alpha` on `issue
+create` (with `--project`) or `issue update`, and leaves it with `--milestone none`;
+`muster issue list --milestone Alpha` lists the issues in it.
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):

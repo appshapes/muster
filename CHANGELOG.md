@@ -113,6 +113,20 @@ user-visible change, added in the same commit as the change. The format follows
   brings it back (ADR 0014, group 9;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
+- `milestone list --project <NAME>` prints a project's milestones, each with its
+  `targetDate`, `status` and `progress`; `milestone create --project <NAME> --name
+  <TEXT> [--description] [--target-date <DATE>]` adds one through Linear's
+  `projectMilestoneCreate` (a name a milestone of the project has is refused, exit 6,
+  unless `--allow-duplicate`); `milestone update <NAME> --project <NAME>` changes
+  the name, description or target date (`none` clears it); `milestone delete <NAME>
+  --project <NAME>` removes it, with no undo in Linear. Issues carry their
+  milestone: `issue get`, `issue list` and the issue mutations print
+  `projectMilestone`, `issue create --project <NAME> --milestone <NAME>` puts a new
+  issue in one, `issue update --milestone <NAME|none>` moves an issue in its own
+  project's milestones (or the project `--project` names), and `issue list
+  --milestone <NAME|none>` filters by one (ADR 0014, group 10;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+
 ### Changed
 
 - When Linear answers "Argument Validation Error", the reason it puts in

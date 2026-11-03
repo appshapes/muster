@@ -48,6 +48,7 @@ pub const ISSUE_FIELDS: &str = "fragment IssueFields on Issue {
   assignee { id name displayName email }
   creator { id name displayName }
   parent { id identifier }
+  projectMilestone { id name }
   labels { nodes { id name } }
 }";
 
@@ -136,6 +137,12 @@ pub const PROJECT_DETAIL_FIELDS: &str = "fragment ProjectDetailFields on Project
 /// The fields every project status answer carries (ADR 0014, groups 8 and 9).
 pub const PROJECT_STATUS_FIELDS: &str = "fragment ProjectStatusFields on ProjectStatus {
   id name color description position type indefinite
+}";
+
+/// The fields every milestone answer carries (ADR 0014, group 10).
+pub const MILESTONE_FIELDS: &str = "fragment MilestoneFields on ProjectMilestone {
+  id name description targetDate status progress sortOrder createdAt
+  project { id name }
 }";
 
 /// The fields every comment answer carries.
@@ -294,6 +301,18 @@ op!(
   projectStatuses(first: $first, includeArchived: $includeArchived) { nodes { ...ProjectStatusFields } pageInfo { hasNextPage } }
 }",
     &[PROJECT_STATUS_FIELDS]
+);
+
+op!(
+    MILESTONES,
+    "Milestones",
+    Kind::Query,
+    "query Milestones($project: String!, $first: Int!) {
+  projectMilestones(first: $first, filter: { project: { name: { eqIgnoreCase: $project } } }) {
+    nodes { ...MilestoneFields } pageInfo { hasNextPage }
+  }
+}",
+    &[MILESTONE_FIELDS]
 );
 
 op!(
@@ -620,6 +639,35 @@ op!(
     &[PROJECT_STATUS_FIELDS]
 );
 
+op!(
+    MILESTONE_CREATE,
+    "MilestoneCreate",
+    Kind::Mutation,
+    "mutation MilestoneCreate($input: ProjectMilestoneCreateInput!) {
+  projectMilestoneCreate(input: $input) { success projectMilestone { ...MilestoneFields } }
+}",
+    &[MILESTONE_FIELDS]
+);
+
+op!(
+    MILESTONE_UPDATE,
+    "MilestoneUpdate",
+    Kind::Mutation,
+    "mutation MilestoneUpdate($id: String!, $input: ProjectMilestoneUpdateInput!) {
+  projectMilestoneUpdate(id: $id, input: $input) { success projectMilestone { ...MilestoneFields } }
+}",
+    &[MILESTONE_FIELDS]
+);
+
+op!(
+    MILESTONE_DELETE,
+    "MilestoneDelete",
+    Kind::Mutation,
+    "mutation MilestoneDelete($id: String!) {
+  projectMilestoneDelete(id: $id) { success entityId }
+}"
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -636,6 +684,7 @@ pub static READS: &[&Operation] = &[
     &USER_BY_ID,
     &PROJECT_BY_NAME,
     &PROJECT_STATUSES,
+    &MILESTONES,
 ];
 
 /// Every write operation.
@@ -672,6 +721,9 @@ pub static WRITES: &[&Operation] = &[
     &PROJECT_STATUS_UPDATE,
     &PROJECT_STATUS_ARCHIVE,
     &PROJECT_STATUS_UNARCHIVE,
+    &MILESTONE_CREATE,
+    &MILESTONE_UPDATE,
+    &MILESTONE_DELETE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -724,6 +776,7 @@ mod tests {
                 "StateFields",
                 "ProjectDetailFields",
                 "ProjectStatusFields",
+                "MilestoneFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));
