@@ -10,15 +10,15 @@ on: `0` ok, `3` authentication, `4` not found, `5` rate limited, `6` refused, `7
 network, `8` unknown. It never prompts, never pages, never colours, and never takes the
 API key on the command line. A person adds `--human`.
 
-**Status:** 0.1.1 is released, as the crate `muster-linear`
+**Status:** 0.2.0 is released, as the crate `muster-linear`
 ([ADR 0011](docs/decisions/0011-release-as-muster-cli.md),
 [ADR 0012](docs/decisions/0012-publish-as-muster-linear.md)): the first slice
 ([ADR 0007](docs/decisions/0007-build-the-trello-command-set-first.md)), the five
 operations the house's Trello skills use, as `muster` commands, each tested against a
-fake Linear held to recorded shapes and smoke-tested against a real workspace. The
-second slice ([ADR 0013](docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md)),
-sub-issues, attachments and projects, is landing on `master` feature by feature. Not
-yet: cycles, attachments as uploads.
+fake Linear held to recorded shapes and smoke-tested against a real workspace, and the
+second slice ([ADR 0013](docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md)):
+sub-issues, attachments and projects, as `--parent`, `issue attach`, `project create`
+and `issue list --project`. Not yet: cycles, attachments as uploads.
 
 ## Start here
 

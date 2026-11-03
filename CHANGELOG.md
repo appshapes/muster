@@ -6,6 +6,19 @@ user-visible change, added in the same commit as the change. The format follows
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.2.0 - 2026-11-03
+
+The second slice ([ADR 0013](docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md)),
+for an agent that splits an issue, links its pull request and works in a project:
+`--parent` on `issue create`, `issue update` and `issue list`, with `children` in
+`issue get`; `issue attach`; `project create` and `issue list --project`. Two bounds
+join the table, `CHILDREN_PER_ISSUE` and `TEAMS_PER_PROJECT`, and `BODY_MAX_BYTES` now
+covers every text sent. The glossary is a gate, the CI and release timeouts are
+measured, and the pages say in which order Linear returns comments. The crate is
+`muster-linear`, as for 0.1.1: `cargo install muster-linear`.
+
 ### Added
 
 - ADR 0013 decides the second slice: sub-issues, attachments and projects, in three

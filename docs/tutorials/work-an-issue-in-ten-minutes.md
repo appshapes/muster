@@ -18,7 +18,7 @@ cargo install muster-linear
 The crate is `muster-linear` and the binary is `muster`
 ([ADR 0012](../decisions/0012-publish-as-muster-linear.md)); from a checkout,
 `cargo install --path crates/muster` builds the same binary. You will see
-`Installed package muster-linear v0.1.1` and `muster --version` prints `muster 0.1.1`.
+`Installed package muster-linear v0.2.0` and `muster --version` prints `muster 0.2.0`.
 
 ## 2. Put the key where muster reads it (one minute)
 
