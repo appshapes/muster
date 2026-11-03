@@ -556,14 +556,14 @@ impl Session {
             "active" => (
                 "isActive",
                 json!({ "eq": true }),
-                "an active cycle".to_string(),
+                "active cycle".to_string(),
             ),
-            "next" => ("isNext", json!({ "eq": true }), "a next cycle".to_string()),
+            "next" => ("isNext", json!({ "eq": true }), "next cycle".to_string()),
             text => match text.parse::<u64>() {
                 Ok(number) => (
                     "number",
                     json!({ "eq": number as f64 }),
-                    format!("a cycle {number}"),
+                    format!("cycle {number}"),
                 ),
                 Err(_) => {
                     return Err(Error::with_hint(

@@ -2377,6 +2377,11 @@ fn cycle_list_get_update_and_the_issue_flag() {
     let nope = muster(&fake, &["cycle", "update", "9", "--name", "x"]);
     assert_eq!(nope.code, 4, "{}", nope.stderr);
     assert_eq!(
+        nope.error()["message"],
+        "team APP has no cycle 9",
+        "the message a mistyped number gets"
+    );
+    assert_eq!(
         fake.operations()
             .iter()
             .filter(|o| *o == "CycleUpdate")
