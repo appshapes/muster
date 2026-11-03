@@ -10,7 +10,7 @@ use crate::bounds::{
 use crate::cli::{
     AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
     IssueListArgs, ListArgs, ListCommand, ProjectCommand, ProjectCreateArgs, UpdateArgs,
-    WorkspaceCommand,
+    WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -31,9 +31,13 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
             super::schema::record_fixtures(&Session::open(&config)?, &args.dir, out)
         }
         Command::Whoami => whoami(&Session::open(&config)?, out),
-        Command::Workspace {
-            command: WorkspaceCommand::Get,
-        } => workspace_get(&Session::open(&config)?, out),
+        Command::Workspace { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                WorkspaceCommand::Get => workspace_get(&session, out),
+                WorkspaceCommand::Update(args) => workspace_update(&session, args, out),
+            }
+        }
         Command::Team {
             command: ListCommand::List(args),
         } => list_teams(&Session::open(&config)?, args, out),
@@ -430,6 +434,149 @@ fn workspace_get(session: &Session, out: &Output) -> Result<(), Error> {
             "Linear's answer to Workspace has no organization",
         )),
     }
+}
+
+/// The input of `organizationUpdate` from `workspace update`'s flags: only what was
+/// passed, so that a flag left out leaves its setting alone; `none` clears the branch
+/// format; the roles go under `securitySettings` and the sign-in services under
+/// `authSettings`, as Linear nests them; `all` is Linear's empty list, and the one way
+/// to send it, since a value that names no service is a usage error. No flag at all is
+/// a usage error too, before any request.
+fn workspace_input(args: &WorkspaceUpdateArgs) -> Result<Map<String, Value>, Error> {
+    let mut input = Map::new();
+    if let Some(name) = &args.name {
+        check_body(Text::Name, name)?;
+        input.insert("name".into(), json!(name));
+    }
+    if let Some(key) = &args.url_key {
+        input.insert("urlKey".into(), json!(key));
+    }
+    if let Some(url) = &args.logo_url {
+        check_body(Text::Link, url)?;
+        input.insert("logoUrl".into(), json!(url));
+    }
+    if let Some(format) = &args.git_branch_format {
+        let value = if is_none(format) {
+            Value::Null
+        } else {
+            json!(format)
+        };
+        input.insert("gitBranchFormat".into(), value);
+    }
+    for (field, value) in [
+        ("gitLinkbackMessagesEnabled", args.git_linkback_messages),
+        (
+            "gitPublicLinkbackMessagesEnabled",
+            args.git_public_linkback_messages,
+        ),
+        (
+            "gitLinkbackDescriptionsEnabled",
+            args.git_linkback_descriptions,
+        ),
+        ("suggestedBranchNameEnabled", args.suggested_branch_name),
+        ("roadmapEnabled", args.roadmap),
+        ("feedEnabled", args.feed),
+        ("pullRequestTourEnabled", args.pull_request_tour),
+        ("aiThreadSummariesEnabled", args.ai_thread_summaries),
+        ("aiDiscussionSummariesEnabled", args.ai_discussion_summaries),
+    ] {
+        if let Some(value) = value {
+            input.insert(field.into(), json!(value));
+        }
+    }
+    if let Some(weeks) = args.project_update_reminder_weeks {
+        input.insert("projectUpdateReminderFrequencyInWeeks".into(), json!(weeks));
+    }
+    if let Some(day) = args.project_update_reminders_day {
+        input.insert("projectUpdateRemindersDay".into(), json!(day.linear()));
+    }
+    if let Some(hour) = args.project_update_reminders_hour {
+        input.insert("projectUpdateRemindersHour".into(), json!(hour));
+    }
+    if let Some(month) = args.fiscal_year_start_month {
+        input.insert("fiscalYearStartMonth".into(), json!(month));
+    }
+    if let Some(mode) = args.pull_request_issue_mode {
+        input.insert("pullRequestIssueMode".into(), json!(mode.linear()));
+    }
+    if let Some(types) = &args.allowed_file_upload_content_types {
+        input.insert("allowedFileUploadContentTypes".into(), json!(types));
+    }
+    let mut security = Map::new();
+    for (field, role) in [
+        ("invitationsRole", args.invitations_role),
+        ("teamCreationRole", args.team_creation_role),
+        ("labelManagementRole", args.label_management_role),
+        ("personalApiKeysRole", args.personal_api_keys_role),
+        ("adminManagementRole", args.admin_management_role),
+        ("templateManagementRole", args.template_management_role),
+        ("integrationCreationRole", args.integration_creation_role),
+        ("importRole", args.import_role),
+        ("apiSettingsRole", args.api_settings_role),
+        ("workspaceInitiativesRole", args.workspace_initiatives_role),
+    ] {
+        if let Some(role) = role {
+            security.insert(field.into(), json!(role.linear()));
+        }
+    }
+    if !security.is_empty() {
+        input.insert("securitySettings".into(), Value::Object(security));
+    }
+    let mut auth = Map::new();
+    if let Some(services) = &args.allowed_auth_services {
+        let list: Vec<&str> = if services.trim().eq_ignore_ascii_case("all") {
+            Vec::new()
+        } else {
+            let named: Vec<&str> = services
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect();
+            // An empty value, or commas alone, would also be the empty list, which
+            // Linear reads as every service allowed: a security setting opened by an
+            // empty variable. Exit 2 rather than guess (CLAUDE.md, When in doubt).
+            if named.is_empty() {
+                return Err(Error::with_hint(
+                    ErrorCode::Usage,
+                    "--allowed-auth-services names no service",
+                    "name the services to allow, comma-separated (google,saml); `all`, which lets every service sign in, is the one spelling of Linear's empty list",
+                ));
+            }
+            named
+        };
+        auth.insert("allowedAuthServices".into(), json!(list));
+    }
+    if let Some(hide) = args.hide_non_primary_organizations {
+        auth.insert("hideNonPrimaryOrganizations".into(), json!(hide));
+    }
+    if !auth.is_empty() {
+        input.insert("authSettings".into(), Value::Object(auth));
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one setting; `muster workspace update --help` lists them, and `muster workspace get` shows their values",
+        ));
+    }
+    Ok(input)
+}
+
+/// `workspace update`: `organizationUpdate` with the input above, and the workspace as
+/// Linear returns it afterwards (ADR 0014, group 1). Most settings need a workspace
+/// admin; Linear's refusal is exit 6 with its message.
+fn workspace_update(
+    session: &Session,
+    args: &WorkspaceUpdateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let input = workspace_input(args)?;
+    let data = session.linear.run(
+        &ops::WORKSPACE_UPDATE,
+        json!({ "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "organizationUpdate", "organization")?);
+    Ok(())
 }
 
 fn list_teams(session: &Session, args: &ListArgs, out: &Output) -> Result<(), Error> {
@@ -1160,6 +1307,115 @@ mod tests {
             project_input(&long)
                 .err()
                 .is_some_and(|e| e.message.starts_with("the body is"))
+        );
+    }
+
+    #[test]
+    fn a_workspace_input_holds_only_what_was_passed() {
+        use crate::cli::{Day, PullRequestIssueMode, Role};
+        let e = workspace_input(&WorkspaceUpdateArgs::default()).err();
+        assert_eq!(e.as_ref().map(|e| e.code), Some(ErrorCode::Usage), "{e:?}");
+        assert!(
+            e.is_some_and(|e| e.message == "nothing to change"),
+            "no flag is a usage error before any request"
+        );
+        let args = WorkspaceUpdateArgs {
+            name: Some("Renamed".into()),
+            git_branch_format: Some(" None ".into()),
+            roadmap: Some(false),
+            project_update_reminders_day: Some(Day::Monday),
+            project_update_reminders_hour: Some(9),
+            pull_request_issue_mode: Some(PullRequestIssueMode::AutoOnMerge),
+            invitations_role: Some(Role::Admin),
+            allowed_auth_services: Some("ALL".into()),
+            hide_non_primary_organizations: Some(true),
+            ..WorkspaceUpdateArgs::default()
+        };
+        let input = workspace_input(&args).unwrap_or_default();
+        assert_eq!(input.get("name"), Some(&json!("Renamed")));
+        assert_eq!(
+            input.get("gitBranchFormat"),
+            Some(&Value::Null),
+            "`none` clears the format"
+        );
+        assert_eq!(input.get("roadmapEnabled"), Some(&json!(false)));
+        assert_eq!(
+            input.get("feedEnabled"),
+            None,
+            "a flag left out leaves its setting alone"
+        );
+        assert_eq!(
+            input.get("projectUpdateRemindersDay"),
+            Some(&json!("Monday"))
+        );
+        assert_eq!(input.get("projectUpdateRemindersHour"), Some(&json!(9)));
+        assert_eq!(
+            input.get("pullRequestIssueMode"),
+            Some(&json!("autoOnMerge"))
+        );
+        assert_eq!(
+            at(
+                &Value::Object(input.clone()),
+                "securitySettings.invitationsRole"
+            ),
+            "admin"
+        );
+        assert_eq!(
+            at(
+                &Value::Object(input.clone()),
+                "securitySettings.teamCreationRole"
+            ),
+            &Value::Null,
+            "a role left out is not sent"
+        );
+        assert_eq!(
+            at(
+                &Value::Object(input.clone()),
+                "authSettings.allowedAuthServices"
+            ),
+            &json!([]),
+            "`all` is Linear's empty list"
+        );
+        assert_eq!(
+            at(
+                &Value::Object(input),
+                "authSettings.hideNonPrimaryOrganizations"
+            ),
+            true
+        );
+        let some = WorkspaceUpdateArgs {
+            allowed_auth_services: Some("google, saml,".into()),
+            ..WorkspaceUpdateArgs::default()
+        };
+        let input = workspace_input(&some).unwrap_or_default();
+        assert_eq!(
+            at(&Value::Object(input), "authSettings.allowedAuthServices"),
+            &json!(["google", "saml"])
+        );
+        for empty in ["", " ", ",", " , ,"] {
+            let none = WorkspaceUpdateArgs {
+                allowed_auth_services: Some(empty.into()),
+                ..WorkspaceUpdateArgs::default()
+            };
+            let e = workspace_input(&none).err();
+            assert_eq!(
+                e.as_ref().map(|e| e.code),
+                Some(ErrorCode::Usage),
+                "{empty:?} is not `all`: {e:?}"
+            );
+            assert!(
+                e.is_some_and(|e| e.message == "--allowed-auth-services names no service"),
+                "{empty:?}"
+            );
+        }
+        let long = WorkspaceUpdateArgs {
+            name: Some("n".repeat(BODY_MAX_BYTES + 1)),
+            ..WorkspaceUpdateArgs::default()
+        };
+        assert!(
+            workspace_input(&long)
+                .err()
+                .is_some_and(|e| e.code == ErrorCode::Refused && e.message.starts_with("the name")),
         );
     }
 

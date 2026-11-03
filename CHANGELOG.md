@@ -19,6 +19,25 @@ user-visible change, added in the same commit as the change. The format follows
   `authSettings`, `userCount`, `createdIssueCount`, `previousUrlKeys` and
   `subscription` (ADR 0014, group 1;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `workspace update` changes the workspace's settings through Linear's
+  `organizationUpdate` and prints the workspace as Linear returns it afterwards: the
+  name, the URL key (the last three previous keys keep redirecting), the logo, the git
+  branch format and linkback switches, the roadmap, feed, pull request and AI
+  switches, the project update reminders, the fiscal year, the upload content types,
+  the ten security roles and the sign-in services. A flag left out leaves its setting
+  alone, a boolean takes `true` or `false`, `none` clears the branch format, `all`
+  allows every sign-in service and is the one spelling of that empty list (a value
+  that names no service is exit 2), and no flag at all is a usage error, exit 2,
+  before any request; most settings need a workspace admin, and Linear's refusal is
+  exit 6 (ADR 0014, group 1;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+
+### Changed
+
+- `muster schema` and the reference it generates spell out the values an enumerated
+  flag takes, `<owner|admin|user|guest>` and `<Sunday|Monday|...|Saturday>` rather than
+  `<ROLE>` and `<DAY>`, for every flag whose values `clap` knows, so a flag added later
+  cannot leave them out ([the reference](docs/reference/commands.md)).
 
 ## 0.2.0 - 2026-11-03
 

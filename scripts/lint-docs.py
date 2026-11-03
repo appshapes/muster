@@ -17,7 +17,8 @@ Checks:
           are unique
   glossary every term the command tree introduces has a row in docs/glossary.md: the
           noun of every command group (`issue` of `muster issue get`) and of every flag
-          (`label` of `--add-label`, `description` of `--description-file`), read from
+          (`label` of `--add-label`, `description` of `--description-file`, `git branch
+          format` of `--git-branch-format`), read from
           docs/reference/commands.md, which `just lint-commands` holds equal to `muster
           schema`; a one-word command names an action, and the flags in NOT_TERMS name a
           switch or a mode, so neither needs a row. Output fields are not checked:
@@ -224,11 +225,13 @@ def glossary_terms() -> set[str]:
 
 
 def flag_noun(flag: str) -> str:
+    """The glossary term a flag wants: its name without the prefixes and suffixes
+    above, hyphens read as spaces (`--git-branch-format` wants `git branch format`)."""
     for prefix in FLAG_PREFIXES:
         flag = flag.removeprefix(prefix)
     for suffix in FLAG_SUFFIXES:
         flag = flag.removesuffix(suffix)
-    return flag
+    return flag.replace("-", " ")
 
 
 def reference_terms() -> tuple[list[tuple[str, str]], int, int]:

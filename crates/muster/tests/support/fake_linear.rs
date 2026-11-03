@@ -776,6 +776,56 @@ impl Workspace {
                 200,
                 json!({ "data": { "organization": self.organization } }),
             ),
+            "WorkspaceUpdate" => {
+                // Only what is sent changes; the security and auth settings merge key by
+                // key, which is the fake's model of Linear's nested inputs, not a
+                // recorded fact (the smoke run proved the hour path only); a new URL key
+                // keeps the old one among the last three previous keys, as Linear does.
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "OrganizationUpdateInput!");
+                };
+                if input.get("urlKey").and_then(Value::as_str) == Some("") {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "urlKey should not be empty" } } ], "data": null }),
+                    );
+                }
+                let now = self.now();
+                for (field, value) in input {
+                    match field.as_str() {
+                        "securitySettings" | "authSettings" => {
+                            if let (Some(have), Some(given)) =
+                                (self.organization[&field].as_object_mut(), value.as_object())
+                            {
+                                for (k, v) in given {
+                                    have.insert(k.clone(), v.clone());
+                                }
+                            }
+                        }
+                        "urlKey" => {
+                            let old = self.organization["urlKey"].clone();
+                            if old != value {
+                                let mut previous: Vec<Value> = self.organization["previousUrlKeys"]
+                                    .as_array()
+                                    .cloned()
+                                    .unwrap_or_default();
+                                previous.insert(0, old);
+                                previous.truncate(3);
+                                self.organization["previousUrlKeys"] = json!(previous);
+                                self.organization["urlKey"] = value;
+                            }
+                        }
+                        other => {
+                            self.organization[other] = value;
+                        }
+                    }
+                }
+                self.organization["updatedAt"] = json!(now);
+                (
+                    200,
+                    json!({ "data": { "organizationUpdate": { "success": true, "organization": self.organization } } }),
+                )
+            }
             "Teams" => (
                 200,
                 json!({ "data": { "teams": Workspace::page(self.teams.clone(), first) } }),

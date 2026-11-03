@@ -1306,6 +1306,128 @@ fn workspace_get_prints_the_organization_as_linear_returns_it() {
     assert_eq!(run.error()["code"], "network");
 }
 
+#[test]
+fn workspace_update_changes_only_what_is_passed_and_reads_back() {
+    let fake = Fake::start().unwrap();
+    let run = muster(
+        &fake,
+        &[
+            "workspace",
+            "update",
+            "--name",
+            "Renamed",
+            "--roadmap",
+            "true",
+            "--project-update-reminders-day",
+            "Monday",
+            "--project-update-reminders-hour",
+            "9",
+            "--pull-request-issue-mode",
+            "autoOnMerge",
+            "--invitations-role",
+            "admin",
+            "--allowed-auth-services",
+            "all",
+            "--git-branch-format",
+            "none",
+        ],
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let v = run.one();
+    assert_eq!(v["name"], "Renamed");
+    assert_eq!(v["roadmapEnabled"], true);
+    assert_eq!(
+        v["feedEnabled"], false,
+        "a flag left out leaves its setting alone"
+    );
+    assert_eq!(v["projectUpdateRemindersDay"], "Monday");
+    assert_eq!(v["projectUpdateRemindersHour"], 9);
+    assert_eq!(v["pullRequestIssueMode"], "autoOnMerge");
+    assert_eq!(v["securitySettings"]["invitationsRole"], "admin");
+    assert_eq!(v["authSettings"]["allowedAuthServices"], json!([]));
+    assert!(v["gitBranchFormat"].is_null(), "`none` clears the format");
+    assert_eq!(v["urlKey"], "fake", "untouched");
+    let back = muster(&fake, &["workspace", "get"]).one();
+    assert_eq!(back["name"], "Renamed");
+    assert_eq!(back["projectUpdateRemindersDay"], "Monday");
+    assert_eq!(
+        fake.operations(),
+        vec!["WorkspaceUpdate", "Workspace"],
+        "one mutation, no team resolved"
+    );
+
+    let moved = muster(&fake, &["workspace", "update", "--url-key", "moved"]);
+    assert_eq!(moved.code, 0, "{}", moved.stderr);
+    assert_eq!(moved.one()["urlKey"], "moved");
+    assert_eq!(
+        moved.one()["previousUrlKeys"],
+        json!(["fake"]),
+        "the old key keeps redirecting, as Linear keeps the last three"
+    );
+
+    let nothing = muster(&fake, &["workspace", "update"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    assert_eq!(nothing.error()["message"], "nothing to change");
+    let maybe = muster(&fake, &["workspace", "update", "--roadmap", "maybe"]);
+    assert_eq!(
+        maybe.code, 2,
+        "a boolean is true or false: {}",
+        maybe.stderr
+    );
+    let late = muster(
+        &fake,
+        &[
+            "workspace",
+            "update",
+            "--project-update-reminders-hour",
+            "24",
+        ],
+    );
+    assert_eq!(late.code, 2, "{}", late.stderr);
+    let someday = muster(
+        &fake,
+        &[
+            "workspace",
+            "update",
+            "--project-update-reminders-day",
+            "monday",
+        ],
+    );
+    assert_eq!(
+        someday.code, 2,
+        "the day is spelt as Linear's enum spells it: {}",
+        someday.stderr
+    );
+    for empty in ["", ","] {
+        let none = muster(
+            &fake,
+            &["workspace", "update", "--allowed-auth-services", empty],
+        );
+        assert_eq!(
+            none.code, 2,
+            "{empty:?} is the empty list too, which only `all` may send: {}",
+            none.stderr
+        );
+        assert_eq!(
+            none.error()["message"],
+            "--allowed-auth-services names no service"
+        );
+    }
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "WorkspaceUpdate")
+            .count(),
+        2,
+        "the usage errors sent nothing"
+    );
+
+    fake.fail_next("WorkspaceUpdate", Failure::Drop);
+    let run = muster(&fake, &["workspace", "update", "--feed", "true"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    assert_eq!(run.error()["code"], "unknown");
+}
+
 // ---- failures: network, unknown, rate limit, server -------------------------------------
 
 #[test]

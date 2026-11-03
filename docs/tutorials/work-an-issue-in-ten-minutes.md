@@ -45,6 +45,11 @@ its settings (the git branch format, the reminder days and hours, the feature
 switches), `securitySettings` and `authSettings` as Linear returns them, `userCount`,
 `createdIssueCount`, `previousUrlKeys` and `subscription` (`null` on the Free plan). It
 needs no team ([ADR 0014](../decisions/0014-build-the-third-slice-administrative-commands.md)).
+`muster workspace update --project-update-reminders-day Monday` changes one setting and
+prints the workspace again; a flag left out leaves its setting alone, a boolean setting
+takes `true` or `false`, and `muster workspace update --help` lists every setting. Most
+of them need a workspace admin: Linear's refusal is exit 6, `"code":"refused"`, with
+Linear's message.
 
 If you see `"code":"authentication"` on stderr and exit 3, the key was not found or
 was refused; the `hint` says where to put it. If the `team` is `null` with a `warn`
