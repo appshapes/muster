@@ -32,7 +32,7 @@ pub const NOTICES: &[(&str, &str)] = &[
     ),
     (
         "partial",
-        "`fixtures` recorded `IssueById` on an issue that lacks comments, attachments or sub-issues, so that node shape is not in the fixture",
+        "`fixtures` recorded `IssueById` on an issue that lacks comments, attachments or sub-issues, or `ProjectByName` on a project that lacks members or milestones, so that node shape is not in the fixture",
     ),
 ];
 
@@ -115,12 +115,25 @@ fn describe_arg(arg: &clap::Arg) -> Value {
         | ArgAction::HelpShort
         | ArgAction::HelpLong
         | ArgAction::Version => None,
-        _ => Some(
-            arg.get_value_names()
-                .and_then(|v| v.first())
-                .map(ToString::to_string)
-                .unwrap_or_else(|| arg.get_id().to_string().to_uppercase()),
-        ),
+        _ => {
+            // The values clap knows, `owner|admin|user|guest` for a `ValueEnum` and
+            // `true|false` for a bool, so that no enumerated flag can leave them out of
+            // the reference; a flag clap cannot enumerate keeps its value's name.
+            let known: Vec<String> = arg
+                .get_possible_values()
+                .iter()
+                .filter(|v| !v.is_hide_set())
+                .map(|v| v.get_name().to_string())
+                .collect();
+            Some(if known.is_empty() {
+                arg.get_value_names()
+                    .and_then(|v| v.first())
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| arg.get_id().to_string().to_uppercase())
+            } else {
+                known.join("|")
+            })
+        }
     };
     let defaults: Vec<String> = arg
         .get_default_values()
@@ -153,7 +166,7 @@ pub fn markdown(schema: &Value) -> String {
     );
     let _ = writeln!(
         md,
-        "Every command prints one JSON object per line on stdout with Linear's own field names, nested as Linear nests them, and exits 0. On failure it prints one error object on stderr, `{{\"error\": {{\"code\", \"exit\", \"message\", \"hint\", \"docs\", \"linear\": {{\"code\", \"message\", \"requestId\"}}}}}}`, and exits with the code below. `--human` renders the same data as text. Nothing prompts, pages or colours.\n"
+        "Every command prints one JSON object per line on stdout with Linear's own field names, nested as Linear nests them, and exits 0. On failure it prints one error object on stderr, `{{\"error\": {{\"code\", \"exit\", \"message\", \"hint\", \"docs\", \"linear\": {{\"code\", \"message\", \"userPresentableMessage\", \"requestId\"}}}}}}`, and exits with the code below; `linear` is what Linear answered, its `message` and `userPresentableMessage` (the reason behind a bare message such as \"Argument Validation Error\", `null` when Linear sent none) verbatim, and muster's `message` names both when they differ (ADR 0015). `--human` renders the same data as text. Nothing prompts, pages or colours.\n"
     );
     let _ = writeln!(md, "## Global flags\n");
     let _ = writeln!(md, "| Flag | Value | Meaning |\n| --- | --- | --- |");
@@ -318,9 +331,11 @@ pub fn markdown(schema: &Value) -> String {
     md
 }
 
+/// The Value column: `<TEXT>`, or the values the flag takes, `<owner|admin|user|guest>`,
+/// with the pipes escaped as a table cell needs even inside a code span.
 fn value_cell(arg: &Value) -> String {
     str_at(arg, "value")
-        .map(|v| format!("`<{v}>`"))
+        .map(|v| format!("`<{}>`", cell(v)))
         .unwrap_or_default()
 }
 
@@ -375,6 +390,18 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
             ));
         };
         let data = session.linear.run(op, variables)?;
+        if op.name == "ProjectByName"
+            && let Some(lack) = project_lack(&data)
+        {
+            out.notice(
+                "partial",
+                &format!(
+                    "ProjectByName: recorded on {:?}, which {lack}",
+                    project.as_deref().unwrap_or("")
+                ),
+                "add a member with `project update <NAME> --add-member me`, and a milestone in Linear's own page until `milestone create` ships, then run `just record-fixtures` again; the fixture test cannot hold the fake to a shape that was not recorded",
+            );
+        }
         let shape = shape_of(&data);
         let path = dir.join(format!("{}.json", op.name));
         let text = serde_json::to_string_pretty(&shape)?;
@@ -429,15 +456,44 @@ fn sample_team(session: &Session) -> Result<Option<String>, Error> {
 }
 
 /// The name of the project `ProjectByName` is recorded on: the first project
-/// `Projects` lists.
+/// `Projects` lists that has a member and a milestone, so that both node shapes are
+/// recorded; else the first with a member; else the first project. What the recorded
+/// project still lacks is read from the answer itself, by [`project_lack`].
 fn sample_project(session: &Session) -> Result<Option<String>, Error> {
-    let data = session.linear.run(
-        &ops::PROJECTS,
-        json!({ "first": 1, "filter": Value::Null, "teams": TEAMS_PER_PROJECT }),
-    )?;
-    Ok(nodes(&data, "projects")
-        .first()
-        .and_then(|p| str_at(p, "name").map(str::to_string)))
+    for filter in [
+        json!({ "members": { "length": { "gt": 0 } }, "projectMilestones": { "length": { "gt": 0 } } }),
+        json!({ "members": { "length": { "gt": 0 } } }),
+        Value::Null,
+    ] {
+        let data = session.linear.run(
+            &ops::PROJECTS,
+            json!({ "first": 1, "filter": filter, "teams": TEAMS_PER_PROJECT }),
+        )?;
+        if let Some(name) = nodes(&data, "projects")
+            .first()
+            .and_then(|p| str_at(p, "name").map(str::to_string))
+        {
+            return Ok(Some(name));
+        }
+    }
+    Ok(None)
+}
+
+/// What the project `ProjectByName` was recorded on lacks, read from the answer: a
+/// connection that came back empty leaves no node shape in the fixture, so the fake's
+/// node of that kind is held to nothing (ADR 0010; ADR 0014). `None` when the project
+/// has a member and a milestone.
+fn project_lack(data: &Value) -> Option<&'static str> {
+    let Some(project) = nodes(data, "projects").into_iter().next() else {
+        return Some("the query did not find, so the fixture holds no project");
+    };
+    let empty = |field: &str| nodes(&project, field).is_empty();
+    match (empty("members"), empty("projectMilestones")) {
+        (true, true) => Some("has no member and no milestone"),
+        (true, false) => Some("has no member"),
+        (false, true) => Some("has no milestone"),
+        (false, false) => None,
+    }
 }
 
 /// The variables each read operation is recorded with, and the fixture test replays
@@ -613,6 +669,52 @@ mod tests {
             s["environment"].as_array().map(Vec::len),
             Some(ENVIRONMENT.len())
         );
+    }
+
+    /// A flag whose values clap knows lists them in the reference, so that a stranger
+    /// learns there that a day is spelt `Monday` and what the four roles are called
+    /// without leaving for `--help`; a flag it cannot enumerate keeps its value's name.
+    #[test]
+    fn an_enumerated_flag_lists_its_values() {
+        let s = schema();
+        let flags: Vec<&Value> = s["commands"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|c| str_at(c, "path") == Some("workspace update"))
+            .flat_map(|c| c["flags"].as_array().into_iter().flatten())
+            .collect();
+        let value = |long: &str| {
+            flags
+                .iter()
+                .find(|f| str_at(f, "long") == Some(long))
+                .and_then(|f| str_at(f, "value"))
+                .unwrap_or("?")
+                .to_string()
+        };
+        assert_eq!(value("--invitations-role"), "owner|admin|user|guest");
+        assert_eq!(
+            value("--project-update-reminders-day"),
+            "Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday"
+        );
+        assert_eq!(
+            value("--pull-request-issue-mode"),
+            "off|suggest|autoOnMerge"
+        );
+        assert_eq!(value("--roadmap"), "true|false", "clap's own bool parser");
+        assert_eq!(value("--git-branch-format"), "TEXT|none");
+        assert_eq!(
+            value("--project-update-reminders-hour"),
+            "0-23",
+            "a range is not enumerated; its value name says the bounds"
+        );
+        assert_eq!(value("--name"), "TEXT");
+        let md = markdown(&s);
+        assert!(
+            md.contains("| `--invitations-role` | `<owner\\|admin\\|user\\|guest>` |"),
+            "the pipes are escaped, so the row keeps its five cells"
+        );
+        assert!(md.contains("| `--format` | `<json\\|markdown>` |"));
     }
 
     #[test]

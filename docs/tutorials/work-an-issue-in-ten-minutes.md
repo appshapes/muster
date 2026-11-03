@@ -18,7 +18,7 @@ cargo install muster-linear
 The crate is `muster-linear` and the binary is `muster`
 ([ADR 0012](../decisions/0012-publish-as-muster-linear.md)); from a checkout,
 `cargo install --path crates/muster` builds the same binary. You will see
-`Installed package muster-linear v0.2.0` and `muster --version` prints `muster 0.2.0`.
+`Installed package muster-linear v0.3.0` and `muster --version` prints `muster 0.3.0`.
 
 ## 2. Put the key where muster reads it (one minute)
 
@@ -63,10 +63,11 @@ TRY` clears it, `muster team delete TRY` archives the team and schedules its dat
 deletion after Linear's grace period (one JSON line, Linear's `success` and
 `entityId`), and `muster team unarchive TRY` cancels that within the period
 ([ADR 0014](../decisions/0014-build-the-third-slice-administrative-commands.md)).
-Every setting `team get` prints is one `muster team update TRY` changes, one flag
-each: `--cycles-enabled true --cycle-enabled-start-date 2026-11-10T00:00:00Z` turns
+`muster team update TRY` changes the team's settings. Every setting that
+`muster team update --help` lists is one flag, and `team get` shows its value:
+`--cycles-enabled true --cycle-enabled-start-date 2026-11-10T00:00:00Z` turns
 cycles on from a date, `--default-issue-state Todo` names a state of the team, and
-`muster team update --help` lists the rest; a flag left out leaves its setting alone.
+a flag left out leaves its setting alone.
 Who is in the team is `muster member list`: one JSON line per membership, with its
 `user` and whether they are an `owner`; `muster member add --user <email>` and
 `muster member remove --user <email>` change it, for the team of `--team`,
@@ -113,10 +114,12 @@ field, `none` clearing a lead or a date; `muster project delete "Trying muster"`
 trashes it for thirty days and `muster project unarchive "Trying muster"` brings it
 back ([ADR 0014](../decisions/0014-build-the-third-slice-administrative-commands.md)).
 The statuses a project moves through are the workspace's: `muster project-status
-list` shows them by position, `muster project-status create --name "On hold" --type
-paused --color "#f2c94c" --position 2.5` adds one, `muster project-status update "On
-hold" --name "Paused"` changes it, and `muster project-status archive Paused` takes
-it out once no project is in it (`unarchive` brings it back).
+list` shows them by position, one order across the workspace (the five defaults sit
+at 0 to 4, `Backlog` to `Canceled`), `muster project-status create --name "On hold"
+--type paused --color "#f2c94c" --position 2.5` adds one, which lists between `In
+Progress` at 2 and `Completed` at 3, `muster project-status update "On hold" --name
+"Paused"` changes it, and `muster project-status archive Paused` takes it out once
+no project is in it (`unarchive` brings it back).
 Inside a project, `muster milestone create --project "Trying muster" --name "Alpha"
 --target-date 2026-12-01` makes a milestone (one JSON line with its `name`,
 `targetDate`, `status` and `progress`), `muster milestone list --project "Trying
