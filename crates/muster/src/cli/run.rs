@@ -10,20 +10,21 @@ use crate::bounds::{
     TEAMS_PER_PROJECT,
 };
 use crate::cli::{
-    AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, CycleCommand, CycleListArgs,
-    CycleRefArgs, CycleUpdateArgs, DocumentCommand, DocumentCreateArgs, DocumentListArgs,
-    DocumentRefArgs, DocumentUpdateArgs, GetArgs, InitiativeCommand, InitiativeCreateArgs,
-    InitiativeListArgs, InitiativeProjectArgs, InitiativeRefArgs, InitiativeUpdateArgs,
-    IssueCommand, IssueListArgs, LabelCommand, LabelCreateArgs, LabelRefArgs, LabelUpdateArgs,
-    ListArgs, MemberArgs, MemberCommand, MilestoneCommand, MilestoneCreateArgs, MilestoneListArgs,
-    MilestoneRefArgs, MilestoneUpdateArgs, ProjectCommand, ProjectCreateArgs, ProjectRefArgs,
-    ProjectStatusCommand, ProjectStatusCreateArgs, ProjectStatusRefArgs, ProjectStatusUpdateArgs,
-    ProjectUpdateArgs, ProjectUpdateCommand, ProjectUpdateCreateArgs, ProjectUpdateListArgs,
-    StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs,
-    TeamRefArgs, TeamUpdateArgs, TemplateCommand, TemplateCreateArgs, TemplateListArgs,
-    TemplateRefArgs, TemplateUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs,
-    UserRoleArgs, UserUpdateArgs, WebhookCommand, WebhookCreateArgs, WebhookListArgs,
-    WebhookRefArgs, WebhookUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
+    AttachArgs, AuditCommand, AuditListArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs,
+    CycleCommand, CycleListArgs, CycleRefArgs, CycleUpdateArgs, DocumentCommand,
+    DocumentCreateArgs, DocumentListArgs, DocumentRefArgs, DocumentUpdateArgs, GetArgs,
+    InitiativeCommand, InitiativeCreateArgs, InitiativeListArgs, InitiativeProjectArgs,
+    InitiativeRefArgs, InitiativeUpdateArgs, IssueCommand, IssueListArgs, LabelCommand,
+    LabelCreateArgs, LabelRefArgs, LabelUpdateArgs, ListArgs, MemberArgs, MemberCommand,
+    MilestoneCommand, MilestoneCreateArgs, MilestoneListArgs, MilestoneRefArgs,
+    MilestoneUpdateArgs, ProjectCommand, ProjectCreateArgs, ProjectRefArgs, ProjectStatusCommand,
+    ProjectStatusCreateArgs, ProjectStatusRefArgs, ProjectStatusUpdateArgs, ProjectUpdateArgs,
+    ProjectUpdateCommand, ProjectUpdateCreateArgs, ProjectUpdateListArgs, StateCommand,
+    StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs, TeamRefArgs,
+    TeamUpdateArgs, TemplateCommand, TemplateCreateArgs, TemplateListArgs, TemplateRefArgs,
+    TemplateUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs, UserRoleArgs,
+    UserUpdateArgs, WebhookCommand, WebhookCreateArgs, WebhookListArgs, WebhookRefArgs,
+    WebhookUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -190,6 +191,12 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 WebhookCommand::Create(args) => webhook_create(&session, args, out),
                 WebhookCommand::Update(args) => webhook_update(&session, args, out),
                 WebhookCommand::Delete(args) => webhook_delete(&session, args, out),
+            }
+        }
+        Command::Audit { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                AuditCommand::List(args) => audit_list(&session, args, out),
             }
         }
         Command::Milestone { command } => {
@@ -2830,6 +2837,43 @@ fn webhook_delete(session: &Session, args: &WebhookRefArgs, out: &Output) -> Res
         .linear
         .run(&ops::WEBHOOK_DELETE, json!({ "id": id }))?;
     out.emit(&delete_payload(&data, "webhookDelete")?);
+    Ok(())
+}
+
+/// `audit list`: the workspace's audit entries through Linear's `auditEntries` and
+/// its filter; the actor resolved as `--assignee` resolves a user, before any
+/// request (ADR 0014, group 17).
+fn audit_list(session: &Session, args: &AuditListArgs, out: &Output) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let mut filter = Map::new();
+    if let Some(kind) = &args.r#type {
+        check_body(Text::Name, kind)?;
+        filter.insert("type".into(), json!({ "eq": kind }));
+    }
+    if let Some(who) = &args.actor {
+        filter.insert(
+            "actor".into(),
+            json!({ "id": { "eq": session.user_id(who)? } }),
+        );
+    }
+    if let Some(since) = &args.since {
+        filter.insert("createdAt".into(), json!({ "gte": since }));
+    }
+    let filter = if filter.is_empty() {
+        Value::Null
+    } else {
+        Value::Object(filter)
+    };
+    let data = session
+        .linear
+        .run(&ops::AUDIT_ENTRIES, json!({ "first": n, "filter": filter }))?;
+    emit_list(
+        out,
+        nodes(&data, "auditEntries"),
+        has_next_page(&data, "auditEntries"),
+        "audit entries",
+        n,
+    );
     Ok(())
 }
 

@@ -105,6 +105,12 @@ pub enum Command {
         #[command(subcommand)]
         command: WebhookCommand,
     },
+    /// The workspace's audit log, what was done, by whom, from where: list
+    Audit {
+        /// The audit command.
+        #[command(subcommand)]
+        command: AuditCommand,
+    },
     /// A project's milestones: list, create, update, delete
     Milestone {
         /// The milestone command.
@@ -1495,6 +1501,32 @@ pub struct WebhookUpdateArgs {
     /// A new signing secret, from a file, or from stdin when PATH is `-`
     #[arg(long, value_name = "PATH")]
     pub secret_file: Option<String>,
+}
+
+/// The audit commands (ADR 0014, group 17). Linear's pages reserve the audit log for
+/// owners on the Enterprise plan; the command prints Linear's answer, or its refusal
+/// as exit 6. On 2026-11-03 a Free workspace answered its owner's key.
+#[derive(Subcommand, Debug)]
+pub enum AuditCommand {
+    /// List the workspace's audit entries, newest first, one JSON object per line
+    List(AuditListArgs),
+}
+
+/// `audit list`.
+#[derive(Args, Debug)]
+pub struct AuditListArgs {
+    /// Only entries of this kind, as Linear names it (login, issueDeleted, projectDeleted, ...)
+    #[arg(long, value_name = "TYPE")]
+    pub r#type: Option<String>,
+    /// Only entries by this user: `me`, an email address or a name
+    #[arg(long, value_name = "WHO")]
+    pub actor: Option<String>,
+    /// Only entries at or after this time (2026-11-01T00:00:00Z)
+    #[arg(long, value_name = "TIME")]
+    pub since: Option<String>,
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
 }
 
 /// The milestone commands (ADR 0014, group 10): the steps inside a project.

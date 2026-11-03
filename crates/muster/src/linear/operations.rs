@@ -205,6 +205,13 @@ pub const WEBHOOK_FIELDS: &str = "fragment WebhookFields on Webhook {
   creator { id name displayName }
 }";
 
+/// The fields every audit entry answer carries (ADR 0014, group 17); `metadata` is
+/// Linear's own object, printed as it comes.
+pub const AUDIT_ENTRY_FIELDS: &str = "fragment AuditEntryFields on AuditEntry {
+  id type createdAt ip countryCode metadata
+  actor { id name displayName }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -498,6 +505,16 @@ op!(
   webhooks(first: $first) { nodes { ...WebhookFields } pageInfo { hasNextPage } }
 }",
     &[WEBHOOK_FIELDS]
+);
+
+op!(
+    AUDIT_ENTRIES,
+    "AuditEntries",
+    Kind::Query,
+    "query AuditEntries($first: Int!, $filter: AuditEntryFilter) {
+  auditEntries(first: $first, filter: $filter) { nodes { ...AuditEntryFields } pageInfo { hasNextPage } }
+}",
+    &[AUDIT_ENTRY_FIELDS]
 );
 
 op!(
@@ -1058,6 +1075,7 @@ pub static READS: &[&Operation] = &[
     &TEMPLATES,
     &TEMPLATE_BY_NAME,
     &WEBHOOKS,
+    &AUDIT_ENTRIES,
 ];
 
 /// Every write operation.
@@ -1175,6 +1193,7 @@ mod tests {
                 "DocumentFields",
                 "TemplateFields",
                 "WebhookFields",
+                "AuditEntryFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));

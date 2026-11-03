@@ -111,6 +111,11 @@ jq -e '.label == "Trying hook" and .enabled == true and .team.key == "APP" and .
 "$bin" webhook update "Trying hook" --enabled false | jq -e '.enabled == false' >/dev/null
 "$bin" webhook list | jq -s -e 'map(.label) | index("Trying hook") != null' >/dev/null
 
+step "muster audit list --limit 2 and --type"
+"$bin" audit list --limit 2 | tee "$tmp/audit.jsonl"
+jq -s -e 'length == 2 and all(.type and .createdAt and .actor)' "$tmp/audit.jsonl" >/dev/null
+"$bin" audit list --type projectDeleted | jq -s -e 'length == 1 and .[0].type == "projectDeleted"' >/dev/null
+
 step "muster issue list --project"
 "$bin" issue update "$id" --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
 "$bin" issue list --project "Trying muster" | tee "$tmp/in-project.jsonl"

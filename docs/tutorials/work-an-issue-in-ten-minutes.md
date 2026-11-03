@@ -171,6 +171,12 @@ https://example.com/hooks/issues --resource-type Issue --resource-type Comment -
 list` prints them, `muster webhook update Issues --enabled false` stops it without
 deleting it, and `muster webhook delete Issues` deletes it, with no undo; a webhook
 is named by its label, else its URL, else its id.
+The audit log says what was done, by whom and from where: `muster audit list --limit
+5` prints the five newest entries (one JSON line each, with `type`, `createdAt`,
+`actor`, `ip`, `countryCode` and Linear's `metadata`), `muster audit list --type
+projectDeleted` the deletions, `muster audit list --actor me --since
+2026-11-01T00:00:00Z` your own since a time. Linear reserves the log for owners on
+its Enterprise plan; where it refuses, the exit code is 6 and the message is Linear's.
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):
