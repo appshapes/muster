@@ -296,6 +296,29 @@ case "$code" in
   *) echo "smoke: audit list exited $code" >&2; cat "$tmp/audit.err" >&2; exit 1 ;;
 esac
 echo
+echo "smoke: muster issue batch-update on two throwaway issues, then archive, unarchive, delete and unarchive (ADR 0014; the Revisit asks whether unarchive restores a trashed issue)"
+"$bin" issue create --title "Smoke batch A $stamp" --description "Made by scripts/smoke.sh at $stamp for issue batch-update; canceled by the same run." | jq -r .identifier > "$tmp/batch-a.id"
+"$bin" issue create --title "Smoke batch B $stamp" --description "Made by scripts/smoke.sh at $stamp for issue batch-update; canceled by the same run." | jq -r .identifier > "$tmp/batch-b.id"
+batch_a=$(cat "$tmp/batch-a.id"); batch_b=$(cat "$tmp/batch-b.id")
+"$bin" issue close "$batch_a" --cancel | jq -c 'select(.identifier != null) | {identifier, state: .state.name}'
+"$bin" issue close "$batch_b" --cancel | jq -c 'select(.identifier != null) | {identifier, state: .state.name}'
+"$bin" issue batch-update --issue "$batch_a" --issue "$batch_b" --priority 4 --assignee me | jq -c '{identifier, priority, assignee: .assignee.displayName}' | tee "$tmp/batch.jsonl"
+jq -s -e 'length == 2 and all(.priority == 4)' "$tmp/batch.jsonl" >/dev/null
+"$bin" issue archive "$batch_a" | jq -c '{identifier, archivedAt}' | tee "$tmp/archive.json"
+jq -e '.archivedAt != null' "$tmp/archive.json" >/dev/null
+"$bin" issue unarchive "$batch_a" | jq -c '{identifier, archivedAt}' | tee "$tmp/unarchive.json"
+jq -e '.archivedAt == null' "$tmp/unarchive.json" >/dev/null
+"$bin" issue delete "$batch_b" | jq -c '{identifier, archivedAt}' | tee "$tmp/delete.json"
+jq -e '.archivedAt != null' "$tmp/delete.json" >/dev/null
+set +e
+"$bin" issue unarchive "$batch_b" > "$tmp/undelete.json" 2> "$tmp/undelete.err"
+code=$?
+set -e
+case "$code" in
+  0) jq -c '{identifier, archivedAt}' "$tmp/undelete.json"; echo "smoke: issue unarchive restores a trashed issue (ADR 0014, Revisit)"; "$bin" issue delete "$batch_b" | jq -c '{identifier, archivedAt}' ;;
+  *) cat "$tmp/undelete.err"; echo "smoke: issue unarchive does not restore a trashed issue, exit $code (ADR 0014, Revisit)" ;;
+esac
+echo
 echo "smoke: muster project get 'Smoke tests', then a throwaway project updated, deleted, unarchived and deleted again (ADR 0014)"
 "$bin" project get "Smoke tests" | jq -c '{name, status: .status.name, members: (.members.nodes | length), milestones: (.projectMilestones.nodes | length), trashed}' | tee "$tmp/project-get.json"
 jq -e '.name == "Smoke tests"' "$tmp/project-get.json" >/dev/null

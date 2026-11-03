@@ -312,8 +312,8 @@ op!(ISSUE_BY_ID, "IssueById", Kind::Query, "query IssueById($id: String!, $comme
   }
 }", &[ISSUE_FIELDS, COMMENT_FIELDS]);
 
-op!(ISSUES, "Issues", Kind::Query, "query Issues($first: Int!, $filter: IssueFilter, $orderBy: PaginationOrderBy) {
-  issues(first: $first, filter: $filter, orderBy: $orderBy) { nodes { ...IssueFields } pageInfo { hasNextPage } }
+op!(ISSUES, "Issues", Kind::Query, "query Issues($first: Int!, $filter: IssueFilter, $orderBy: PaginationOrderBy, $includeArchived: Boolean) {
+  issues(first: $first, filter: $filter, orderBy: $orderBy, includeArchived: $includeArchived) { nodes { ...IssueFields } pageInfo { hasNextPage } }
 }", &[ISSUE_FIELDS]);
 
 op!(
@@ -1047,6 +1047,46 @@ op!(
 }"
 );
 
+op!(
+    ISSUE_ARCHIVE,
+    "IssueArchive",
+    Kind::Mutation,
+    "mutation IssueArchive($id: String!) {
+  issueArchive(id: $id) { success entity { ...IssueFields } }
+}",
+    &[ISSUE_FIELDS]
+);
+
+op!(
+    ISSUE_UNARCHIVE,
+    "IssueUnarchive",
+    Kind::Mutation,
+    "mutation IssueUnarchive($id: String!) {
+  issueUnarchive(id: $id) { success entity { ...IssueFields } }
+}",
+    &[ISSUE_FIELDS]
+);
+
+op!(
+    ISSUE_DELETE,
+    "IssueDelete",
+    Kind::Mutation,
+    "mutation IssueDelete($id: String!) {
+  issueDelete(id: $id) { success entity { ...IssueFields } }
+}",
+    &[ISSUE_FIELDS]
+);
+
+op!(
+    ISSUE_BATCH_UPDATE,
+    "IssueBatchUpdate",
+    Kind::Mutation,
+    "mutation IssueBatchUpdate($ids: [UUID!]!, $input: IssueUpdateInput!) {
+  issueBatchUpdate(ids: $ids, input: $input) { success issues { ...IssueFields } }
+}",
+    &[ISSUE_FIELDS]
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -1133,6 +1173,10 @@ pub static WRITES: &[&Operation] = &[
     &WEBHOOK_CREATE,
     &WEBHOOK_UPDATE,
     &WEBHOOK_DELETE,
+    &ISSUE_ARCHIVE,
+    &ISSUE_UNARCHIVE,
+    &ISSUE_DELETE,
+    &ISSUE_BATCH_UPDATE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.

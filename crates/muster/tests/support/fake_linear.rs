@@ -72,6 +72,9 @@ struct State {
     ws: Workspace,
     fail_next: BTreeMap<String, Failure>,
     operations: Vec<String>,
+    /// Every request body as the binary sent it: `query`, `operationName` and
+    /// `variables`, so that a test can assert on what went over the wire.
+    requests: Vec<Value>,
 }
 
 /// A running fake.
@@ -91,6 +94,7 @@ impl Fake {
             ws: Workspace::seed(),
             fail_next: BTreeMap::new(),
             operations: Vec::new(),
+            requests: Vec::new(),
         }));
         let stop = Arc::new(AtomicBool::new(false));
         let (state2, stop2) = (Arc::clone(&state), Arc::clone(&stop));
@@ -129,6 +133,13 @@ impl Fake {
     /// Every operation name seen, in order.
     pub fn operations(&self) -> Vec<String> {
         self.state.lock().unwrap().operations.clone()
+    }
+
+    /// Every request body seen, in order, as the binary sent it: `query`,
+    /// `operationName` and `variables`. A test that says muster never sends something
+    /// asserts on these, the bytes on the wire, not on the operation names.
+    pub fn requests(&self) -> Vec<Value> {
+        self.state.lock().unwrap().requests.clone()
     }
 
     /// Add a team, so that the workspace has several.
@@ -412,6 +423,7 @@ fn handle(stream: &mut TcpStream, state: &Arc<Mutex<State>>) -> std::io::Result<
     let op = request["operationName"].as_str().unwrap_or("").to_string();
     let mut st = state.lock().unwrap();
     st.operations.push(op.clone());
+    st.requests.push(request.clone());
     let n = st.operations.len();
     if let Some(failure) = st.fail_next.remove(&op) {
         return match failure {
@@ -3259,11 +3271,17 @@ impl Workspace {
             "Issues" => {
                 // Filtered with their comments, attachments and children attached, so
                 // that a collection filter (`children: { length: { gt: 0 } }`) sees
-                // them; answered as Linear answers `issues`, without them.
+                // them; answered as Linear answers `issues`, without them. Archived
+                // issues are left out unless `includeArchived` is true, as Linear
+                // leaves them out (the number lookup of `issue unarchive 12` asks).
+                let include_archived = vars["includeArchived"].as_bool().unwrap_or(false);
                 let mut issues: Vec<Value> = self
                     .issues
                     .iter()
-                    .filter(|i| passes(&self.filter_view(i), filter))
+                    .filter(|i| {
+                        (include_archived || i["archivedAt"].is_null())
+                            && passes(&self.filter_view(i), filter)
+                    })
                     .cloned()
                     .collect();
                 match vars["orderBy"].as_str() {
@@ -3383,6 +3401,73 @@ impl Workspace {
                 (
                     200,
                     json!({ "data": { "issueCreate": { "success": true, "issue": issue } } }),
+                )
+            }
+            "IssueArchive" | "IssueUnarchive" | "IssueDelete" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.issues.iter().position(|i| i["id"] == id) else {
+                    return not_found("Issue");
+                };
+                let now = self.now();
+                let field = match op {
+                    "IssueArchive" => {
+                        self.issues[index]["archivedAt"] = json!(now);
+                        "issueArchive"
+                    }
+                    "IssueDelete" => {
+                        // The trash: archived, with the sub-issues, as Linear does.
+                        // `archivedAt` is the whole signal `IssueFields` carries; an
+                        // issue has no `trashed` field in Linear's answer (the
+                        // IssueById and Issues fixtures), so the fake writes none.
+                        self.issues[index]["archivedAt"] = json!(now);
+                        let parent_id = self.issues[index]["id"].clone();
+                        for child in self
+                            .issues
+                            .iter_mut()
+                            .filter(|i| i["parent"]["id"] == parent_id)
+                        {
+                            child["archivedAt"] = json!(now);
+                        }
+                        "issueDelete"
+                    }
+                    _ => {
+                        self.issues[index]["archivedAt"] = Value::Null;
+                        "issueUnarchive"
+                    }
+                };
+                (
+                    200,
+                    json!({ "data": { field: { "success": true, "entity": self.issues[index].clone() } } }),
+                )
+            }
+            "IssueBatchUpdate" => {
+                // Linear's cap, read on 2026-11-03: fifty ids in one request.
+                let ids: Vec<String> = vars["ids"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if ids.is_empty() || ids.len() > 50 {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "ids must have between 1 and 50 items" } } ], "data": null }),
+                    );
+                }
+                let mut issues = Vec::new();
+                for id in ids {
+                    let (status, answer) =
+                        self.dispatch("IssueUpdate", &json!({ "id": id, "input": vars["input"] }));
+                    if answer.get("errors").is_some() || status != 200 {
+                        return (status, answer);
+                    }
+                    issues.push(answer["data"]["issueUpdate"]["issue"].clone());
+                }
+                (
+                    200,
+                    json!({ "data": { "issueBatchUpdate": { "success": true, "issues": issues } } }),
                 )
             }
             "IssueUpdate" => {

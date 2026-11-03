@@ -917,6 +917,45 @@ Change an issue's title, state, labels, priority, assignee, project, parent or d
 | `--description` | `<TEXT>` | no |  | A new description, markdown |
 | `--description-file` | `<PATH>` | no |  | The new description from a file, or from stdin when PATH is `-` |
 
+### muster issue archive
+
+Archive an issue; `issue unarchive` brings it back.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<ISSUE>` | `<ISSUE>` | yes |  | The identifier (APP-12), the number alone (12, in the team) or the id |
+
+### muster issue unarchive
+
+Bring an archived issue back.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<ISSUE>` | `<ISSUE>` | yes |  | The identifier (APP-12), the number alone (12, in the team) or the id |
+
+### muster issue delete
+
+Put an issue in the trash, with its sub-issues, for Linear's thirty days; never a permanent delete.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<ISSUE>` | `<ISSUE>` | yes |  | The identifier (APP-12), the number alone (12, in the team) or the id |
+
+### muster issue batch-update
+
+Change the same fields on up to ISSUES_PER_BATCH issues of one team in one request.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--issue` | `<ISSUE>` | yes |  | An issue to change: the identifier, the number alone or the id; repeatable, up to ISSUES_PER_BATCH, all in one team |
+| `--state` | `<NAME>` | no |  | A new state, by name in the team |
+| `--priority` | `<0-4>` | no |  | A new priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low |
+| `--assignee` | `<WHO>` | no |  | A new assignee: `me`, an email address, a name, or `none` |
+| `--add-label` | `<NAME>` | no |  | A label to add, by name; repeatable |
+| `--project` | `<NAME>` | no |  | A new project, by name, or `none` |
+| `--cycle` | `<NUMBER\|active\|next\|none>` | no |  | A new cycle of the team: a number, `active`, `next`, or `none` |
+| `--milestone` | `<NAME>` | no |  | A new milestone of the project `--project` names, or `none` |
+
 ### muster schema
 
 The command tree, exit codes, notices, bounds and environment variables, as JSON or as the reference page.
@@ -975,6 +1014,7 @@ Every limit muster has, from `crates/muster/src/bounds.rs` (CLAUDE.md, invariant
 | `MILESTONES_PER_PROJECT` | 50 | items | the milestones `project get` prints with a project under `projectMilestones.nodes`; a project with more writes a `truncated` notice to stderr |
 | `PROJECTS_PER_INITIATIVE` | 50 | items | the projects `initiative get` prints with an initiative under `projects.nodes`; an initiative with more writes a `truncated` notice to stderr |
 | `ISSUES_PER_CYCLE` | 50 | items | the issues `cycle get` prints with a cycle under `issues.nodes`; a cycle with more writes a `truncated` notice to stderr |
+| `ISSUES_PER_BATCH` | 50 | items | the issues `issue batch-update` changes in one request, Linear's own cap on `issueBatchUpdate`; more is a usage error, exit 2, before any request |
 | `REQUEST_TIMEOUT_SECS` | 30 | seconds | one request, connect to last byte; past it a query exits 7 and a mutation exits 8 |
 | `BODY_MAX_BYTES` | 262144 | bytes | the largest description, comment, title, name, link or subtitle sent; a larger one is refused, exit 6, before any request, and the message names which one it was; Linux refuses one argv string over 128 KiB before muster runs, so from a flag's value the bound is reached only where the OS allows the argument, from a file or stdin everywhere |
 | `RESPONSE_MAX_BYTES` | 16777216 | bytes | the largest answer read; a larger one is muster's failure, exit 1 |
@@ -1088,3 +1128,7 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `WebhookCreate` | mutation |
 | `WebhookUpdate` | mutation |
 | `WebhookDelete` | mutation |
+| `IssueArchive` | mutation |
+| `IssueUnarchive` | mutation |
+| `IssueDelete` | mutation |
+| `IssueBatchUpdate` | mutation |

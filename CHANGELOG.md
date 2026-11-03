@@ -69,6 +69,19 @@ user-visible change, added in the same commit as the change. The format follows
   command prints Linear's answer, or its refusal as exit 6; on 2026-11-03 a Free
   workspace answered its owner's key (ADR 0014, group 17;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `issue archive <ISSUE>` and `issue unarchive <ISSUE>` take an issue out of the lists
+  and bring it back; `issue delete <ISSUE>` puts one in Linear's trash, with its
+  sub-issues, for Linear's thirty days, and never sends `permanentlyDelete`; each
+  prints the issue as Linear returns it. An archived or trashed issue is reached by
+  its identifier, its number alone or its id, in every command that takes an issue:
+  the number lookup now asks Linear's `issues` with `includeArchived`. `issue
+  batch-update --issue <ISSUE>...
+  [--state] [--priority] [--assignee <WHO|none>] [--add-label <NAME>] [--project
+  <NAME|none>] [--cycle <NUMBER|active|next|none>] [--milestone <NAME|none>]` changes
+  the same fields on up to `ISSUES_PER_BATCH` issues of one team in one request,
+  Linear's own cap, and prints each issue; more issues, two teams or no field is exit 2
+  before any request, and an unknown issue exit 4 (ADR 0014, group 18;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.4.0 - 2026-11-03
 
