@@ -74,7 +74,10 @@ user-visible change, added in the same commit as the change. The format follows
   <TIME|none>` and `--avatar-url`; a flag left out leaves its field alone. The admin's
   commands `user change-role <WHO> --role <owner|admin|user|guest>`, `user suspend`,
   `user unsuspend` and `user revoke-sessions` print Linear's `success`, then the user
-  read back, two JSON lines; a suspended user is still found by email or name, so that
+  read back, two JSON lines; when the read-back fails after the mutation landed, the
+  exit code is the read-back's (7 for a dropped query) and the error says the mutation
+  landed and names `user get`, rather than "nothing changed in Linear". A suspended
+  user is still found by email or name, by every command that names a user, so that
   `unsuspend` reaches them (ADR 0014, group 4;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 

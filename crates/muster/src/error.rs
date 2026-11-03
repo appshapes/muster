@@ -96,7 +96,7 @@ impl ErrorCode {
                 "the input was refused: Linear's validation (INPUT_ERROR), a body over BODY_MAX_BYTES, a muster guard such as a duplicate title, or what the workspace's plan or the key's role does not allow (FORBIDDEN, FEATURE_NOT_ACCESSIBLE)"
             }
             ErrorCode::Network => {
-                "the request was not sent (name resolution, connection, TLS, a timeout before sending), or a query's answer never came; nothing changed in Linear"
+                "the request was not sent (name resolution, connection, TLS, a timeout before sending), or a query's answer never came; nothing changed in Linear, unless the message says a mutation sent before the query landed"
             }
             ErrorCode::Unknown => {
                 "a mutation was sent and no answer came: the request may have landed; check before repeating it"

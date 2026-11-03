@@ -663,15 +663,39 @@ fn workspace_update(
     Ok(())
 }
 
-/// One user with every `UserFields` field, by `me`, email or name, in one `UserById`
-/// request after the resolution (ADR 0014, group 4).
-fn user_full(session: &Session, who: &str) -> Result<Value, Error> {
-    let id = session.user_id(who)?;
+/// One user with every `UserFields` field, by id, in one `UserById` request; `who` is
+/// the name the caller gave, for the message when Linear has no such user.
+fn user_by_id(session: &Session, id: &str, who: &str) -> Result<Value, Error> {
     let data = session.linear.run(&ops::USER_BY_ID, json!({ "id": id }))?;
     match data.get("user") {
         Some(user) if !user.is_null() => Ok(user.clone()),
         _ => Err(Error::new(ErrorCode::NotFound, format!("no user {who:?}"))),
     }
+}
+
+/// One user by `me`, email or name: the resolution, then [`user_by_id`] (ADR 0014,
+/// group 4).
+fn user_full(session: &Session, who: &str) -> Result<Value, Error> {
+    let id = session.user_id(who)?;
+    user_by_id(session, &id, who)
+}
+
+/// The user read back after a mutation that landed, by the id already resolved, with
+/// Linear's `success` already on stdout. A failure here keeps the read-back's own code
+/// (7 for a dropped query, 5 for the rate limit), but its message and hint say that
+/// the mutation landed and that `user get` prints the result: the code's general
+/// words, "nothing changed in Linear", would be a lie here (invariant 4).
+fn user_read_back(session: &Session, id: &str, who: &str, field: &str) -> Result<Value, Error> {
+    user_by_id(session, id, who).map_err(|error| Error {
+        message: format!(
+            "{field} succeeded in Linear and its success line is on stdout, but the user could not be read back: {}",
+            error.message
+        ),
+        hint: format!(
+            "`muster user get {who:?}` prints the user as Linear has them now; the mutation needs no repeating"
+        ),
+        ..error
+    })
 }
 
 fn user_get(session: &Session, args: &UserRefArgs, out: &Output) -> Result<(), Error> {
@@ -744,8 +768,9 @@ fn success_payload(data: &Value, field: &str) -> Result<Value, Error> {
     }
 }
 
-/// `user change-role`: Linear's `success`, then the user read back, so that the new
-/// role is on the output (two lines, as `issue close` prints two).
+/// `user change-role`: Linear's `success`, then the user read back by the id already
+/// resolved, so that the new role is on the output (two lines, as `issue close` prints
+/// two).
 fn user_change_role(session: &Session, args: &UserRoleArgs, out: &Output) -> Result<(), Error> {
     let id = session.user_id(&args.who)?;
     let data = session.linear.run(
@@ -753,12 +778,12 @@ fn user_change_role(session: &Session, args: &UserRoleArgs, out: &Output) -> Res
         json!({ "id": id, "role": args.role.linear() }),
     )?;
     out.emit(&success_payload(&data, "userChangeRole")?);
-    out.emit(&user_full(session, &args.who)?);
+    out.emit(&user_read_back(session, &id, &args.who, "userChangeRole")?);
     Ok(())
 }
 
 /// `user suspend`, `user unsuspend` and `user revoke-sessions`: one mutation with the
-/// user's id, Linear's `success`, then the user read back.
+/// user's id, Linear's `success`, then the user read back by that id.
 fn user_admin(
     session: &Session,
     args: &UserRefArgs,
@@ -769,7 +794,7 @@ fn user_admin(
     let id = session.user_id(&args.who)?;
     let data = session.linear.run(op, json!({ "id": id }))?;
     out.emit(&success_payload(&data, field)?);
-    out.emit(&user_full(session, &args.who)?);
+    out.emit(&user_read_back(session, &id, &args.who, field)?);
     Ok(())
 }
 

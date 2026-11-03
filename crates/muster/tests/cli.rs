@@ -1710,6 +1710,41 @@ fn user_get_update_role_suspension_and_sessions() {
         bad.stderr
     );
 
+    // A read-back that fails after the mutation landed: Linear's `success` is on
+    // stdout, the exit code is the read-back's, and the error says the mutation
+    // landed and names `user get`, never "nothing changed" (invariant 4).
+    fake.fail_next("UserById", Failure::Drop);
+    let landed = muster(&fake, &["user", "suspend", "other"]);
+    assert_eq!(landed.code, 7, "{}", landed.stderr);
+    let landed_lines = landed.lines();
+    assert_eq!(
+        landed_lines.len(),
+        1,
+        "Linear's success and no user: {}",
+        landed.stdout
+    );
+    assert_eq!(landed_lines[0]["success"], true);
+    let error = landed.error();
+    assert_eq!(error["code"], "network");
+    let message = error["message"].as_str().unwrap_or("");
+    assert!(
+        message.contains("userSuspend succeeded in Linear") && !message.contains("nothing changed"),
+        "{message}"
+    );
+    let hint = error["hint"].as_str().unwrap_or("");
+    assert!(hint.contains("muster user get \"other\""), "{hint}");
+    let everyone = muster(&fake, &["user", "list", "--all"]);
+    assert!(
+        everyone
+            .lines()
+            .iter()
+            .any(|u| u["displayName"] == "other" && u["active"] == false),
+        "the suspension landed: {}",
+        everyone.stdout
+    );
+    let restored = muster(&fake, &["user", "unsuspend", "other"]);
+    assert_eq!(restored.code, 0, "{}", restored.stderr);
+
     let suspended = muster(&fake, &["user", "suspend", "other"]);
     assert_eq!(suspended.code, 0, "{}", suspended.stderr);
     assert_eq!(suspended.lines()[0]["success"], true);
