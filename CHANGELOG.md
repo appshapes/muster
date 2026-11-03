@@ -32,6 +32,22 @@ user-visible change, added in the same commit as the change. The format follows
   clearing the last two; `document delete <TITLE>` puts one in the trash and
   `document unarchive <TITLE>` brings it back, each printing Linear's entity (ADR
   0014, group 14; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `template list [--type <issue|project|document>]` prints the team's and the
+  workspace's templates, each with its `type`, `name`, `description`, `templateData`
+  as Linear returns it (a string of JSON), `team`, `creator` and `lastAppliedAt`
+  (Linear's search is a
+  list with no page info, so one more than `--limit` is asked for and a cut list is
+  known from it); `template get <NAME>` prints one, by name among the team's own
+  and the workspace's, the team's own first, as `--label` resolves a label (another
+  team's is exit 4); `template create --name <TEXT> --type <TYPE> --data-file <PATH>
+  [--workspace] [--description <TEXT>]` makes one from JSON in a file, or stdin as
+  `-` (a file that is not JSON is exit 2 before any request; a name a template of
+  the same scope has, the team's or the workspace's with `--workspace`, is refused,
+  exit 6, unless `--allow-duplicate`); `template update <NAME> [--name]
+  [--description] [--data-file <PATH>]` changes one; `template delete <NAME>`
+  deletes one, with no undo, printing Linear's answer; each resolves the name as
+  `template get` does (ADR 0014, group 15; [the
+  tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.4.0 - 2026-11-03
 

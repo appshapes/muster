@@ -2710,6 +2710,400 @@ fn document_list_get_create_update_delete_and_unarchive() {
     assert_eq!(run.code, 7, "{}", run.stderr);
 }
 
+// ---- templates (ADR 0014, group 15) ------------------------------------------------------
+
+#[test]
+fn template_list_get_create_update_and_delete() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds one issue template the workspace shares, "Bug report".
+    let seeded = muster(&fake, &["template", "list"]);
+    assert_eq!(seeded.code, 0, "{}", seeded.stderr);
+    assert_eq!(seeded.lines().len(), 1);
+    assert_eq!(seeded.lines()[0]["name"], "Bug report");
+    assert_eq!(seeded.lines()[0]["type"], "issue");
+    assert!(seeded.lines()[0]["team"].is_null(), "the workspace's");
+    let data_of = |v: &Value| -> Value {
+        serde_json::from_str(
+            v["templateData"]
+                .as_str()
+                .expect("templateData is a string of JSON, as Linear returns it"),
+        )
+        .unwrap()
+    };
+    assert_eq!(data_of(&seeded.lines()[0])["title"], "Bug: ");
+    let dir = temp_dir();
+    let data = write(
+        &dir,
+        "feature.json",
+        "{\"title\": \"Feature: \", \"priority\": 3, \"labelIds\": []}\n",
+    );
+    let created = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Feature",
+            "--type",
+            "issue",
+            "--data-file",
+            &data,
+            "--description",
+            "For a feature.",
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let v = created.one();
+    assert_eq!(v["name"], "Feature");
+    assert_eq!(v["type"], "issue");
+    assert_eq!(v["team"]["key"], "APP", "the team's own by the usual rule");
+    assert_eq!(data_of(&v)["priority"], 3);
+    assert_eq!(v["description"], "For a feature.");
+    assert_eq!(v["creator"]["displayName"], "fake");
+    let again = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "feature",
+            "--type",
+            "issue",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(again.code, 6, "{}", again.stderr);
+    fake.fail_next("TemplateByName", Failure::Drop);
+    let unread = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Unread",
+            "--type",
+            "issue",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(unread.code, 7, "the guard's read failed: {}", unread.stderr);
+    let not_json = write(&dir, "bad.json", "{not json");
+    let bad = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Bad",
+            "--type",
+            "issue",
+            "--data-file",
+            &not_json,
+        ],
+    );
+    assert_eq!(bad.code, 2, "{}", bad.stderr);
+    let bad_type = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Bad",
+            "--type",
+            "cycle",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(bad_type.code, 2, "{}", bad_type.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "TemplateCreate")
+            .count(),
+        1,
+        "refused, failed and bad inputs sent no mutation"
+    );
+    let project_data = write(&dir, "project.json", "{\"name\": \"Launch \"}");
+    let shared = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Launch plan",
+            "--type",
+            "project",
+            "--data-file",
+            &project_data,
+            "--workspace",
+        ],
+    );
+    assert_eq!(shared.code, 0, "{}", shared.stderr);
+    assert!(shared.one()["team"].is_null());
+    assert_eq!(shared.one()["type"], "project");
+
+    assert_eq!(muster(&fake, &["template", "list"]).lines().len(), 3);
+    let issues = muster(&fake, &["template", "list", "--type", "issue"]);
+    assert_eq!(issues.lines().len(), 2);
+    let projects = muster(&fake, &["template", "list", "--type", "project"]);
+    assert_eq!(projects.lines().len(), 1);
+    assert_eq!(projects.lines()[0]["name"], "Launch plan");
+    let cut = muster(&fake, &["template", "list", "--limit", "1"]);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(
+        cut.notices()[0]["code"],
+        "truncated",
+        "known from the one extra asked for"
+    );
+    let exact = muster(&fake, &["template", "list", "--limit", "3"]);
+    assert_eq!(exact.lines().len(), 3);
+    assert!(
+        exact.notices().is_empty(),
+        "a list that fits writes no notice"
+    );
+    fake.add_team("SMK", "Smoke tests");
+    let other = muster(&fake, &["template", "list", "--team", "SMK"]);
+    assert_eq!(other.lines().len(), 2, "the workspace's two, not APP's own");
+
+    // A name resolves in the team's scope, its own and the workspace's, as a label
+    // does (ADR 0014): APP's "Feature" is not SMK's to read, change or delete, and the
+    // workspace's "Bug report" is every team's.
+    let elsewhere = muster(&fake, &["template", "get", "Feature", "--team", "SMK"]);
+    assert_eq!(elsewhere.code, 4, "{}", elsewhere.stderr);
+    let not_mine = muster(&fake, &["template", "delete", "Feature", "--team", "SMK"]);
+    assert_eq!(not_mine.code, 4, "{}", not_mine.stderr);
+    let not_changed = muster(
+        &fake,
+        &[
+            "template", "update", "Feature", "--team", "SMK", "--name", "x",
+        ],
+    );
+    assert_eq!(not_changed.code, 4, "{}", not_changed.stderr);
+    assert!(
+        !fake
+            .operations()
+            .iter()
+            .any(|o| o == "TemplateDelete" || o == "TemplateUpdate"),
+        "another team's template was neither deleted nor changed"
+    );
+    let shared_too = muster(&fake, &["template", "get", "Bug report", "--team", "SMK"]);
+    assert_eq!(shared_too.code, 0, "{}", shared_too.stderr);
+    assert!(shared_too.one()["team"].is_null(), "the workspace's");
+    // The guard is on the same scope: SMK may have its own "Feature" while APP has
+    // one, APP may not have a second, a team may have the name the workspace has and
+    // the workspace not a second; the team's own then comes first for the team, and
+    // a delete in the team takes the team's own, not the workspace's.
+    let smk_feature = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Feature",
+            "--type",
+            "issue",
+            "--team",
+            "SMK",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(smk_feature.code, 0, "{}", smk_feature.stderr);
+    assert_eq!(smk_feature.one()["team"]["key"], "SMK");
+    let app_again = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Feature",
+            "--type",
+            "issue",
+            "--team",
+            "APP",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(app_again.code, 6, "{}", app_again.stderr);
+    let shared_again = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "bug report",
+            "--type",
+            "issue",
+            "--team",
+            "APP",
+            "--workspace",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(shared_again.code, 6, "{}", shared_again.stderr);
+    let team_bug = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Bug report",
+            "--type",
+            "issue",
+            "--team",
+            "APP",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(team_bug.code, 0, "{}", team_bug.stderr);
+    assert_eq!(team_bug.one()["team"]["key"], "APP");
+    let own_first = muster(&fake, &["template", "get", "Bug report", "--team", "APP"]);
+    assert_eq!(own_first.code, 0, "{}", own_first.stderr);
+    assert_eq!(
+        own_first.one()["team"]["key"],
+        "APP",
+        "the team's own first"
+    );
+    let still_shared = muster(&fake, &["template", "get", "Bug report", "--team", "SMK"]);
+    assert!(
+        still_shared.one()["team"].is_null(),
+        "the workspace's for SMK"
+    );
+    let own_gone = muster(
+        &fake,
+        &["template", "delete", "Bug report", "--team", "APP"],
+    );
+    assert_eq!(own_gone.code, 0, "{}", own_gone.stderr);
+    assert_eq!(own_gone.one()["entityId"], team_bug.one()["id"]);
+    let shared_left = muster(&fake, &["template", "get", "Bug report", "--team", "APP"]);
+    assert!(
+        shared_left.one()["team"].is_null(),
+        "the workspace's is left"
+    );
+
+    let got = muster(&fake, &["template", "get", "feature", "--team", "APP"]);
+    assert_eq!(got.code, 0, "{}", got.stderr);
+    assert_eq!(got.one()["name"], "Feature");
+    assert_eq!(got.one()["team"]["key"], "APP", "APP's own, not SMK's");
+    assert_eq!(data_of(&got.one())["title"], "Feature: ");
+    assert_eq!(
+        fake.operations().last().map(String::as_str),
+        Some("TemplateByName"),
+        "the template in one request"
+    );
+    assert_eq!(
+        muster(&fake, &["template", "get", "Nope", "--team", "APP"]).code,
+        4
+    );
+
+    let new_data = write(&dir, "feature2.json", "{\"title\": \"Feature request: \"}");
+    let updated = muster(
+        &fake,
+        &[
+            "template",
+            "update",
+            "Feature",
+            "--team",
+            "APP",
+            "--name",
+            "Feature request",
+            "--description",
+            "Renamed.",
+            "--data-file",
+            &new_data,
+        ],
+    );
+    assert_eq!(updated.code, 0, "{}", updated.stderr);
+    assert_eq!(updated.one()["name"], "Feature request");
+    assert_eq!(updated.one()["team"]["key"], "APP", "APP's own, not SMK's");
+    assert_eq!(updated.one()["description"], "Renamed.");
+    assert_eq!(data_of(&updated.one())["title"], "Feature request: ");
+    assert_eq!(updated.one()["type"], "issue", "the type never changes");
+    let nothing = muster(
+        &fake,
+        &["template", "update", "Feature request", "--team", "APP"],
+    );
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    let nope = muster(
+        &fake,
+        &["template", "update", "Nope", "--team", "APP", "--name", "x"],
+    );
+    assert_eq!(nope.code, 4, "{}", nope.stderr);
+
+    let deleted = muster(
+        &fake,
+        &["template", "delete", "Launch plan", "--team", "APP"],
+    );
+    assert_eq!(deleted.code, 0, "{}", deleted.stderr);
+    assert_eq!(deleted.one()["success"], true);
+    assert!(deleted.one()["entityId"].is_string());
+    assert_eq!(
+        muster(&fake, &["template", "list", "--team", "APP"])
+            .lines()
+            .len(),
+        2,
+        "APP's own and the workspace's, not SMK's; two teams now, so the team is named"
+    );
+    assert_eq!(
+        muster(
+            &fake,
+            &["template", "delete", "Launch plan", "--team", "APP"]
+        )
+        .code,
+        4
+    );
+
+    for (op, args) in [
+        (
+            "TemplateCreate",
+            vec![
+                "template",
+                "create",
+                "--name",
+                "Dropped",
+                "--type",
+                "issue",
+                "--data-file",
+                &data,
+                "--team",
+                "APP",
+            ],
+        ),
+        (
+            "TemplateUpdate",
+            vec![
+                "template",
+                "update",
+                "Feature request",
+                "--team",
+                "APP",
+                "--name",
+                "Dropped",
+            ],
+        ),
+        (
+            "TemplateDelete",
+            vec!["template", "delete", "Feature request", "--team", "APP"],
+        ),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+    fake.fail_next("Templates", Failure::Drop);
+    let run = muster(&fake, &["template", "list", "--team", "APP"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+    fake.fail_next("TemplateByName", Failure::Drop);
+    let run = muster(&fake, &["template", "get", "Bug report", "--team", "APP"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+}
+
 // ---- project updates (ADR 0014, group 11) ------------------------------------------------
 
 #[test]
@@ -4539,12 +4933,15 @@ fn the_fakes_answers_have_the_recorded_shapes() {
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         let variables = muster::cli::schema::fixture_variables(
             &name,
-            Some("APP-1"),
-            Some("APP"),
-            Some("Muster"),
-            Some("Launch"),
-            Some(("APP", 2.0)),
-            Some("Plan"),
+            &muster::cli::schema::Samples {
+                issue: Some("APP-1"),
+                team: Some("APP"),
+                project: Some("Muster"),
+                initiative: Some("Launch"),
+                cycle: Some(("APP", 2.0)),
+                document: Some("Plan"),
+                template: Some("Bug report"),
+            },
         )
         .unwrap();
         let answer = post(

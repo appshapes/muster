@@ -97,6 +97,13 @@ jq -e '.title == "Kickoff" and .project.name == "Trying muster" and .content == 
 "$bin" document list --project "Trying muster" | jq -s -e 'map(.title) == ["Kickoff"]' >/dev/null
 "$bin" document get Kickoff | jq -e '.content == "# Kickoff"' >/dev/null
 
+step "muster template create --data-file, list --type and get"
+printf '{"title": "Feature: ", "priority": 3}\n' > "$tmp/feature.json"
+"$bin" template create --name "Feature" --type issue --data-file "$tmp/feature.json" --description "For a feature." | tee "$tmp/template.json"
+jq -e '.name == "Feature" and .type == "issue" and .team.key == "APP" and (.templateData | fromjson).priority == 3' "$tmp/template.json" >/dev/null
+"$bin" template list --type issue | jq -s -e 'map(.name) | index("Feature") != null' >/dev/null
+"$bin" template get Feature | jq -e '(.templateData | fromjson).title == "Feature: "' >/dev/null
+
 step "muster issue list --project"
 "$bin" issue update "$id" --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
 "$bin" issue list --project "Trying muster" | tee "$tmp/in-project.jsonl"

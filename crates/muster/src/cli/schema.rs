@@ -357,6 +357,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
     let initiative = sample_initiative(session)?;
     let cycle = sample_cycle(session)?;
     let document = sample_document(session)?;
+    let template = sample_template(session, team.as_deref())?;
     match (&sample, lack) {
         (Some(id), Some(lack)) => out.notice(
             "partial",
@@ -374,12 +375,15 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
         // The same variables the fixture test replays against the fake, from one place.
         let Some(variables) = fixture_variables(
             op.name,
-            sample.as_deref(),
-            team.as_deref(),
-            project.as_deref(),
-            initiative.as_deref(),
-            cycle.as_ref().map(|(k, n)| (k.as_str(), *n)),
-            document.as_deref(),
+            &Samples {
+                issue: sample.as_deref(),
+                team: team.as_deref(),
+                project: project.as_deref(),
+                initiative: initiative.as_deref(),
+                cycle: cycle.as_ref().map(|(k, n)| (k.as_str(), *n)),
+                document: document.as_deref(),
+                template: template.as_deref(),
+            },
         ) else {
             if [
                 "IssueById",
@@ -391,6 +395,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
                 "InitiativeByName",
                 "CycleByNumber",
                 "DocumentByTitle",
+                "TemplateByName",
             ]
             .contains(&op.name)
             {
@@ -548,42 +553,79 @@ fn sample_document(session: &Session) -> Result<Option<String>, Error> {
         .and_then(|d| str_at(d, "title").map(str::to_string)))
 }
 
+/// The name of the template `TemplateByName` is recorded on: the first one
+/// `Templates` lists in the first team's scope, its own and the workspace's, since
+/// `TemplateByName` looks there.
+fn sample_template(session: &Session, team: Option<&str>) -> Result<Option<String>, Error> {
+    let filter = match team {
+        Some(key) => {
+            json!({ "or": [ { "team": { "key": { "eq": key } } }, { "team": { "null": true } } ] })
+        }
+        None => Value::Null,
+    };
+    let data = session
+        .linear
+        .run(&ops::TEMPLATES, json!({ "first": 1, "filter": filter }))?;
+    Ok(data["templateSearch"]
+        .as_array()
+        .and_then(|list| list.first())
+        .and_then(|t| str_at(t, "name").map(str::to_string)))
+}
+
+/// What a workspace had when the fixtures were recorded, and what the fixture test
+/// replays against the fake: the first issue, team, project, initiative, cycle,
+/// document and template the lists gave, each `None` when the workspace had none.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Samples<'a> {
+    /// The newest issue with comments, attachments and sub-issues, for `IssueById`.
+    pub issue: Option<&'a str>,
+    /// The first team's key, for `TeamByKey` and `TeamMembers`.
+    pub team: Option<&'a str>,
+    /// The first project's name, for `ProjectByName`, `Milestones` and `ProjectUpdates`.
+    pub project: Option<&'a str>,
+    /// The first initiative's name, for `InitiativeByName`.
+    pub initiative: Option<&'a str>,
+    /// The team key and number of the first cycle that holds an issue, for `CycleByNumber`.
+    pub cycle: Option<(&'a str, f64)>,
+    /// The first document's title, for `DocumentByTitle`.
+    pub document: Option<&'a str>,
+    /// The first template's name among the first team's and the workspace's, for
+    /// `TemplateByName`, which looks in that scope.
+    pub template: Option<&'a str>,
+}
+
 /// The variables each read operation is recorded with, and the fixture test replays
 /// against the fake; `None` when `IssueById` has no issue, `TeamByKey` no team,
 /// `ProjectByName` no project, or `InitiativeByName` no initiative, to ask for.
-pub fn fixture_variables(
-    op: &str,
-    first_issue: Option<&str>,
-    first_team: Option<&str>,
-    first_project: Option<&str>,
-    first_initiative: Option<&str>,
-    first_cycle: Option<(&str, f64)>,
-    first_document: Option<&str>,
-) -> Option<Value> {
+pub fn fixture_variables(op: &str, s: &Samples<'_>) -> Option<Value> {
     Some(match op {
         "Viewer" | "Workspace" => json!({}),
-        "TeamByKey" => json!({ "key": first_team?, "includeArchived": false }),
-        "TeamMembers" => json!({ "key": first_team?, "first": 5 }),
+        "TeamByKey" => json!({ "key": s.team?, "includeArchived": false }),
+        "TeamMembers" => json!({ "key": s.team?, "first": 5 }),
         "Teams" => json!({ "first": 5 }),
         "WorkflowStates" | "IssueLabels" => json!({ "first": 5, "filter": Value::Null }),
         "Users" => json!({ "first": 5, "filter": Value::Null, "includeDisabled": true }),
         "UserById" => json!({ "id": "me" }),
         "ProjectStatuses" => json!({ "first": 5, "includeArchived": false }),
-        "Milestones" | "ProjectUpdates" => json!({ "project": first_project?, "first": 5 }),
+        "Milestones" | "ProjectUpdates" => json!({ "project": s.project?, "first": 5 }),
+        "Templates" => json!({ "first": 6, "filter": Value::Null }),
+        "TemplateByName" => {
+            json!({ "key": s.team?, "name": s.template?, "includeArchived": false })
+        }
         "Documents" => json!({ "first": 5, "filter": Value::Null }),
-        "DocumentByTitle" => json!({ "title": first_document?, "includeArchived": false }),
+        "DocumentByTitle" => json!({ "title": s.document?, "includeArchived": false }),
         "Cycles" => json!({ "first": 5, "filter": Value::Null }),
         "CycleByNumber" => {
-            let (key, number) = first_cycle?;
+            let (key, number) = s.cycle?;
             json!({ "key": key, "number": number, "issues": ISSUES_PER_CYCLE })
         }
         "Initiatives" => json!({ "first": 5, "filter": Value::Null }),
         "InitiativeByName" => {
-            json!({ "name": first_initiative?, "includeArchived": false, "projects": PROJECTS_PER_INITIATIVE })
+            json!({ "name": s.initiative?, "includeArchived": false, "projects": PROJECTS_PER_INITIATIVE })
         }
         "InitiativeLinks" => json!({ "first": 5 }),
         "ProjectByName" => {
-            json!({ "name": first_project?, "includeArchived": false, "teams": TEAMS_PER_PROJECT, "members": MEMBERS_PER_PROJECT, "milestones": MILESTONES_PER_PROJECT })
+            json!({ "name": s.project?, "includeArchived": false, "teams": TEAMS_PER_PROJECT, "members": MEMBERS_PER_PROJECT, "milestones": MILESTONES_PER_PROJECT })
         }
         "Projects" => json!({ "first": 5, "filter": Value::Null, "teams": TEAMS_PER_PROJECT }),
         // Issues that carry a label, so that the label node shape is recorded too.
@@ -591,7 +633,7 @@ pub fn fixture_variables(
             json!({ "first": 2, "filter": { "labels": { "length": { "gt": 0 } } }, "orderBy": "createdAt" })
         }
         "IssueById" => {
-            json!({ "id": first_issue?, "comments": 5, "attachments": 5, "children": 5 })
+            json!({ "id": s.issue?, "comments": 5, "attachments": 5, "children": 5 })
         }
         _ => return None,
     })
@@ -707,6 +749,11 @@ mod tests {
             "milestone delete",
             "project-update list",
             "project-update create",
+            "template list",
+            "template get",
+            "template create",
+            "template update",
+            "template delete",
             "document list",
             "document get",
             "document create",

@@ -1,0 +1,24 @@
+{
+  "templateSearch": [
+    {
+      "archivedAt": null,
+      "color": null,
+      "createdAt": "<string>",
+      "creator": {
+        "displayName": "<string>",
+        "id": "<string>",
+        "name": "<string>"
+      },
+      "description": "<string>",
+      "icon": null,
+      "id": "<string>",
+      "lastAppliedAt": null,
+      "name": "<string>",
+      "sortOrder": 0,
+      "team": null,
+      "templateData": "<string>",
+      "type": "<string>",
+      "updatedAt": "<string>"
+    }
+  ]
+}

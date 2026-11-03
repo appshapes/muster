@@ -20,8 +20,9 @@ use crate::cli::{
     ProjectStatusCommand, ProjectStatusCreateArgs, ProjectStatusRefArgs, ProjectStatusUpdateArgs,
     ProjectUpdateArgs, ProjectUpdateCommand, ProjectUpdateCreateArgs, ProjectUpdateListArgs,
     StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs,
-    TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs, UserRoleArgs,
-    UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
+    TeamRefArgs, TeamUpdateArgs, TemplateCommand, TemplateCreateArgs, TemplateListArgs,
+    TemplateRefArgs, TemplateUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs,
+    UserRoleArgs, UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -169,6 +170,16 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                     true,
                     out,
                 ),
+            }
+        }
+        Command::Template { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                TemplateCommand::List(args) => template_list(&session, args, out),
+                TemplateCommand::Get(args) => template_get(&session, args, out),
+                TemplateCommand::Create(args) => template_create(&session, args, out),
+                TemplateCommand::Update(args) => template_update(&session, args, out),
+                TemplateCommand::Delete(args) => template_delete(&session, args, out),
             }
         }
         Command::Milestone { command } => {
@@ -651,6 +662,47 @@ impl Session {
     fn issue_id(&self, identifier: &str) -> Result<String, Error> {
         let issue = self.issue(identifier, 1, 1, 1)?;
         need_str(&issue, "id", "IssueById")
+    }
+
+    /// The templates named so in the team's scope, its own and the workspace's, in one
+    /// request; an archived one only when asked (ADR 0014, group 15). Two are asked
+    /// for, one for each scope the filter admits; a scope that `--allow-duplicate` gave
+    /// several of one name is read as Linear lists them, the first two.
+    fn templates_named(
+        &self,
+        team_key: &str,
+        name: &str,
+        include_archived: bool,
+    ) -> Result<Vec<Value>, Error> {
+        let data = self.linear.run(
+            &ops::TEMPLATE_BY_NAME,
+            json!({ "key": team_key, "name": name, "includeArchived": include_archived }),
+        )?;
+        Ok(data["templateSearch"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    /// One template by name among the team's and the workspace's, as `--label`
+    /// resolves a label: the team's own first, then the workspace's (ADR 0014,
+    /// group 15). Another team's template is not in the scope and is not found.
+    fn template_named(
+        &self,
+        team_key: &str,
+        name: &str,
+        include_archived: bool,
+    ) -> Result<Value, Error> {
+        let found = self.templates_named(team_key, name, include_archived)?;
+        let own = found.iter().find(|t| !at(t, "team").is_null());
+        match own.or_else(|| found.first()) {
+            Some(template) => Ok(template.clone()),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("no template named {name:?} for team {team_key} or the workspace"),
+                "name one from `muster template list`",
+            )),
+        }
     }
 
     fn project_id(&self, name: &str) -> Result<String, Error> {
@@ -2425,6 +2477,155 @@ fn document_lifecycle(
     let id = need_str(&document, "id", "DocumentByTitle")?;
     let data = session.linear.run(op, json!({ "id": id }))?;
     out.emit(&payload(&data, field, "entity")?);
+    Ok(())
+}
+
+/// `template list`: the team's and the workspace's templates. Linear's
+/// `templateSearch` is a list with no page info, so one more than the limit is asked
+/// for, and a cut list is known from the extra one (ADR 0014, group 15).
+fn template_list(session: &Session, args: &TemplateListArgs, out: &Output) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let team_key = session.team_key()?;
+    let mut filter = Map::new();
+    filter.insert(
+        "or".into(),
+        json!([ { "team": { "key": { "eq": team_key } } }, { "team": { "null": true } } ]),
+    );
+    if let Some(kind) = args.r#type {
+        filter.insert("type".into(), json!({ "eq": kind.linear() }));
+    }
+    let data = session.linear.run(
+        &ops::TEMPLATES,
+        json!({ "first": n + 1, "filter": Value::Object(filter) }),
+    )?;
+    let mut templates = data["templateSearch"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let cut = templates.len() > n;
+    templates.truncate(n);
+    emit_list(out, templates, cut, "templates", n);
+    Ok(())
+}
+
+fn template_get(session: &Session, args: &TemplateRefArgs, out: &Output) -> Result<(), Error> {
+    let team_key = session.team_key()?;
+    out.emit(&session.template_named(&team_key, &args.name, false)?);
+    Ok(())
+}
+
+/// A template's data from its file: JSON, checked against `BODY_MAX_BYTES` by
+/// `read_body` and parsed here, since Linear takes `templateData` as JSON.
+fn template_data(path: &str) -> Result<Value, Error> {
+    let text = read_body(path)?;
+    serde_json::from_str(&text).map_err(|e| {
+        Error::with_hint(
+            ErrorCode::Usage,
+            format!("the data file is not JSON: {e}"),
+            "`--data-file` takes Linear's `templateData` as JSON; `muster template get <NAME>` shows the shape of an existing one",
+        )
+    })
+}
+
+fn template_create(
+    session: &Session,
+    args: &TemplateCreateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    check_body(Text::Name, &args.name)?;
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+    }
+    let data = template_data(&args.data_file)?;
+    let (team, _) = session.team()?;
+    let team_key = need_str(&team, "key", "Teams")?;
+    // The guard is on the name in the template's own scope, the team's templates or
+    // the workspace's, as `label create` guards a label: `template get <NAME>`
+    // resolves a name to the team's own first, then the workspace's. A failed read is
+    // itself; only a scope without the name lets the create go on.
+    if !args.allow_duplicate {
+        let found = session.templates_named(&team_key, &args.name, false)?;
+        let same_scope = found
+            .iter()
+            .find(|t| at(t, "team").is_null() == args.workspace);
+        if let Some(existing) = same_scope {
+            let scope = if args.workspace {
+                "the workspace".to_string()
+            } else {
+                format!("team {team_key}")
+            };
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "a template named {:?} exists for {scope}",
+                    str_at(existing, "name").unwrap_or(&args.name)
+                ),
+                "use that template, or pass --allow-duplicate if a second one is wanted",
+            )
+            .at("muster-template-create"));
+        }
+    }
+    let mut input = Map::new();
+    input.insert("name".into(), json!(args.name));
+    input.insert("type".into(), json!(args.r#type.linear()));
+    input.insert("templateData".into(), data);
+    if let Some(description) = &args.description {
+        input.insert("description".into(), json!(description));
+    }
+    if !args.workspace {
+        input.insert("teamId".into(), json!(need_str(&team, "id", "Teams")?));
+    }
+    let answer = session.linear.run(
+        &ops::TEMPLATE_CREATE,
+        json!({ "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&answer, "templateCreate", "template")?);
+    Ok(())
+}
+
+fn template_update(
+    session: &Session,
+    args: &TemplateUpdateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let mut input = Map::new();
+    if let Some(name) = &args.name {
+        check_body(Text::Name, name)?;
+        input.insert("name".into(), json!(name));
+    }
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if let Some(path) = &args.data_file {
+        input.insert("templateData".into(), template_data(path)?);
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --name, --description, --data-file",
+        ));
+    }
+    let team_key = session.team_key()?;
+    let template = session.template_named(&team_key, &args.template, false)?;
+    let id = need_str(&template, "id", "TemplateByName")?;
+    let answer = session.linear.run(
+        &ops::TEMPLATE_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&answer, "templateUpdate", "template")?);
+    Ok(())
+}
+
+fn template_delete(session: &Session, args: &TemplateRefArgs, out: &Output) -> Result<(), Error> {
+    let team_key = session.team_key()?;
+    let template = session.template_named(&team_key, &args.name, false)?;
+    let id = need_str(&template, "id", "TemplateByName")?;
+    let answer = session
+        .linear
+        .run(&ops::TEMPLATE_DELETE, json!({ "id": id }))?;
+    out.emit(&delete_payload(&answer, "templateDelete")?);
     Ok(())
 }
 

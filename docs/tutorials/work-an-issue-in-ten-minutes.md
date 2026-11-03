@@ -156,6 +156,14 @@ document list --project "Trying muster"` lists the project's without their conte
 `muster document get Kickoff` prints one with it, `muster document update Kickoff
 --content-file kickoff.md` replaces the text from a file, and `muster document delete
 Kickoff` puts it in the trash (`unarchive` brings it back).
+A template is a saved shape for a new issue, project or document:
+`muster template list` prints the team's and the workspace's, `muster template get
+"Bug report"` one with its `templateData` (a string of JSON, as Linear returns it;
+`jq '.templateData | fromjson'` reads it), and `muster template create
+--name "Feature" --type issue --data-file feature.json` makes one from a file holding
+that JSON (`--workspace` for one every team shares); `muster template update Feature
+--data-file feature.json` replaces the data, and `muster template delete Feature`
+deletes it, with no undo.
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):
