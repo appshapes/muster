@@ -304,6 +304,14 @@ List them, one JSON object per line.
 | --- | --- | --- | --- | --- |
 | `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
 
+### muster project get
+
+One project with its content, lifecycle, health, members and milestones, by name.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The project, by name |
+
 ### muster project create
 
 Create a project for the team; a name a project of the workspace already has is refused unless --allow-duplicate.
@@ -313,6 +321,44 @@ Create a project for the team; a name a project of the workspace already has is 
 | `--name` | `<TEXT>` | yes |  | The name |
 | `--description` | `<TEXT>` | no |  | The description, plain text |
 | `--allow-duplicate` |  | no |  | Create it even when a project of the workspace has the same name |
+
+### muster project update
+
+Change a project's name, description, content, status, lead, dates, priority, teams, members, colour or icon.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The project, by name |
+| `--name` | `<TEXT>` | no |  | A new name |
+| `--description` | `<TEXT>` | no |  | A new description, plain text |
+| `--content` | `<TEXT>` | no |  | The project's content, markdown |
+| `--content-file` | `<PATH>` | no |  | The content from a file, or from stdin when PATH is `-` |
+| `--status` | `<NAME>` | no |  | A new status, by name, one of the workspace's project statuses |
+| `--lead` | `<WHO>` | no |  | A new lead: `me`, an email address, a name, or `none` |
+| `--start-date` | `<DATE>` | no |  | The planned start, a date (2026-11-10), or `none` |
+| `--target-date` | `<DATE>` | no |  | The planned end, a date (2026-12-01), or `none` |
+| `--priority` | `<0-4>` | no |  | A new priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low |
+| `--teams` | `<KEY,...>` | no |  | The teams the project spans, by key, comma-separated; replaces the list; repeatable |
+| `--add-member` | `<WHO>` | no |  | A member to add: `me`, an email address or a name; repeatable |
+| `--remove-member` | `<WHO>` | no |  | A member to remove: `me`, an email address or a name; repeatable |
+| `--color` | `<HEX>` | no |  | A new colour, a hex string (#4ea7fc) |
+| `--icon` | `<TEXT>` | no |  | A new icon |
+
+### muster project delete
+
+Trash a project; Linear keeps it for thirty days, and `project unarchive` brings it back.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The project, by name |
+
+### muster project unarchive
+
+Bring a trashed or archived project back.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The project, by name |
 
 ### muster user list
 
@@ -513,7 +559,7 @@ A notice is one JSON object on stderr, `{"notice": {"code", "message", "hint"}}`
 | --- | --- |
 | `truncated` | a list was cut at its --limit, or an issue's comments, attachments or sub-issues at their bound; the printed items are complete, there are more |
 | `skipped` | `fixtures` found no issue to record `IssueById` on, so that file was not written |
-| `partial` | `fixtures` recorded `IssueById` on an issue that lacks comments, attachments or sub-issues, so that node shape is not in the fixture |
+| `partial` | `fixtures` recorded `IssueById` on an issue that lacks comments, attachments or sub-issues, or `ProjectByName` on a project that lacks members or milestones, so that node shape is not in the fixture |
 
 ## Bounds
 
@@ -527,6 +573,8 @@ Every limit muster has, from `crates/muster/src/bounds.rs` (CLAUDE.md, invariant
 | `ATTACHMENTS_PER_ISSUE` | 50 | items | the attachments `issue get` fetches with an issue, newest first, as Linear orders them; an issue with more writes a `truncated` notice to stderr and the oldest are the ones left out |
 | `CHILDREN_PER_ISSUE` | 50 | items | the sub-issues `issue get` fetches with an issue, newest first, as Linear orders them; a parent with more writes a `truncated` notice to stderr and the oldest are the ones left out |
 | `TEAMS_PER_PROJECT` | 10 | items | the teams `project list` and `project create` print with a project under `teams.nodes`; `project list` writes a `truncated` notice to stderr for a project in more, and a project `project create` makes has the one team, so it is never cut; bounded so that a page of PAGE_CAP projects stays inside Linear's query-complexity limit of 10,000 |
+| `MEMBERS_PER_PROJECT` | 50 | items | the members `project get` prints with a project under `members.nodes`; a project with more writes a `truncated` notice to stderr, and `project update --add-member` or `--remove-member` on it is refused, exit 6, before any request, since Linear replaces the whole member list and muster could not read it whole |
+| `MILESTONES_PER_PROJECT` | 50 | items | the milestones `project get` prints with a project under `projectMilestones.nodes`; a project with more writes a `truncated` notice to stderr |
 | `REQUEST_TIMEOUT_SECS` | 30 | seconds | one request, connect to last byte; past it a query exits 7 and a mutation exits 8 |
 | `BODY_MAX_BYTES` | 262144 | bytes | the largest description, comment, title, name, link or subtitle sent; a larger one is refused, exit 6, before any request, and the message names which one it was; Linux refuses one argv string over 128 KiB before muster runs, so from a flag's value the bound is reached only where the OS allows the argument, from a file or stdin everywhere |
 | `RESPONSE_MAX_BYTES` | 16777216 | bytes | the largest answer read; a larger one is muster's failure, exit 1 |
@@ -572,6 +620,8 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `TeamByKey` | query |
 | `TeamMembers` | query |
 | `UserById` | query |
+| `ProjectByName` | query |
+| `ProjectStatuses` | query |
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
@@ -597,3 +647,6 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `WorkflowStateCreate` | mutation |
 | `WorkflowStateUpdate` | mutation |
 | `WorkflowStateArchive` | mutation |
+| `ProjectUpdate` | mutation |
+| `ProjectDelete` | mutation |
+| `ProjectUnarchive` | mutation |

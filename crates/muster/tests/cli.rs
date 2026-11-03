@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use muster::bounds::PAGE_CAP;
+use muster::bounds::{MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, PAGE_CAP};
 use serde_json::{Value, json};
 use support::fake_linear::{Failure, Fake, KEY};
 
@@ -864,6 +864,56 @@ fn fixtures_records_the_newest_issue_that_has_comments_attachments_and_sub_issue
     assert_eq!(
         issues["issues"]["nodes"][0]["labels"]["nodes"][0]["name"], "<string>",
         "the Issues fixture is recorded on labelled issues"
+    );
+    let project: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("ProjectByName.json")).unwrap())
+            .unwrap();
+    let node = &project["projects"]["nodes"][0];
+    assert_eq!(
+        node["members"]["nodes"][0]["email"], "<string>",
+        "the member node shape is recorded"
+    );
+    assert_eq!(
+        node["projectMilestones"]["nodes"][0]["name"], "<string>",
+        "the milestone node shape is recorded"
+    );
+
+    // The recorder prefers a project with a member and a milestone over a newer one
+    // with neither, and says in a `partial` notice what the project it had to settle
+    // for lacks (ADR 0014).
+    let empty = muster(&fake, &["project", "create", "--name", "Empty"]);
+    assert_eq!(empty.code, 0, "{}", empty.stderr);
+    let again = muster(&fake, &["fixtures", temp_dir().to_str().unwrap()]);
+    assert_eq!(again.code, 0, "{}", again.stderr);
+    assert!(
+        again.notices().is_empty(),
+        "Muster has both, so Empty is passed over: {}",
+        again.stderr
+    );
+    let fewer = muster(
+        &fake,
+        &["project", "update", "Muster", "--remove-member", "me"],
+    );
+    assert_eq!(fewer.code, 0, "{}", fewer.stderr);
+    let lacking = muster(&fake, &["fixtures", temp_dir().to_str().unwrap()]);
+    assert_eq!(lacking.code, 0, "{}", lacking.stderr);
+    let notices = lacking.notices();
+    assert_eq!(notices.len(), 1, "{}", lacking.stderr);
+    assert_eq!(notices[0]["code"], "partial");
+    let message = notices[0]["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("ProjectByName: recorded on \"Muster\"")
+            && message.contains("no member")
+            && !message.contains("milestone"),
+        "{message}"
+    );
+    assert!(
+        notices[0]["hint"]
+            .as_str()
+            .unwrap()
+            .contains("--add-member me"),
+        "{}",
+        lacking.stderr
     );
 }
 
@@ -1789,6 +1839,297 @@ fn user_get_update_role_suspension_and_sessions() {
     assert_eq!(run.code, 7, "{}", run.stderr);
 }
 
+// ---- project get, update, delete, unarchive (ADR 0014, group 8) --------------------------
+
+#[test]
+fn project_get_prints_the_detail_and_bounds_the_members_and_milestones() {
+    let fake = Fake::start().unwrap();
+    let run = muster(&fake, &["project", "get", "muster"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let v = run.one();
+    assert_eq!(v["name"], "Muster");
+    assert_eq!(v["status"]["name"], "Planned");
+    assert_eq!(v["lead"]["displayName"], "fake");
+    assert_eq!(v["teams"]["nodes"][0]["key"], "APP");
+    assert_eq!(v["members"]["nodes"][0]["displayName"], "fake");
+    let milestone = &v["projectMilestones"]["nodes"][0];
+    assert_eq!(milestone["name"], "First cut");
+    assert_eq!(milestone["targetDate"], "2026-12-01");
+    assert!(milestone["status"].is_string() && milestone["progress"].is_number());
+    assert_eq!(v["projectMilestones"]["nodes"].as_array().unwrap().len(), 1);
+    assert!(v["slugId"].is_string() && v["progress"].is_number() && v["createdAt"].is_string());
+    assert!(v["content"].is_null() && v["trashed"].is_null() && v["archivedAt"].is_null());
+    assert!(v["creator"]["id"].is_string());
+    assert_eq!(fake.operations(), vec!["ProjectByName"], "one request");
+    assert!(run.notices().is_empty());
+    let nope = muster(&fake, &["project", "get", "Nope"]);
+    assert_eq!(nope.code, 4, "{}", nope.stderr);
+
+    // MILESTONES_PER_PROJECT at the bound: the seeded milestone and fifty more make
+    // fifty-one, the page holds fifty, and the notice says so.
+    fake.add_project_milestones("Muster", MILESTONES_PER_PROJECT);
+    let stones = muster(&fake, &["project", "get", "Muster"]);
+    assert_eq!(stones.code, 0, "{}", stones.stderr);
+    assert_eq!(
+        stones.one()["projectMilestones"]["nodes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        MILESTONES_PER_PROJECT
+    );
+    assert_eq!(
+        stones.one()["projectMilestones"]["pageInfo"]["hasNextPage"],
+        true
+    );
+    let notices = stones.notices();
+    assert_eq!(notices.len(), 1, "{}", stones.stderr);
+    assert!(
+        notices[0]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("projectMilestones:")
+            && notices[0]["hint"]
+                .as_str()
+                .unwrap()
+                .contains("MILESTONES_PER_PROJECT"),
+        "{}",
+        stones.stderr
+    );
+
+    // MEMBERS_PER_PROJECT at the bound, the same way; both connections are now cut, so
+    // there is one notice per connection, in the order the fields are printed.
+    fake.add_project_members("Muster", MEMBERS_PER_PROJECT);
+    let cut = muster(&fake, &["project", "get", "Muster"]);
+    assert_eq!(cut.code, 0, "{}", cut.stderr);
+    assert_eq!(
+        cut.one()["members"]["nodes"].as_array().unwrap().len(),
+        MEMBERS_PER_PROJECT
+    );
+    assert_eq!(cut.one()["members"]["pageInfo"]["hasNextPage"], true);
+    let notices = cut.notices();
+    assert_eq!(notices.len(), 2, "{}", cut.stderr);
+    assert!(
+        notices[0]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("members:")
+            && notices[0]["hint"]
+                .as_str()
+                .unwrap()
+                .contains("MEMBERS_PER_PROJECT"),
+        "{}",
+        cut.stderr
+    );
+    assert!(
+        notices[1]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("projectMilestones:"),
+        "{}",
+        cut.stderr
+    );
+    let refused = muster(
+        &fake,
+        &["project", "update", "Muster", "--add-member", "other"],
+    );
+    assert_eq!(
+        refused.code, 6,
+        "a member list that cannot be read whole is not replaced: {}",
+        refused.stderr
+    );
+    assert!(
+        refused.error()["message"]
+            .as_str()
+            .unwrap()
+            .contains("MEMBERS_PER_PROJECT"),
+        "{}",
+        refused.stderr
+    );
+    assert!(
+        !fake.operations().iter().any(|o| o == "ProjectUpdate"),
+        "refused before any mutation"
+    );
+    let renamed = muster(
+        &fake,
+        &["project", "update", "Muster", "--name", "Muster 2"],
+    );
+    assert_eq!(
+        renamed.code, 0,
+        "a change that leaves the members alone goes through: {}",
+        renamed.stderr
+    );
+
+    fake.fail_next("ProjectByName", Failure::Drop);
+    let run = muster(&fake, &["project", "get", "Muster 2"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+}
+
+#[test]
+fn project_update_delete_and_unarchive() {
+    let fake = Fake::start().unwrap();
+    fake.add_team("OPS", "Operations");
+    let dir = temp_dir();
+    let content = write(
+        &dir,
+        "content.md",
+        "# The plan
+
+Three steps.
+",
+    );
+    let run = muster(
+        &fake,
+        &[
+            "project",
+            "update",
+            "Muster",
+            "--description",
+            "Renewed.",
+            "--content-file",
+            &content,
+            "--status",
+            "In Progress",
+            "--lead",
+            "other@example.com",
+            "--start-date",
+            "2026-11-10",
+            "--target-date",
+            "2026-12-01",
+            "--priority",
+            "2",
+            "--teams",
+            "APP,OPS",
+            "--add-member",
+            "other",
+            "--color",
+            "#4ea7fc",
+        ],
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let v = run.one();
+    assert_eq!(v["description"], "Renewed.");
+    assert_eq!(
+        v["status"]["name"], "In Progress",
+        "resolved among the workspace's statuses"
+    );
+    assert_eq!(v["lead"]["displayName"], "other");
+    assert_eq!(v["startDate"], "2026-11-10");
+    assert_eq!(v["targetDate"], "2026-12-01");
+    assert_eq!(v["priority"], 2);
+    assert_eq!(v["teams"]["nodes"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        v["name"], "Muster",
+        "a flag left out leaves its field alone"
+    );
+    let detail = muster(&fake, &["project", "get", "Muster"]).one();
+    assert_eq!(
+        detail["content"],
+        "# The plan
+
+Three steps.
+"
+    );
+    assert_eq!(
+        detail["members"]["nodes"].as_array().unwrap().len(),
+        2,
+        "me and other"
+    );
+    let inline = muster(
+        &fake,
+        &["project", "update", "Muster", "--content", "One line."],
+    );
+    assert_eq!(inline.code, 0, "{}", inline.stderr);
+    assert_eq!(
+        muster(&fake, &["project", "get", "Muster"]).one()["content"],
+        "One line.",
+        "--content inline, as --content-file from a file"
+    );
+    let both = muster(
+        &fake,
+        &[
+            "project",
+            "update",
+            "Muster",
+            "--content",
+            "x",
+            "--content-file",
+            &content,
+        ],
+    );
+    assert_eq!(
+        both.code, 2,
+        "--content and --content-file conflict: {}",
+        both.stderr
+    );
+    let fewer = muster(
+        &fake,
+        &[
+            "project",
+            "update",
+            "Muster",
+            "--remove-member",
+            "me",
+            "--lead",
+            "none",
+            "--target-date",
+            "none",
+        ],
+    );
+    assert_eq!(fewer.code, 0, "{}", fewer.stderr);
+    assert!(fewer.one()["lead"].is_null() && fewer.one()["targetDate"].is_null());
+    let detail = muster(&fake, &["project", "get", "Muster"]).one();
+    assert_eq!(detail["members"]["nodes"][0]["displayName"], "other");
+    let no_status = muster(&fake, &["project", "update", "Muster", "--status", "Nope"]);
+    assert_eq!(no_status.code, 4, "{}", no_status.stderr);
+    let no_teams = muster(&fake, &["project", "update", "Muster", "--teams", ""]);
+    assert_eq!(no_teams.code, 2, "{}", no_teams.stderr);
+    let nothing = muster(&fake, &["project", "update", "Muster"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "ProjectUpdate")
+            .count(),
+        3,
+        "the refusals sent nothing"
+    );
+
+    let gone = muster(&fake, &["project", "delete", "Muster"]);
+    assert_eq!(gone.code, 0, "{}", gone.stderr);
+    assert_eq!(gone.one()["name"], "Muster", "Linear's entity, as it is");
+    let listed = muster(&fake, &["project", "list"]);
+    assert!(
+        listed.lines().iter().all(|p| p["name"] != "Muster"),
+        "a trashed project is not listed"
+    );
+    let get = muster(&fake, &["project", "get", "Muster"]);
+    assert_eq!(get.code, 4, "{}", get.stderr);
+    let back = muster(&fake, &["project", "unarchive", "Muster"]);
+    assert_eq!(back.code, 0, "{}", back.stderr);
+    assert_eq!(back.one()["name"], "Muster");
+    let detail = muster(&fake, &["project", "get", "Muster"]).one();
+    assert!(detail["trashed"].is_null() && detail["archivedAt"].is_null());
+    let twice = muster(&fake, &["project", "unarchive", "Muster"]);
+    assert_eq!(twice.code, 4, "not trashed: {}", twice.stderr);
+
+    for (op, args) in [
+        (
+            "ProjectUpdate",
+            vec!["project", "update", "Muster", "--priority", "1"],
+        ),
+        ("ProjectDelete", vec!["project", "delete", "Muster"]),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+    let gone = muster(&fake, &["project", "delete", "Muster"]);
+    assert_eq!(gone.code, 0, "{}", gone.stderr);
+    fake.fail_next("ProjectUnarchive", Failure::Drop);
+    let run = muster(&fake, &["project", "unarchive", "Muster"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+}
+
 // ---- states (ADR 0014, group 7) ----------------------------------------------------------
 
 #[test]
@@ -2674,8 +3015,13 @@ fn the_fakes_answers_have_the_recorded_shapes() {
             .unwrap_or_else(|| panic!("fixture {name} names no operation"));
         let fixture: Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        let variables =
-            muster::cli::schema::fixture_variables(&name, Some("APP-1"), Some("APP")).unwrap();
+        let variables = muster::cli::schema::fixture_variables(
+            &name,
+            Some("APP-1"),
+            Some("APP"),
+            Some("Muster"),
+        )
+        .unwrap();
         let answer = post(
             &fake.endpoint(),
             &json!({ "query": op.document(), "operationName": op.name, "variables": variables }),

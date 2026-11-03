@@ -37,6 +37,15 @@ pub const CHILDREN_PER_ISSUE: usize = 50;
 /// `project list --limit 250` at 20 teams per project as "Query too complex" (complexity
 /// 13,525), and accepts it at 10.
 pub const TEAMS_PER_PROJECT: usize = 10;
+/// How many members `project get` prints with a project, under `members.nodes`. A
+/// project with more is reported cut with a notice on stderr, and `project update
+/// --add-member` and `--remove-member` refuse to replace a member list they could not
+/// read whole (ADR 0014, group 8).
+pub const MEMBERS_PER_PROJECT: usize = 50;
+/// How many milestones `project get` prints with a project, under
+/// `projectMilestones.nodes`. A project with more is reported cut with a notice on
+/// stderr.
+pub const MILESTONES_PER_PROJECT: usize = 50;
 /// How long one request may take, connect to last byte. Past it a query exits 7 and a
 /// mutation exits 8.
 pub const REQUEST_TIMEOUT_SECS: u64 = 30;
@@ -91,6 +100,18 @@ pub const ALL: &[Bound] = &[
         value: TEAMS_PER_PROJECT as u64,
         unit: "items",
         meaning: "the teams `project list` and `project create` print with a project under `teams.nodes`; `project list` writes a `truncated` notice to stderr for a project in more, and a project `project create` makes has the one team, so it is never cut; bounded so that a page of PAGE_CAP projects stays inside Linear's query-complexity limit of 10,000",
+    },
+    Bound {
+        name: "MEMBERS_PER_PROJECT",
+        value: MEMBERS_PER_PROJECT as u64,
+        unit: "items",
+        meaning: "the members `project get` prints with a project under `members.nodes`; a project with more writes a `truncated` notice to stderr, and `project update --add-member` or `--remove-member` on it is refused, exit 6, before any request, since Linear replaces the whole member list and muster could not read it whole",
+    },
+    Bound {
+        name: "MILESTONES_PER_PROJECT",
+        value: MILESTONES_PER_PROJECT as u64,
+        unit: "items",
+        meaning: "the milestones `project get` prints with a project under `projectMilestones.nodes`; a project with more writes a `truncated` notice to stderr",
     },
     Bound {
         name: "REQUEST_TIMEOUT_SECS",

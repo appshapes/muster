@@ -121,6 +121,23 @@ pub const STATE_FIELDS: &str = "fragment StateFields on WorkflowState {
   id name type position color description team { id key }
 }";
 
+/// What `project get` prints beyond `ProjectFields` (ADR 0014, group 8): the content,
+/// the lifecycle times, the health and progress, the creator, the last update, and
+/// the members and milestones, each bounded.
+pub const PROJECT_DETAIL_FIELDS: &str = "fragment ProjectDetailFields on Project {
+  content slugId color icon health progress scope
+  startedAt completedAt canceledAt trashed createdAt updatedAt archivedAt
+  creator { id name displayName }
+  lastUpdate { id health createdAt }
+  members(first: $members) { nodes { id name displayName email } pageInfo { hasNextPage } }
+  projectMilestones(first: $milestones) { nodes { id name targetDate status progress } pageInfo { hasNextPage } }
+}";
+
+/// The fields every project status answer carries (ADR 0014, groups 8 and 9).
+pub const PROJECT_STATUS_FIELDS: &str = "fragment ProjectStatusFields on ProjectStatus {
+  id name color description position type indefinite
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -255,6 +272,28 @@ op!(
   user(id: $id) { ...UserFields }
 }",
     &[USER_FIELDS]
+);
+
+op!(
+    PROJECT_BY_NAME,
+    "ProjectByName",
+    Kind::Query,
+    "query ProjectByName($name: String!, $includeArchived: Boolean, $teams: Int!, $members: Int!, $milestones: Int!) {
+  projects(first: 1, filter: { name: { eqIgnoreCase: $name } }, includeArchived: $includeArchived) {
+    nodes { ...ProjectFields ...ProjectDetailFields }
+  }
+}",
+    &[PROJECT_FIELDS, PROJECT_DETAIL_FIELDS]
+);
+
+op!(
+    PROJECT_STATUSES,
+    "ProjectStatuses",
+    Kind::Query,
+    "query ProjectStatuses($first: Int!) {
+  projectStatuses(first: $first) { nodes { ...ProjectStatusFields } pageInfo { hasNextPage } }
+}",
+    &[PROJECT_STATUS_FIELDS]
 );
 
 op!(
@@ -511,6 +550,36 @@ op!(
     &[STATE_FIELDS]
 );
 
+op!(
+    PROJECT_UPDATE,
+    "ProjectUpdate",
+    Kind::Mutation,
+    "mutation ProjectUpdate($id: String!, $input: ProjectUpdateInput!, $teams: Int!) {
+  projectUpdate(id: $id, input: $input) { success project { ...ProjectFields } }
+}",
+    &[PROJECT_FIELDS]
+);
+
+op!(
+    PROJECT_DELETE,
+    "ProjectDelete",
+    Kind::Mutation,
+    "mutation ProjectDelete($id: String!, $teams: Int!) {
+  projectDelete(id: $id) { success entity { ...ProjectFields } }
+}",
+    &[PROJECT_FIELDS]
+);
+
+op!(
+    PROJECT_UNARCHIVE,
+    "ProjectUnarchive",
+    Kind::Mutation,
+    "mutation ProjectUnarchive($id: String!, $teams: Int!) {
+  projectUnarchive(id: $id) { success entity { ...ProjectFields } }
+}",
+    &[PROJECT_FIELDS]
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -525,6 +594,8 @@ pub static READS: &[&Operation] = &[
     &TEAM_BY_KEY,
     &TEAM_MEMBERS,
     &USER_BY_ID,
+    &PROJECT_BY_NAME,
+    &PROJECT_STATUSES,
 ];
 
 /// Every write operation.
@@ -554,6 +625,9 @@ pub static WRITES: &[&Operation] = &[
     &STATE_CREATE,
     &STATE_UPDATE,
     &STATE_ARCHIVE,
+    &PROJECT_UPDATE,
+    &PROJECT_DELETE,
+    &PROJECT_UNARCHIVE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -604,6 +678,8 @@ mod tests {
                 "UserFields",
                 "LabelFields",
                 "StateFields",
+                "ProjectDetailFields",
+                "ProjectStatusFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));

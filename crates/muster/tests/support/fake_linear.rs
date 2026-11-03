@@ -46,6 +46,10 @@ struct Workspace {
     comments: Vec<Value>,
     attachments: Vec<Value>,
     memberships: Vec<Value>,
+    /// The workspace's project statuses, in position order.
+    project_statuses: Vec<Value>,
+    /// The milestones of every project, each with its `projectId`.
+    milestones: Vec<Value>,
 }
 
 struct State {
@@ -144,13 +148,55 @@ impl Fake {
             teams.push(json!({ "id": team["id"], "key": team["key"] }));
             st.ws.teams.push(team);
         }
-        let (id, status_id) = (st.ws.id(), st.ws.id());
-        st.ws.projects.push(json!({
-            "id": id, "name": name, "url": format!("https://linear.app/fake/project/{}", name.to_ascii_lowercase()),
-            "description": "", "priority": 0, "startDate": null, "targetDate": null,
-            "status": { "id": status_id, "name": "Backlog", "type": "backlog" },
-            "lead": null, "teams": { "nodes": teams },
-        }));
+        let backlog = st.ws.project_statuses[0].clone();
+        let team_values: Vec<Value> = teams
+            .iter()
+            .filter_map(|t| st.ws.teams.iter().find(|x| x["id"] == t["id"]).cloned())
+            .collect();
+        let project = st.ws.new_project(name, "", &team_values, &backlog);
+        st.ws.projects.push(project);
+    }
+
+    /// Add `n` new users as members of a project, for the bound tests.
+    pub fn add_project_members(&self, project: &str, n: usize) {
+        let mut st = self.state.lock().unwrap();
+        let index = st
+            .ws
+            .projects
+            .iter()
+            .position(|p| p["name"] == project)
+            .expect("the project exists");
+        let mut ids: Vec<Value> = st.ws.projects[index]["memberIds"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        for k in 1..=n {
+            let user = st.ws.new_user(
+                &format!("Member {k}"),
+                &format!("member{k}"),
+                &format!("member{k}@example.com"),
+                false,
+                false,
+            );
+            ids.push(user["id"].clone());
+        }
+        st.ws.projects[index]["memberIds"] = json!(ids);
+    }
+
+    /// Add `n` milestones to a project, for the bound tests.
+    pub fn add_project_milestones(&self, project: &str, n: usize) {
+        let mut st = self.state.lock().unwrap();
+        let id = st
+            .ws
+            .projects
+            .iter()
+            .find(|p| p["name"] == project)
+            .map(|p| p["id"].clone())
+            .expect("the project exists");
+        for k in 1..=n {
+            st.ws
+                .new_milestone(&id, &format!("Milestone {k}"), Some("2026-12-01"));
+        }
     }
 
     /// Add `n` links to an issue, for the bound tests.
@@ -464,6 +510,8 @@ impl Workspace {
             comments: Vec::new(),
             attachments: Vec::new(),
             memberships: Vec::new(),
+            project_statuses: Vec::new(),
+            milestones: Vec::new(),
         };
         // Every field `Workspace` asks for, with the values a Free workspace shows; the
         // fixture holds this to the recorded shape (ADR 0010; ADR 0014, group 1).
@@ -508,8 +556,35 @@ impl Workspace {
             false,
         );
         ws.labels.push(team_label);
-        let project = json!({ "id": ws.id(), "name": "Muster", "url": "https://linear.app/fake/project/muster", "description": "the fake project", "priority": 0, "startDate": null, "targetDate": null, "status": { "id": ws.id(), "name": "Planned", "type": "planned" }, "lead": { "id": me["id"], "name": me["name"], "displayName": me["displayName"] }, "teams": { "nodes": [ { "id": team["id"], "key": "APP" } ] } });
+        // Linear's default project statuses, as the appshapes workspace lists them.
+        for (pos, (name, kind, color, indefinite)) in [
+            ("Backlog", "backlog", "#bec2c8", true),
+            ("Planned", "planned", "#4ea7fc", true),
+            ("In Progress", "started", "#f2c94c", false),
+            ("Completed", "completed", "#5e6ad2", true),
+            ("Canceled", "canceled", "#95a2b3", true),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let sid = ws.id();
+            ws.project_statuses.push(json!({ "id": sid, "name": name, "type": kind, "color": color, "description": null, "position": pos as f64, "indefinite": indefinite, "archivedAt": null }));
+        }
+        let planned = ws.project_statuses[1].clone();
+        let mut project = ws.new_project(
+            "Muster",
+            "the fake project",
+            std::slice::from_ref(&team),
+            &planned,
+        );
+        project["lead"] =
+            json!({ "id": me["id"], "name": me["name"], "displayName": me["displayName"] });
+        project["memberIds"] = json!([me["id"]]);
+        let project_id = project["id"].clone();
         ws.projects.push(project);
+        // One milestone, so that `project get` prints a node and the recorder finds
+        // one (ADR 0014, group 8).
+        ws.new_milestone(&project_id, "First cut", Some("2026-12-01"));
         let a = ws.new_issue(
             "APP",
             "Get familiar with Linear",
@@ -636,6 +711,95 @@ impl Workspace {
             }),
         );
         team
+    }
+
+    /// A project with every field `ProjectFields` and `ProjectDetailFields` ask for
+    /// (ADR 0013; ADR 0014, group 8), not yet pushed; `memberIds` and `archivedAt`
+    /// are the fake's own and the views leave them out.
+    fn new_project(
+        &mut self,
+        name: &str,
+        description: &str,
+        teams: &[Value],
+        status: &Value,
+    ) -> Value {
+        let slug: String = name
+            .to_ascii_lowercase()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect();
+        let (id, now) = (self.id(), self.now());
+        let me = &self.users[0];
+        json!({
+            "id": id, "name": name, "url": format!("https://linear.app/fake/project/{slug}"), "slugId": slug,
+            "description": description, "content": null, "priority": 0, "startDate": null, "targetDate": null,
+            "status": { "id": status["id"], "name": status["name"], "type": status["type"] },
+            "lead": null, "teams": { "nodes": teams.iter().map(|t| json!({ "id": t["id"], "key": t["key"] })).collect::<Vec<_>>() },
+            "color": "#bec2c8", "icon": null, "health": null, "progress": 0.0, "scope": 0.0,
+            "startedAt": null, "completedAt": null, "canceledAt": null, "trashed": null,
+            "createdAt": now, "updatedAt": now, "archivedAt": null,
+            "creator": { "id": me["id"], "name": me["name"], "displayName": me["displayName"] },
+            "lastUpdate": null, "memberIds": [],
+        })
+    }
+
+    /// A milestone of a project, with every field `ProjectDetailFields` asks for under
+    /// `projectMilestones` (ADR 0014, group 8), pushed; `projectId` is the fake's own
+    /// and the view leaves it out.
+    fn new_milestone(&mut self, project_id: &Value, name: &str, target_date: Option<&str>) {
+        let id = self.id();
+        self.milestones.push(json!({
+            "id": id, "projectId": project_id, "name": name, "targetDate": target_date,
+            "status": "unstarted", "progress": 0.0,
+        }));
+    }
+
+    /// A project as `ProjectByName` answers it: the detail fields with `members` and
+    /// `projectMilestones` paged at their bounds, the fake's own fields left out.
+    fn project_detail(
+        &self,
+        project: &Value,
+        teams: usize,
+        members: usize,
+        milestones: usize,
+    ) -> Value {
+        let mut view = Workspace::project_view(project, teams);
+        for field in [
+            "content",
+            "slugId",
+            "color",
+            "icon",
+            "health",
+            "progress",
+            "scope",
+            "startedAt",
+            "completedAt",
+            "canceledAt",
+            "trashed",
+            "createdAt",
+            "updatedAt",
+            "archivedAt",
+            "creator",
+            "lastUpdate",
+        ] {
+            view[field] = project[field].clone();
+        }
+        let people: Vec<Value> = project["memberIds"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|id| self.users.iter().find(|u| &u["id"] == id))
+            .map(|u| json!({ "id": u["id"], "name": u["name"], "displayName": u["displayName"], "email": u["email"] }))
+            .collect();
+        view["members"] = Workspace::page(people, members);
+        let stones: Vec<Value> = self
+            .milestones
+            .iter()
+            .filter(|m| m["projectId"] == project["id"])
+            .map(|m| json!({ "id": m["id"], "name": m["name"], "targetDate": m["targetDate"], "status": m["status"], "progress": m["progress"] }))
+            .collect();
+        view["projectMilestones"] = Workspace::page(stones, milestones);
+        view
     }
 
     /// A state as `StateFields` answers it: without the archive flag the fake keeps.
@@ -893,14 +1057,27 @@ impl Workspace {
         view
     }
 
-    /// A project as `Projects` and `ProjectCreate` answer it: its `teams` paged at
-    /// `first: $teams`, as Linear pages a nested connection.
+    /// A project as `Projects` and `ProjectCreate` answer it: `ProjectFields` with
+    /// its `teams` paged at `first: $teams`, as Linear pages a nested connection.
     fn project_view(project: &Value, teams: usize) -> Value {
-        let mut view = project.clone();
-        let all: Vec<Value> = view["teams"]["nodes"]
+        let all: Vec<Value> = project["teams"]["nodes"]
             .as_array()
             .cloned()
             .unwrap_or_default();
+        let mut view = json!({});
+        for field in [
+            "id",
+            "name",
+            "url",
+            "description",
+            "priority",
+            "startDate",
+            "targetDate",
+            "status",
+            "lead",
+        ] {
+            view[field] = project[field].clone();
+        }
         view["teams"] = Workspace::page(all, teams);
         view
     }
@@ -1253,10 +1430,20 @@ impl Workspace {
                 let Some(teams) = vars["teams"].as_u64().map(|n| n as usize) else {
                     return missing_variable("teams", "Int!");
                 };
+                // The filter is answered from the detail view, which carries the
+                // `members` and `projectMilestones` connections the recorder's sampler
+                // filters on, as Linear filters a project by its relations; the page
+                // prints `ProjectFields`.
                 let projects: Vec<Value> = self
                     .projects
                     .iter()
-                    .filter(|p| passes(p, filter))
+                    .filter(|p| {
+                        p["archivedAt"].is_null()
+                            && passes(
+                                &self.project_detail(p, teams, usize::MAX, usize::MAX),
+                                filter,
+                            )
+                    })
                     .map(|p| Workspace::project_view(p, teams))
                     .collect();
                 (
@@ -1277,6 +1464,159 @@ impl Workspace {
                 (
                     200,
                     json!({ "data": { "users": Workspace::page(users, first) } }),
+                )
+            }
+            "ProjectByName" => {
+                let (Some(teams), Some(members), Some(milestones)) = (
+                    vars["teams"].as_u64().map(|n| n as usize),
+                    vars["members"].as_u64().map(|n| n as usize),
+                    vars["milestones"].as_u64().map(|n| n as usize),
+                ) else {
+                    return missing_variable("members", "Int!");
+                };
+                let name = vars["name"].as_str().unwrap_or("");
+                let include_archived = vars["includeArchived"].as_bool().unwrap_or(false);
+                let found: Vec<Value> = self
+                    .projects
+                    .iter()
+                    .filter(|p| {
+                        (include_archived || p["archivedAt"].is_null())
+                            && p["name"]
+                                .as_str()
+                                .is_some_and(|n| n.eq_ignore_ascii_case(name))
+                    })
+                    .map(|p| self.project_detail(p, teams, members, milestones))
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "projects": Workspace::page(found, 1) } }),
+                )
+            }
+            "ProjectStatuses" => {
+                let statuses: Vec<Value> = self
+                    .project_statuses
+                    .iter()
+                    .filter(|s| s["archivedAt"].is_null())
+                    .map(Workspace::state_view)
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "projectStatuses": Workspace::page(statuses, first) } }),
+                )
+            }
+            "ProjectUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(teams) = vars["teams"].as_u64().map(|n| n as usize) else {
+                    return missing_variable("teams", "Int!");
+                };
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "ProjectUpdateInput!");
+                };
+                let Some(index) = self
+                    .projects
+                    .iter()
+                    .position(|p| p["id"] == id && p["archivedAt"].is_null())
+                else {
+                    return not_found("Project");
+                };
+                let now = self.now();
+                let mut project = self.projects[index].clone();
+                for (field, value) in input {
+                    match field.as_str() {
+                        "statusId" => {
+                            project["status"] = match self
+                                .project_statuses
+                                .iter()
+                                .find(|s| s["id"] == value)
+                            {
+                                Some(s) => {
+                                    json!({ "id": s["id"], "name": s["name"], "type": s["type"] })
+                                }
+                                None => return not_found("ProjectStatus"),
+                            };
+                        }
+                        "leadId" => {
+                            project["lead"] = match value.as_str() {
+                                Some(uid) => match self.users.iter().find(|u| u["id"] == uid) {
+                                    Some(u) => {
+                                        json!({ "id": u["id"], "name": u["name"], "displayName": u["displayName"] })
+                                    }
+                                    None => return not_found("User"),
+                                },
+                                None => Value::Null,
+                            };
+                        }
+                        "teamIds" => {
+                            let ids: Vec<Value> = value.as_array().cloned().unwrap_or_default();
+                            let teams: Option<Vec<Value>> = ids
+                                .iter()
+                                .map(|tid| {
+                                    self.teams
+                                        .iter()
+                                        .find(|t| &t["id"] == tid)
+                                        .map(|t| json!({ "id": t["id"], "key": t["key"] }))
+                                })
+                                .collect();
+                            match teams {
+                                Some(list) if !list.is_empty() => {
+                                    project["teams"] = json!({ "nodes": list })
+                                }
+                                _ => return not_found("Team"),
+                            }
+                        }
+                        "memberIds" => {
+                            let ids: Vec<Value> = value.as_array().cloned().unwrap_or_default();
+                            if ids
+                                .iter()
+                                .any(|uid| !self.users.iter().any(|u| &u["id"] == uid))
+                            {
+                                return not_found("User");
+                            }
+                            project["memberIds"] = json!(ids);
+                        }
+                        other => {
+                            project[other] = value;
+                        }
+                    }
+                }
+                project["updatedAt"] = json!(now);
+                self.projects[index] = project.clone();
+                (
+                    200,
+                    json!({ "data": { "projectUpdate": { "success": true, "project": Workspace::project_view(&project, teams) } } }),
+                )
+            }
+            "ProjectDelete" | "ProjectUnarchive" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(teams) = vars["teams"].as_u64().map(|n| n as usize) else {
+                    return missing_variable("teams", "Int!");
+                };
+                let deleting = op == "ProjectDelete";
+                let Some(index) = self
+                    .projects
+                    .iter()
+                    .position(|p| p["id"] == id && (p["archivedAt"].is_null() == deleting))
+                else {
+                    return not_found("Project");
+                };
+                let now = self.now();
+                let project = &mut self.projects[index];
+                if deleting {
+                    project["archivedAt"] = json!(now);
+                    project["trashed"] = json!(true);
+                } else {
+                    project["archivedAt"] = Value::Null;
+                    project["trashed"] = Value::Null;
+                }
+                let view = Workspace::project_view(project, teams);
+                let field = if deleting {
+                    "projectDelete"
+                } else {
+                    "projectUnarchive"
+                };
+                (
+                    200,
+                    json!({ "data": { field: { "success": true, "entity": view } } }),
                 )
             }
             "WorkflowStateCreate" => {
@@ -1836,14 +2176,18 @@ impl Workspace {
                     .chars()
                     .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
                     .collect();
-                let (id, status_id) = (self.id(), self.id());
-                let project = json!({
-                    "id": id, "name": name, "url": format!("https://linear.app/fake/project/{slug}"),
-                    "description": input["description"].as_str().unwrap_or(""), "priority": 0,
-                    "startDate": null, "targetDate": null,
-                    "status": { "id": status_id, "name": "Backlog", "type": "backlog" },
-                    "lead": null, "teams": { "nodes": teams },
-                });
+                let _ = slug;
+                let backlog = self.project_statuses[0].clone();
+                let team_values: Vec<Value> = teams
+                    .iter()
+                    .filter_map(|t| self.teams.iter().find(|x| x["id"] == t["id"]).cloned())
+                    .collect();
+                let project = self.new_project(
+                    name,
+                    input["description"].as_str().unwrap_or(""),
+                    &team_values,
+                    &backlog,
+                );
                 let Some(teams) = vars["teams"].as_u64().map(|n| n as usize) else {
                     return missing_variable("teams", "Int!");
                 };

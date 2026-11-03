@@ -105,6 +105,14 @@ already has is exit 6 unless `--allow-duplicate`, so that `--project "Trying mus
 `issue create` and `issue update` keeps naming one project, and
 `muster issue list --project "Trying muster"` lists the team's open issues in it
 (`--project none` those in no project). `just quickstart` runs both against the fake.
+`muster project get "Trying muster"` prints the project whole: its `content`,
+`status`, `lead`, dates, `health` and `progress`, and its `members` and
+`projectMilestones`, each bounded (`MEMBERS_PER_PROJECT`, `MILESTONES_PER_PROJECT`)
+with a `truncated` notice past the bound. `muster project update "Trying muster"
+--status "In Progress" --lead me --target-date 2026-12-01` changes it, one flag per
+field, `none` clearing a lead or a date; `muster project delete "Trying muster"`
+trashes it for thirty days and `muster project unarchive "Trying muster"` brings it
+back ([ADR 0014](../decisions/0014-build-the-third-slice-administrative-commands.md)).
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):

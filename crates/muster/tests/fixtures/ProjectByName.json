@@ -1,0 +1,64 @@
+{
+  "projects": {
+    "nodes": [
+      {
+        "archivedAt": null,
+        "canceledAt": null,
+        "color": "<string>",
+        "completedAt": null,
+        "content": null,
+        "createdAt": "<string>",
+        "creator": {
+          "displayName": "<string>",
+          "id": "<string>",
+          "name": "<string>"
+        },
+        "description": "<string>",
+        "health": null,
+        "icon": null,
+        "id": "<string>",
+        "lastUpdate": null,
+        "lead": null,
+        "members": {
+          "nodes": [],
+          "pageInfo": {
+            "hasNextPage": true
+          }
+        },
+        "name": "<string>",
+        "priority": 0,
+        "progress": 0,
+        "projectMilestones": {
+          "nodes": [],
+          "pageInfo": {
+            "hasNextPage": true
+          }
+        },
+        "scope": 0,
+        "slugId": "<string>",
+        "startDate": null,
+        "startedAt": null,
+        "status": {
+          "id": "<string>",
+          "name": "<string>",
+          "type": "<string>"
+        },
+        "targetDate": null,
+        "teams": {
+          "nodes": [
+            {
+              "id": "<string>",
+              "key": "<string>"
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": true
+          }
+        },
+        "trashed": null,
+        "updatedAt": "<string>",
+        "url": "<string>"
+      }
+    ]
+  }
+}

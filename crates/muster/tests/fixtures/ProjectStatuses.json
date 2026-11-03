@@ -1,0 +1,18 @@
+{
+  "projectStatuses": {
+    "nodes": [
+      {
+        "color": "<string>",
+        "description": null,
+        "id": "<string>",
+        "indefinite": true,
+        "name": "<string>",
+        "position": 0,
+        "type": "<string>"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": true
+    }
+  }
+}
