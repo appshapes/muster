@@ -501,11 +501,11 @@ fn compare(value: &Value, comparator: &Value) -> bool {
     })
 }
 
-/// Whether an object passes a filter: each key is a field (with nested filters for
-/// objects), `and`/`or` combine, and a `nodes` list under a field matches if any node does.
 /// How many nodes a collection clause of a filter sees, Linear's largest page.
 const PAGE_CAP_FOR_FILTERS: usize = 250;
 
+/// Whether an object passes a filter: each key is a field (with nested filters for
+/// objects), `and`/`or` combine, and a `nodes` list under a field matches if any node does.
 fn passes(object: &Value, filter: &Value) -> bool {
     let Some(map) = filter.as_object() else {
         return true;
