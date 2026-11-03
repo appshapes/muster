@@ -294,7 +294,8 @@ case "$code" in
     ;;
   6) cat "$tmp/audit.err"; jq -e '.error.code == "refused"' "$tmp/audit.err" >/dev/null; echo "smoke: the plan reserves the audit log; the audit steps are skipped" ;;
   *) echo "smoke: audit list exited $code" >&2; cat "$tmp/audit.err" >&2; exit 1 ;;
-
+esac
+echo
 echo "smoke: muster issue batch-update on two throwaway issues, then archive, unarchive, delete and unarchive (ADR 0014; the Revisit asks whether unarchive restores a trashed issue)"
 "$bin" issue create --title "Smoke batch A $stamp" --description "Made by scripts/smoke.sh at $stamp for issue batch-update; canceled by the same run." | jq -r .identifier > "$tmp/batch-a.id"
 "$bin" issue create --title "Smoke batch B $stamp" --description "Made by scripts/smoke.sh at $stamp for issue batch-update; canceled by the same run." | jq -r .identifier > "$tmp/batch-b.id"
