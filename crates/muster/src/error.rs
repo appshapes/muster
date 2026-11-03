@@ -141,10 +141,29 @@ impl ErrorCode {
 pub struct LinearError {
     /// Linear's `extensions.code`, such as `INPUT_ERROR`, when present.
     pub code: Option<String>,
-    /// Linear's `message`.
+    /// Linear's `message`, verbatim.
     pub message: String,
+    /// Linear's `extensions.userPresentableMessage`, verbatim, when present: the
+    /// reason behind a bare `message` such as "Argument Validation Error" ("name must
+    /// be shorter than or equal to 25 characters", read on 2026-11-03; ADR 0015).
+    pub user_presentable_message: Option<String>,
     /// Linear's `x-request-id` header, when present.
     pub request_id: Option<String>,
+}
+
+impl LinearError {
+    /// What Linear said, for muster's own message: the `message`, and after it the
+    /// `userPresentableMessage` when Linear sent one that says more than the message
+    /// (ADR 0015). Both fields stay verbatim on the error object; this is the one
+    /// sentence `--human` and the `message` field carry.
+    pub fn reason(&self) -> String {
+        match &self.user_presentable_message {
+            Some(detail) if !detail.is_empty() && detail != &self.message => {
+                format!("{}: {detail}", self.message)
+            }
+            _ => self.message.clone(),
+        }
+    }
 }
 
 /// A failure, as the error object on stderr carries it.
@@ -219,7 +238,7 @@ impl Error {
         if let (Some(linear), Some(map)) = (&self.linear, error.as_object_mut()) {
             map.insert(
                 "linear".to_string(),
-                json!({ "code": linear.code, "message": linear.message, "requestId": linear.request_id }),
+                json!({ "code": linear.code, "message": linear.message, "userPresentableMessage": linear.user_presentable_message, "requestId": linear.request_id }),
             );
         }
         json!({ "error": error })
@@ -247,5 +266,63 @@ impl From<serde_json::Error> for Error {
             ErrorCode::Failed,
             format!("an answer could not be read as JSON: {e}"),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn refused(message: &str, detail: Option<&str>) -> LinearError {
+        LinearError {
+            code: Some("INVALID_INPUT".into()),
+            message: message.into(),
+            user_presentable_message: detail.map(str::to_string),
+            request_id: Some("req-1".into()),
+        }
+    }
+
+    #[test]
+    fn the_reason_is_the_message_and_the_presentable_one_when_it_says_more() {
+        assert_eq!(
+            refused(
+                "Argument Validation Error",
+                Some("name must be shorter than or equal to 25 characters")
+            )
+            .reason(),
+            "Argument Validation Error: name must be shorter than or equal to 25 characters"
+        );
+        assert_eq!(
+            refused("title is required", None).reason(),
+            "title is required"
+        );
+        assert_eq!(
+            refused("title is required", Some("")).reason(),
+            "title is required"
+        );
+        assert_eq!(
+            refused("title is required", Some("title is required")).reason(),
+            "title is required",
+            "the same words once"
+        );
+    }
+
+    #[test]
+    fn the_error_object_carries_both_of_linears_messages_verbatim() {
+        let e = Error::new(ErrorCode::Refused, "Linear refused the input").from_linear(refused(
+            "Argument Validation Error",
+            Some("name is too long"),
+        ));
+        let linear = &e.to_json()["error"]["linear"];
+        assert_eq!(linear["code"], "INVALID_INPUT");
+        assert_eq!(linear["message"], "Argument Validation Error");
+        assert_eq!(linear["userPresentableMessage"], "name is too long");
+        assert_eq!(linear["requestId"], "req-1");
+        let bare = Error::new(ErrorCode::Refused, "Linear refused the input")
+            .from_linear(refused("title is required", None));
+        assert!(
+            bare.to_json()["error"]["linear"]["userPresentableMessage"].is_null(),
+            "null when Linear sent none, as code and requestId are"
+        );
     }
 }

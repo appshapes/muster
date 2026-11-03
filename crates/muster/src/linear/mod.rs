@@ -117,23 +117,18 @@ impl Linear {
             .and_then(|a| a.first())
             .cloned();
         if let Some(err) = first_error {
-            // A validation failure's `message` is the bare "Argument Validation
-            // Error" and the reason sits in `extensions.userPresentableMessage`
-            // ("name must be shorter than or equal to 25 characters", read on
-            // 2026-11-03); both are Linear's words, and the second is the one that
-            // says what to fix (invariant 4). Every other message stays as it is.
-            let message = select::str_at(&err, "message")
-                .unwrap_or("no message")
-                .to_string();
-            let message = match select::str_at(&err, "extensions.userPresentableMessage") {
-                Some(detail) if message == "Argument Validation Error" && !detail.is_empty() => {
-                    format!("{message}: {detail}")
-                }
-                _ => message,
-            };
+            // Both of Linear's messages, each verbatim: a validation failure's
+            // `message` is the bare "Argument Validation Error" and the reason sits
+            // in `extensions.userPresentableMessage` ("name must be shorter than or
+            // equal to 25 characters", read on 2026-11-03), so the error object
+            // carries both and muster's own message names the reason (ADR 0015).
             let linear = LinearError {
                 code: select::str_at(&err, "extensions.code").map(str::to_string),
-                message,
+                message: select::str_at(&err, "message")
+                    .unwrap_or("no message")
+                    .to_string(),
+                user_presentable_message: select::str_at(&err, "extensions.userPresentableMessage")
+                    .map(str::to_string),
                 request_id: request_id.clone(),
             };
             return Err(classify_linear(status, linear, reset, retry_after, op));
@@ -142,6 +137,7 @@ impl Linear {
             let linear = LinearError {
                 code: Some("RATELIMITED".to_string()),
                 message: "HTTP 429".to_string(),
+                user_presentable_message: None,
                 request_id,
             };
             return Err(rate_limited(linear, reset, retry_after));
@@ -157,6 +153,7 @@ impl Linear {
             .from_linear(LinearError {
                 code: None,
                 message: text.chars().take(200).collect(),
+                user_presentable_message: None,
                 request_id,
             }));
         }
@@ -181,7 +178,7 @@ fn classify_linear(
     if status == 401 || code == "AUTHENTICATION_ERROR" {
         return Error::with_hint(
             ErrorCode::Authentication,
-            format!("Linear refused the key: {}", linear.message),
+            format!("Linear refused the key: {}", linear.reason()),
             "check the key in LINEAR_API_KEY or the key file (docs/reference/commands.md#the-key); `muster whoami` says which was read",
         )
         .at("the-key")
@@ -206,7 +203,7 @@ fn classify_linear(
     {
         return Error::new(
             ErrorCode::Refused,
-            format!("Linear refused the input: {}", linear.message),
+            format!("Linear refused the input: {}", linear.reason()),
         )
         .from_linear(linear);
     }
@@ -218,7 +215,7 @@ fn classify_linear(
     if code == "FEATURE_NOT_ACCESSIBLE" || code == "FORBIDDEN" {
         return Error::with_hint(
             ErrorCode::Refused,
-            format!("Linear refused: {}", linear.message),
+            format!("Linear refused: {}", linear.reason()),
             "the workspace's plan or the key's role does not allow it; `muster whoami` shows the role, and Linear's pricing page the plans",
         )
         .from_linear(linear);
@@ -228,7 +225,8 @@ fn classify_linear(
             ErrorCode::Failed,
             format!(
                 "Linear rejected muster's {} operation: {}",
-                op.name, linear.message
+                op.name,
+                linear.reason()
             ),
         )
         .from_linear(linear);
@@ -238,7 +236,7 @@ fn classify_linear(
     }
     Error::new(
         ErrorCode::Failed,
-        format!("Linear answered {status} {code}: {}", linear.message),
+        format!("Linear answered {status} {code}: {}", linear.reason()),
     )
     .from_linear(linear)
 }
@@ -267,6 +265,7 @@ fn server_error(status: u16, op: &Operation, request_id: Option<String>) -> Erro
     let linear = LinearError {
         code: None,
         message: format!("HTTP {status}"),
+        user_presentable_message: None,
         request_id,
     };
     match op.kind {
@@ -393,6 +392,7 @@ mod tests {
         let nf = LinearError {
             code: Some("INPUT_ERROR".into()),
             message: "Entity not found: Issue".into(),
+            user_presentable_message: None,
             request_id: None,
         };
         assert_eq!(
@@ -402,6 +402,7 @@ mod tests {
         let refused = LinearError {
             code: Some("INPUT_ERROR".into()),
             message: "title is required".into(),
+            user_presentable_message: None,
             request_id: None,
         };
         assert_eq!(
@@ -411,6 +412,7 @@ mod tests {
         let auth = LinearError {
             code: Some("AUTHENTICATION_ERROR".into()),
             message: "no".into(),
+            user_presentable_message: None,
             request_id: None,
         };
         assert_eq!(
@@ -420,6 +422,7 @@ mod tests {
         let rl = LinearError {
             code: Some("RATELIMITED".into()),
             message: "slow".into(),
+            user_presentable_message: None,
             request_id: None,
         };
         let e = classify_linear(
@@ -434,6 +437,7 @@ mod tests {
         let plan = LinearError {
             code: Some("FEATURE_NOT_ACCESSIBLE".into()),
             message: "Not allowed to access feature 'guestAccounts'".into(),
+            user_presentable_message: None,
             request_id: None,
         };
         assert_eq!(
@@ -443,6 +447,7 @@ mod tests {
         let forbidden = LinearError {
             code: Some("FORBIDDEN".into()),
             message: "Not allowed on free plan".into(),
+            user_presentable_message: None,
             request_id: None,
         };
         assert_eq!(
@@ -452,11 +457,41 @@ mod tests {
         let gql = LinearError {
             code: Some("GRAPHQL_VALIDATION_FAILED".into()),
             message: "bad field".into(),
+            user_presentable_message: None,
             request_id: None,
         };
         assert_eq!(
             classify_linear(400, gql, None, None, &operations::VIEWER).code,
             ErrorCode::Failed
+        );
+    }
+
+    #[test]
+    fn a_validation_failure_names_linears_reason_and_keeps_both_messages() {
+        let refused = LinearError {
+            code: Some("INVALID_INPUT".into()),
+            message: "Argument Validation Error".into(),
+            user_presentable_message: Some(
+                "name must be shorter than or equal to 25 characters".into(),
+            ),
+            request_id: Some("req-1".into()),
+        };
+        let e = classify_linear(
+            200,
+            refused.clone(),
+            None,
+            None,
+            &operations::PROJECT_STATUS_CREATE,
+        );
+        assert_eq!(e.code, ErrorCode::Refused);
+        assert_eq!(
+            e.message,
+            "Linear refused the input: Argument Validation Error: name must be shorter than or equal to 25 characters"
+        );
+        assert_eq!(
+            e.linear.as_deref(),
+            Some(&refused),
+            "both of Linear's messages verbatim (ADR 0015)"
         );
     }
 

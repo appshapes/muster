@@ -56,14 +56,13 @@ user-visible change, added in the same commit as the change. The format follows
   brings it back. `--position` takes a finite number, as on `state create`: `nan`,
   `inf` and `1e400` are usage errors, exit 2, before any request (ADR 0014, group 9;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
-
-### Changed
-
-- When Linear answers "Argument Validation Error", the reason it puts in
-  `userPresentableMessage`, such as "name must be shorter than or equal to 25
-  characters", now rides on the error object's `linear.message` after the message,
-  so that the output says what to fix (invariant 4); every other message stays as
-  Linear sent it.
+- The error object's `linear` now carries `userPresentableMessage`: the reason Linear
+  puts beside a bare message such as "Argument Validation Error" ("name must be
+  shorter than or equal to 25 characters"), verbatim, and `null` when Linear sent
+  none. `linear.message` stays Linear's `message` as Linear sent it, and muster's
+  own `message` names the reason after it when the two differ, so that the output
+  and `--human` say what to fix
+  ([ADR 0015](docs/decisions/0015-carry-linears-user-presentable-message-on-the-error-object.md)).
 
 ## 0.3.0 - 2026-11-03
 

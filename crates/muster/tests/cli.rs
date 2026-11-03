@@ -349,6 +349,10 @@ fn an_unknown_issue_exits_4_and_a_bad_reference_exits_2() {
     assert_eq!(e["code"], "not_found");
     assert_eq!(e["linear"]["code"], "INPUT_ERROR");
     assert_eq!(e["linear"]["message"], "Entity not found: Issue");
+    assert_eq!(
+        e["linear"]["userPresentableMessage"], "Could not find referenced Issue.",
+        "Linear's presentable message, verbatim (ADR 0015)"
+    );
 
     let run = muster(&fake, &["issue", "get", "999"]);
     assert_eq!(run.code, 4);
@@ -1465,12 +1469,25 @@ fn team_create_makes_a_team_with_its_states_and_refuses_a_duplicate_name() {
         "Linear keeps the key unique: {}",
         same_key.stderr
     );
+    // Both of Linear's messages verbatim, each under Linear's name, and muster's own
+    // message naming the reason (ADR 0015).
+    let e = same_key.error();
+    assert_eq!(
+        e["linear"]["message"], "Argument Validation Error",
+        "Linear's message as Linear sent it: {}",
+        same_key.stderr
+    );
     assert!(
-        same_key.error()["linear"]["message"]
+        e["linear"]["userPresentableMessage"]
             .as_str()
             .unwrap()
             .contains("already in use"),
-        "Linear's presentable reason rides on its message: {}",
+        "Linear's presentable reason under its own name: {}",
+        same_key.stderr
+    );
+    assert!(
+        e["message"].as_str().unwrap().contains("already in use"),
+        "muster's message names the reason: {}",
         same_key.stderr
     );
 
