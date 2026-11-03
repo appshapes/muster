@@ -3674,7 +3674,11 @@ fn issue_archive_unarchive_delete_and_batch_update() {
             .iter()
             .any(|i| i["identifier"] == "APP-2")
     );
-    let trashed = muster(&fake, &["issue", "delete", "APP-3"]);
+    // `issue delete` is Linear's trash and never `permanentlyDelete` (ADR 0014, group
+    // 18). The trace prints the request's name and variables; the fake keeps the whole
+    // body, query included, so the second check sees an argument written into the
+    // document as well as one passed as a variable.
+    let trashed = muster(&fake, &["issue", "delete", "--trace", "APP-3"]);
     assert_eq!(trashed.code, 0, "{}", trashed.stderr);
     assert!(trashed.one()["archivedAt"].is_string());
     assert!(
@@ -3682,11 +3686,23 @@ fn issue_archive_unarchive_delete_and_batch_update() {
         "an issue has no `trashed` field in Linear's answer; archivedAt is the signal"
     );
     assert!(
-        !fake
-            .operations()
-            .iter()
-            .any(|o| o.contains("permanentlyDelete")),
-        "never a permanent delete"
+        trashed.stderr.contains("IssueDelete"),
+        "the request is traced: {}",
+        trashed.stderr
+    );
+    assert!(
+        !trashed.stderr.contains("permanentlyDelete"),
+        "never a permanent delete, in the traced request: {}",
+        trashed.stderr
+    );
+    let sent = fake
+        .requests()
+        .into_iter()
+        .find(|r| r["operationName"] == "IssueDelete")
+        .expect("the delete was sent");
+    assert!(
+        !sent.to_string().contains("permanentlyDelete"),
+        "never a permanent delete, in the query or the variables on the wire: {sent}"
     );
     let restored = muster(&fake, &["issue", "unarchive", "APP-3"]);
     assert_eq!(

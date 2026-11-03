@@ -72,6 +72,9 @@ struct State {
     ws: Workspace,
     fail_next: BTreeMap<String, Failure>,
     operations: Vec<String>,
+    /// Every request body as the binary sent it: `query`, `operationName` and
+    /// `variables`, so that a test can assert on what went over the wire.
+    requests: Vec<Value>,
 }
 
 /// A running fake.
@@ -91,6 +94,7 @@ impl Fake {
             ws: Workspace::seed(),
             fail_next: BTreeMap::new(),
             operations: Vec::new(),
+            requests: Vec::new(),
         }));
         let stop = Arc::new(AtomicBool::new(false));
         let (state2, stop2) = (Arc::clone(&state), Arc::clone(&stop));
@@ -129,6 +133,13 @@ impl Fake {
     /// Every operation name seen, in order.
     pub fn operations(&self) -> Vec<String> {
         self.state.lock().unwrap().operations.clone()
+    }
+
+    /// Every request body seen, in order, as the binary sent it: `query`,
+    /// `operationName` and `variables`. A test that says muster never sends something
+    /// asserts on these, the bytes on the wire, not on the operation names.
+    pub fn requests(&self) -> Vec<Value> {
+        self.state.lock().unwrap().requests.clone()
     }
 
     /// Add a team, so that the workspace has several.
@@ -412,6 +423,7 @@ fn handle(stream: &mut TcpStream, state: &Arc<Mutex<State>>) -> std::io::Result<
     let op = request["operationName"].as_str().unwrap_or("").to_string();
     let mut st = state.lock().unwrap();
     st.operations.push(op.clone());
+    st.requests.push(request.clone());
     let n = st.operations.len();
     if let Some(failure) = st.fail_next.remove(&op) {
         return match failure {
