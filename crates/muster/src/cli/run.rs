@@ -11,7 +11,8 @@ use crate::bounds::{
 };
 use crate::cli::{
     AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, CycleCommand, CycleListArgs,
-    CycleRefArgs, CycleUpdateArgs, GetArgs, InitiativeCommand, InitiativeCreateArgs,
+    CycleRefArgs, CycleUpdateArgs, DocumentCommand, DocumentCreateArgs, DocumentListArgs,
+    DocumentRefArgs, DocumentUpdateArgs, GetArgs, InitiativeCommand, InitiativeCreateArgs,
     InitiativeListArgs, InitiativeProjectArgs, InitiativeRefArgs, InitiativeUpdateArgs,
     IssueCommand, IssueListArgs, LabelCommand, LabelCreateArgs, LabelRefArgs, LabelUpdateArgs,
     ListArgs, MemberArgs, MemberCommand, MilestoneCommand, MilestoneCreateArgs, MilestoneListArgs,
@@ -143,6 +144,31 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 CycleCommand::List(args) => cycle_list(&session, args, out),
                 CycleCommand::Get(args) => cycle_get(&session, args, out),
                 CycleCommand::Update(args) => cycle_update(&session, args, out),
+            }
+        }
+        Command::Document { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                DocumentCommand::List(args) => document_list(&session, args, out),
+                DocumentCommand::Get(args) => document_get(&session, args, out),
+                DocumentCommand::Create(args) => document_create(&session, args, out),
+                DocumentCommand::Update(args) => document_update(&session, args, out),
+                DocumentCommand::Delete(args) => document_lifecycle(
+                    &session,
+                    args,
+                    &ops::DOCUMENT_DELETE,
+                    "documentDelete",
+                    false,
+                    out,
+                ),
+                DocumentCommand::Unarchive(args) => document_lifecycle(
+                    &session,
+                    args,
+                    &ops::DOCUMENT_UNARCHIVE,
+                    "documentUnarchive",
+                    true,
+                    out,
+                ),
             }
         }
         Command::Milestone { command } => {
@@ -602,6 +628,29 @@ impl Session {
                 "`muster cycle list` prints the team's cycles with their numbers",
             )),
         }
+    }
+
+    /// One document with its content, by title, in one request; a trashed one only
+    /// when asked (ADR 0014, group 14).
+    fn document_full(&self, title: &str, include_archived: bool) -> Result<Value, Error> {
+        let data = self.linear.run(
+            &ops::DOCUMENT_BY_TITLE,
+            json!({ "title": title, "includeArchived": include_archived }),
+        )?;
+        match nodes(&data, "documents").into_iter().next() {
+            Some(document) => Ok(document),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("no document titled {title:?}"),
+                "name one from `muster document list`; a trashed one is reached by `document unarchive <TITLE>`",
+            )),
+        }
+    }
+
+    /// An issue's id from its identifier, for a document's `issueId`.
+    fn issue_id(&self, identifier: &str) -> Result<String, Error> {
+        let issue = self.issue(identifier, 1, 1, 1)?;
+        need_str(&issue, "id", "IssueById")
     }
 
     fn project_id(&self, name: &str) -> Result<String, Error> {
@@ -2229,6 +2278,153 @@ fn cycle_update(session: &Session, args: &CycleUpdateArgs, out: &Output) -> Resu
         json!({ "id": id, "input": Value::Object(input) }),
     )?;
     out.emit(&payload(&data, "cycleUpdate", "cycle")?);
+    Ok(())
+}
+
+fn document_list(session: &Session, args: &DocumentListArgs, out: &Output) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let mut filter = Map::new();
+    if let Some(project) = &args.project {
+        filter.insert(
+            "project".into(),
+            json!({ "name": { "eqIgnoreCase": project } }),
+        );
+    }
+    if let Some(issue) = &args.issue {
+        filter.insert(
+            "issue".into(),
+            json!({ "id": { "eq": session.issue_id(issue)? } }),
+        );
+    }
+    let filter = if filter.is_empty() {
+        Value::Null
+    } else {
+        Value::Object(filter)
+    };
+    let data = session
+        .linear
+        .run(&ops::DOCUMENTS, json!({ "first": n, "filter": filter }))?;
+    emit_list(
+        out,
+        nodes(&data, "documents"),
+        has_next_page(&data, "documents"),
+        "documents",
+        n,
+    );
+    Ok(())
+}
+
+fn document_get(session: &Session, args: &DocumentRefArgs, out: &Output) -> Result<(), Error> {
+    out.emit(&session.document_full(&args.title, false)?);
+    Ok(())
+}
+
+fn document_create(
+    session: &Session,
+    args: &DocumentCreateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    check_body(Text::Title, &args.title)?;
+    let content = body_from(&args.content, &args.content_file)?;
+    // The guard: `document get <TITLE>` resolves a title to one document. Only a
+    // missing document lets the create go on; any other failure of the read is itself.
+    if !args.allow_duplicate {
+        match session.document_full(&args.title, false) {
+            Ok(existing) => {
+                return Err(Error::with_hint(
+                    ErrorCode::Refused,
+                    format!(
+                        "a document titled {:?} exists: {}",
+                        str_at(&existing, "title").unwrap_or(&args.title),
+                        str_at(&existing, "url").unwrap_or("?")
+                    ),
+                    "use that document, or pass --allow-duplicate if a second one is wanted",
+                )
+                .at("muster-document-create"));
+            }
+            Err(error) if error.code == ErrorCode::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    let mut input = Map::new();
+    input.insert("title".into(), json!(args.title));
+    if let Some(content) = content {
+        input.insert("content".into(), json!(content));
+    }
+    if let Some(project) = &args.project {
+        input.insert("projectId".into(), json!(session.project_id(project)?));
+    }
+    if let Some(issue) = &args.issue {
+        input.insert("issueId".into(), json!(session.issue_id(issue)?));
+    }
+    let data = session.linear.run(
+        &ops::DOCUMENT_CREATE,
+        json!({ "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "documentCreate", "document")?);
+    Ok(())
+}
+
+fn document_update(
+    session: &Session,
+    args: &DocumentUpdateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let mut input = Map::new();
+    if let Some(title) = &args.title {
+        check_body(Text::Title, title)?;
+        input.insert("title".into(), json!(title));
+    }
+    if let Some(content) = body_from(&args.content, &args.content_file)? {
+        input.insert("content".into(), json!(content));
+    }
+    let document = session.document_full(&args.document, false)?;
+    let id = need_str(&document, "id", "DocumentByTitle")?;
+    if let Some(project) = &args.project {
+        let value = if is_none(project) {
+            Value::Null
+        } else {
+            json!(session.project_id(project)?)
+        };
+        input.insert("projectId".into(), value);
+    }
+    if let Some(issue) = &args.issue {
+        let value = if is_none(issue) {
+            Value::Null
+        } else {
+            json!(session.issue_id(issue)?)
+        };
+        input.insert("issueId".into(), value);
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --title, --content, --content-file, --project, --issue",
+        ));
+    }
+    let data = session.linear.run(
+        &ops::DOCUMENT_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "documentUpdate", "document")?);
+    Ok(())
+}
+
+/// `document delete` (the trash) and `document unarchive`: one mutation with the
+/// document's id, and Linear's entity.
+fn document_lifecycle(
+    session: &Session,
+    args: &DocumentRefArgs,
+    op: &ops::Operation,
+    field: &str,
+    include_archived: bool,
+    out: &Output,
+) -> Result<(), Error> {
+    let document = session.document_full(&args.title, include_archived)?;
+    let id = need_str(&document, "id", "DocumentByTitle")?;
+    let data = session.linear.run(op, json!({ "id": id }))?;
+    out.emit(&payload(&data, field, "entity")?);
     Ok(())
 }
 

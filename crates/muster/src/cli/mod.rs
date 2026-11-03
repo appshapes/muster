@@ -87,6 +87,12 @@ pub enum Command {
         #[command(subcommand)]
         command: CycleCommand,
     },
+    /// Documents, Linear's pages of markdown on a project or an issue: list, get, create, update, delete, unarchive
+    Document {
+        /// The document command.
+        #[command(subcommand)]
+        command: DocumentCommand,
+    },
     /// A project's milestones: list, create, update, delete
     Milestone {
         /// The milestone command.
@@ -1219,6 +1225,91 @@ pub struct CycleUpdateArgs {
     /// A new end, a time (2026-11-24T00:00:00Z)
     #[arg(long, value_name = "TIME")]
     pub ends_at: Option<String>,
+}
+
+/// The document commands (ADR 0014, group 14).
+#[derive(Subcommand, Debug)]
+pub enum DocumentCommand {
+    /// List documents, one JSON object per line, without their content
+    List(DocumentListArgs),
+    /// One document with its content, by title
+    Get(DocumentRefArgs),
+    /// Create a document; a title a document already has is refused unless --allow-duplicate
+    Create(Box<DocumentCreateArgs>),
+    /// Change a document's title, content, project or issue
+    Update(Box<DocumentUpdateArgs>),
+    /// Put a document in the trash; `document unarchive` brings it back
+    Delete(DocumentRefArgs),
+    /// Bring a trashed document back
+    Unarchive(DocumentRefArgs),
+}
+
+/// `document list`.
+#[derive(Args, Debug)]
+pub struct DocumentListArgs {
+    /// Only documents of this project, by name
+    #[arg(long, value_name = "NAME")]
+    pub project: Option<String>,
+    /// Only documents of this issue, by identifier (APP-12)
+    #[arg(long, value_name = "ISSUE")]
+    pub issue: Option<String>,
+    /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
+    #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
+    pub limit: usize,
+}
+
+/// A document, by title.
+#[derive(Args, Debug)]
+pub struct DocumentRefArgs {
+    /// The document, by title
+    #[arg(value_name = "TITLE")]
+    pub title: String,
+}
+
+/// `document create`.
+#[derive(Args, Debug, Default)]
+pub struct DocumentCreateArgs {
+    /// The title
+    #[arg(long, value_name = "TEXT")]
+    pub title: String,
+    /// The content, markdown
+    #[arg(long, value_name = "TEXT", conflicts_with = "content_file")]
+    pub content: Option<String>,
+    /// The content, markdown, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub content_file: Option<String>,
+    /// The project it belongs to, by name
+    #[arg(long, value_name = "NAME")]
+    pub project: Option<String>,
+    /// The issue it belongs to, by identifier (APP-12)
+    #[arg(long, value_name = "ISSUE")]
+    pub issue: Option<String>,
+    /// Create it even when a document has the title
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `document update`.
+#[derive(Args, Debug, Default)]
+pub struct DocumentUpdateArgs {
+    /// The document, by title
+    #[arg(value_name = "TITLE")]
+    pub document: String,
+    /// A new title
+    #[arg(long, value_name = "TEXT")]
+    pub title: Option<String>,
+    /// New content, markdown
+    #[arg(long, value_name = "TEXT", conflicts_with = "content_file")]
+    pub content: Option<String>,
+    /// New content, markdown, from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub content_file: Option<String>,
+    /// A new project, by name, or `none`
+    #[arg(long, value_name = "NAME")]
+    pub project: Option<String>,
+    /// A new issue, by identifier, or `none`
+    #[arg(long, value_name = "ISSUE")]
+    pub issue: Option<String>,
 }
 
 /// The milestone commands (ADR 0014, group 10): the steps inside a project.

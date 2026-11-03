@@ -356,6 +356,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
     let project = sample_project(session)?;
     let initiative = sample_initiative(session)?;
     let cycle = sample_cycle(session)?;
+    let document = sample_document(session)?;
     match (&sample, lack) {
         (Some(id), Some(lack)) => out.notice(
             "partial",
@@ -378,6 +379,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
             project.as_deref(),
             initiative.as_deref(),
             cycle.as_ref().map(|(k, n)| (k.as_str(), *n)),
+            document.as_deref(),
         ) else {
             if [
                 "IssueById",
@@ -388,6 +390,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
                 "ProjectUpdates",
                 "InitiativeByName",
                 "CycleByNumber",
+                "DocumentByTitle",
             ]
             .contains(&op.name)
             {
@@ -533,6 +536,18 @@ fn sample_cycle(session: &Session) -> Result<Option<(String, f64)>, Error> {
     }))
 }
 
+/// The title of the document `DocumentByTitle` is recorded on: the first one
+/// `Documents` lists.
+fn sample_document(session: &Session) -> Result<Option<String>, Error> {
+    let data = session.linear.run(
+        &ops::DOCUMENTS,
+        json!({ "first": 1, "filter": Value::Null }),
+    )?;
+    Ok(nodes(&data, "documents")
+        .first()
+        .and_then(|d| str_at(d, "title").map(str::to_string)))
+}
+
 /// The variables each read operation is recorded with, and the fixture test replays
 /// against the fake; `None` when `IssueById` has no issue, `TeamByKey` no team,
 /// `ProjectByName` no project, or `InitiativeByName` no initiative, to ask for.
@@ -543,6 +558,7 @@ pub fn fixture_variables(
     first_project: Option<&str>,
     first_initiative: Option<&str>,
     first_cycle: Option<(&str, f64)>,
+    first_document: Option<&str>,
 ) -> Option<Value> {
     Some(match op {
         "Viewer" | "Workspace" => json!({}),
@@ -554,6 +570,8 @@ pub fn fixture_variables(
         "UserById" => json!({ "id": "me" }),
         "ProjectStatuses" => json!({ "first": 5, "includeArchived": false }),
         "Milestones" | "ProjectUpdates" => json!({ "project": first_project?, "first": 5 }),
+        "Documents" => json!({ "first": 5, "filter": Value::Null }),
+        "DocumentByTitle" => json!({ "title": first_document?, "includeArchived": false }),
         "Cycles" => json!({ "first": 5, "filter": Value::Null }),
         "CycleByNumber" => {
             let (key, number) = first_cycle?;
@@ -689,6 +707,12 @@ mod tests {
             "milestone delete",
             "project-update list",
             "project-update create",
+            "document list",
+            "document get",
+            "document create",
+            "document update",
+            "document delete",
+            "document unarchive",
             "cycle list",
             "cycle get",
             "cycle update",

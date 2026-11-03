@@ -22,6 +22,16 @@ user-visible change, added in the same commit as the change. The format follows
   settings, so there is no create, and `cycleArchive`, which unlinks every issue
   with no inverse, stays out (ADR 0014, group 13;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `document list [--project <NAME>] [--issue <ISSUE>]` prints documents, Linear's
+  pages of markdown kept with a project or an issue, newest first, each with its
+  `title`, `url`, `project`, `issue`, `creator`, `owner`, `updatedBy` and `trashed`;
+  `document get <TITLE>` adds its `content`; `document create --title <TEXT>
+  [--content <TEXT>|--content-file <PATH>] [--project <NAME>] [--issue <ISSUE>]` makes
+  one (a title a document has is refused, exit 6, unless `--allow-duplicate`);
+  `document update <TITLE>` changes the title, content, project or issue, `none`
+  clearing the last two; `document delete <TITLE>` puts one in the trash and
+  `document unarchive <TITLE>` brings it back, each printing Linear's entity (ADR
+  0014, group 14; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.4.0 - 2026-11-03
 

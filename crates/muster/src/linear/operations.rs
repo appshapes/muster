@@ -176,6 +176,17 @@ pub const CYCLE_FIELDS: &str = "fragment CycleFields on Cycle {
   team { id key }
 }";
 
+/// The fields every document answer carries (ADR 0014, group 14); `content` comes
+/// with `document get` only.
+pub const DOCUMENT_FIELDS: &str = "fragment DocumentFields on Document {
+  id title icon color url slugId createdAt updatedAt archivedAt trashed
+  creator { id name displayName }
+  owner { id name displayName }
+  updatedBy { id name displayName }
+  project { id name }
+  issue { id identifier }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -417,6 +428,28 @@ op!(
   }
 }",
     &[CYCLE_FIELDS]
+);
+
+op!(
+    DOCUMENTS,
+    "Documents",
+    Kind::Query,
+    "query Documents($first: Int!, $filter: DocumentFilter) {
+  documents(first: $first, filter: $filter) { nodes { ...DocumentFields } pageInfo { hasNextPage } }
+}",
+    &[DOCUMENT_FIELDS]
+);
+
+op!(
+    DOCUMENT_BY_TITLE,
+    "DocumentByTitle",
+    Kind::Query,
+    "query DocumentByTitle($title: String!, $includeArchived: Boolean) {
+  documents(first: 1, filter: { title: { eqIgnoreCase: $title } }, includeArchived: $includeArchived) {
+    nodes { ...DocumentFields content }
+  }
+}",
+    &[DOCUMENT_FIELDS]
 );
 
 op!(
@@ -851,6 +884,46 @@ op!(
     &[CYCLE_FIELDS]
 );
 
+op!(
+    DOCUMENT_CREATE,
+    "DocumentCreate",
+    Kind::Mutation,
+    "mutation DocumentCreate($input: DocumentCreateInput!) {
+  documentCreate(input: $input) { success document { ...DocumentFields content } }
+}",
+    &[DOCUMENT_FIELDS]
+);
+
+op!(
+    DOCUMENT_UPDATE,
+    "DocumentUpdate",
+    Kind::Mutation,
+    "mutation DocumentUpdate($id: String!, $input: DocumentUpdateInput!) {
+  documentUpdate(id: $id, input: $input) { success document { ...DocumentFields content } }
+}",
+    &[DOCUMENT_FIELDS]
+);
+
+op!(
+    DOCUMENT_DELETE,
+    "DocumentDelete",
+    Kind::Mutation,
+    "mutation DocumentDelete($id: String!) {
+  documentDelete(id: $id) { success entity { ...DocumentFields } }
+}",
+    &[DOCUMENT_FIELDS]
+);
+
+op!(
+    DOCUMENT_UNARCHIVE,
+    "DocumentUnarchive",
+    Kind::Mutation,
+    "mutation DocumentUnarchive($id: String!) {
+  documentUnarchive(id: $id) { success entity { ...DocumentFields } }
+}",
+    &[DOCUMENT_FIELDS]
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -874,6 +947,8 @@ pub static READS: &[&Operation] = &[
     &INITIATIVE_LINKS,
     &CYCLES,
     &CYCLE_BY_NUMBER,
+    &DOCUMENTS,
+    &DOCUMENT_BY_TITLE,
 ];
 
 /// Every write operation.
@@ -921,6 +996,10 @@ pub static WRITES: &[&Operation] = &[
     &INITIATIVE_LINK_CREATE,
     &INITIATIVE_LINK_DELETE,
     &CYCLE_UPDATE,
+    &DOCUMENT_CREATE,
+    &DOCUMENT_UPDATE,
+    &DOCUMENT_DELETE,
+    &DOCUMENT_UNARCHIVE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -978,6 +1057,7 @@ mod tests {
                 "InitiativeFields",
                 "InitiativeLinkFields",
                 "CycleFields",
+                "DocumentFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));

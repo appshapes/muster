@@ -148,6 +148,14 @@ update` puts an issue in the running cycle (`next` the one after it, a number an
 of them, and `none` on `issue update` takes it out; `issue create` does not take
 `none`, since a new issue starts in no cycle), and `muster issue list --cycle
 active` lists the cycle's issues (`--cycle none` the issues in no cycle).
+A document is a page of markdown kept with a project or an issue:
+`muster document create --title "Kickoff" --project "Trying muster" --content "#
+Kickoff"` makes one (one JSON line with its `title`, `url`, `project` and `content`;
+a document with neither a project nor an issue is Linear's refusal, exit 6), `muster
+document list --project "Trying muster"` lists the project's without their content,
+`muster document get Kickoff` prints one with it, `muster document update Kickoff
+--content-file kickoff.md` replaces the text from a file, and `muster document delete
+Kickoff` puts it in the trash (`unarchive` brings it back).
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):
