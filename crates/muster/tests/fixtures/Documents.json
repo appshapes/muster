@@ -1,0 +1,41 @@
+{
+  "documents": {
+    "nodes": [
+      {
+        "archivedAt": null,
+        "color": null,
+        "createdAt": "<string>",
+        "creator": {
+          "displayName": "<string>",
+          "id": "<string>",
+          "name": "<string>"
+        },
+        "icon": null,
+        "id": "<string>",
+        "issue": null,
+        "owner": {
+          "displayName": "<string>",
+          "id": "<string>",
+          "name": "<string>"
+        },
+        "project": {
+          "id": "<string>",
+          "name": "<string>"
+        },
+        "slugId": "<string>",
+        "title": "<string>",
+        "trashed": null,
+        "updatedAt": "<string>",
+        "updatedBy": {
+          "displayName": "<string>",
+          "id": "<string>",
+          "name": "<string>"
+        },
+        "url": "<string>"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": true
+    }
+  }
+}

@@ -133,6 +133,31 @@ jq -e --arg n "Smoky $short" '.name == $n' "$tmp/status-archive.json" >/dev/null
 jq -e --arg n "Smoky $short" '.name == $n' "$tmp/status-unarchive.json" >/dev/null
 "$bin" project-status archive "Smoky $short" | jq -c '{name}' >/dev/null
 echo
+echo "smoke: muster document create --title 'Smoke document' --project 'Smoke tests' (exit 6 after the first run; it stays, for the fixture), get, list, then a throwaway document updated, deleted, unarchived and deleted again (ADR 0014)"
+set +e
+"$bin" document create --title "Smoke document" --project "Smoke tests" --content "The smoke project's document; it stays so that the fixture has a node (ADR 0014)." > "$tmp/document.json" 2> "$tmp/document.err"
+code=$?
+set -e
+case "$code" in
+  0) jq -c '{title, project: .project.name}' "$tmp/document.json" ;;
+  6) cat "$tmp/document.err"; jq -e '.error.code == "refused"' "$tmp/document.err" >/dev/null ;;
+  *) echo "smoke: document create exited $code" >&2; cat "$tmp/document.err" >&2; exit 1 ;;
+esac
+"$bin" document get "Smoke document" | jq -c '{title, project: .project.name, content: (.content | length)}' | tee "$tmp/document-get.json"
+jq -e '.title == "Smoke document" and .project == "Smoke tests"' "$tmp/document-get.json" >/dev/null
+"$bin" document list --project "Smoke tests" | jq -c '{title}' | tee "$tmp/documents.jsonl"
+jq -s -e 'map(.title) | index("Smoke document") != null' "$tmp/documents.jsonl" >/dev/null
+# A document lives with a project or an issue: Linear refuses one with neither.
+"$bin" document create --title "Smoke doc $stamp" --project "Smoke tests" --content "Throwaway, made by scripts/smoke.sh at $stamp." | jq -c '{title, project: .project.name}' | tee "$tmp/document-throwaway.json"
+jq -e --arg t "Smoke doc $stamp" '.title == $t and .project == "Smoke tests"' "$tmp/document-throwaway.json" >/dev/null
+"$bin" document update "Smoke doc $stamp" --title "Smoky doc $stamp" --content "Rewritten at $stamp." | jq -c '{title, project: .project.name}' | tee "$tmp/document-update.json"
+jq -e --arg t "Smoky doc $stamp" '.title == $t and .project == "Smoke tests"' "$tmp/document-update.json" >/dev/null
+"$bin" document delete "Smoky doc $stamp" | jq -c '{title, trashed, archivedAt}' | tee "$tmp/document-delete.json"
+jq -e '.archivedAt != null' "$tmp/document-delete.json" >/dev/null
+"$bin" document unarchive "Smoky doc $stamp" | jq -c '{title, trashed, archivedAt}' | tee "$tmp/document-unarchive.json"
+jq -e '.archivedAt == null' "$tmp/document-unarchive.json" >/dev/null
+"$bin" document delete "Smoky doc $stamp" | jq -c '{title}' >/dev/null
+echo
 echo "smoke: muster project get 'Smoke tests', then a throwaway project updated, deleted, unarchived and deleted again (ADR 0014)"
 "$bin" project get "Smoke tests" | jq -c '{name, status: .status.name, members: (.members.nodes | length), milestones: (.projectMilestones.nodes | length), trashed}' | tee "$tmp/project-get.json"
 jq -e '.name == "Smoke tests"' "$tmp/project-get.json" >/dev/null

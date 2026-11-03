@@ -360,6 +360,66 @@ Bring a trashed or archived project back.
 | --- | --- | --- | --- | --- |
 | `<NAME>` | `<NAME>` | yes |  | The project, by name |
 
+### muster document list
+
+List documents, one JSON object per line, without their content.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--project` | `<NAME>` | no |  | Only documents of this project, by name |
+| `--issue` | `<ISSUE>` | no |  | Only documents of this issue, by identifier (APP-12) |
+| `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
+### muster document get
+
+One document with its content, by title.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<TITLE>` | `<TITLE>` | yes |  | The document, by title |
+
+### muster document create
+
+Create a document; a title a document already has is refused unless --allow-duplicate.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--title` | `<TEXT>` | yes |  | The title |
+| `--content` | `<TEXT>` | no |  | The content, markdown |
+| `--content-file` | `<PATH>` | no |  | The content, markdown, from a file, or from stdin when PATH is `-` |
+| `--project` | `<NAME>` | no |  | The project it belongs to, by name |
+| `--issue` | `<ISSUE>` | no |  | The issue it belongs to, by identifier (APP-12) |
+| `--allow-duplicate` |  | no |  | Create it even when a document has the title |
+
+### muster document update
+
+Change a document's title, content, project or issue.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<TITLE>` | `<TITLE>` | yes |  | The document, by title |
+| `--title` | `<TEXT>` | no |  | A new title |
+| `--content` | `<TEXT>` | no |  | New content, markdown |
+| `--content-file` | `<PATH>` | no |  | New content, markdown, from a file, or from stdin when PATH is `-` |
+| `--project` | `<NAME>` | no |  | A new project, by name, or `none` |
+| `--issue` | `<ISSUE>` | no |  | A new issue, by identifier, or `none` |
+
+### muster document delete
+
+Put a document in the trash; `document unarchive` brings it back.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<TITLE>` | `<TITLE>` | yes |  | The document, by title |
+
+### muster document unarchive
+
+Bring a trashed document back.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<TITLE>` | `<TITLE>` | yes |  | The document, by title |
+
 ### muster milestone list
 
 List a project's milestones, one JSON object per line.
@@ -741,6 +801,8 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `ProjectStatuses` | query |
 | `Milestones` | query |
 | `ProjectUpdates` | query |
+| `Documents` | query |
+| `DocumentByTitle` | query |
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
@@ -777,3 +839,7 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `MilestoneUpdate` | mutation |
 | `MilestoneDelete` | mutation |
 | `ProjectUpdateCreate` | mutation |
+| `DocumentCreate` | mutation |
+| `DocumentUpdate` | mutation |
+| `DocumentDelete` | mutation |
+| `DocumentUnarchive` | mutation |

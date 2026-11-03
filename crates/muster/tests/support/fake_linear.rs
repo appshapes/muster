@@ -52,6 +52,8 @@ struct Workspace {
     milestones: Vec<Value>,
     /// The status posts of every project, each with its `projectId`, oldest first.
     project_updates: Vec<Value>,
+    /// The documents, with `content`, newest first.
+    documents: Vec<Value>,
 }
 
 struct State {
@@ -519,6 +521,7 @@ impl Workspace {
             project_statuses: Vec::new(),
             milestones: Vec::new(),
             project_updates: Vec::new(),
+            documents: Vec::new(),
         };
         // Every field `Workspace` asks for, with the values a Free workspace shows; the
         // fixture holds this to the recorded shape (ADR 0010; ADR 0014, group 1).
@@ -588,6 +591,14 @@ impl Workspace {
             json!({ "id": me["id"], "name": me["name"], "displayName": me["displayName"] });
         project["memberIds"] = json!([me["id"]]);
         ws.projects.push(project.clone());
+        // One document in the project, so that every document answer has a node and
+        // the recorder finds one (ADR 0014, group 14).
+        let _ = ws
+            .new_document(
+                "Plan",
+                &json!({ "content": "# Plan\n\nThe fake project's plan.", "projectId": project["id"] }),
+            )
+            .expect("the seeded project exists");
         // One milestone, so that `project get` prints a node and the recorder finds
         // one (ADR 0014, group 8).
         ws.new_milestone(&project, "First cut", None, Some("2026-12-01"));
@@ -1008,6 +1019,66 @@ impl Workspace {
             json!({ "id": post["id"], "health": post["health"], "createdAt": post["createdAt"] });
         project["health"] = post["health"].clone();
         post
+    }
+
+    /// A document with every `DocumentFields` field (ADR 0014, group 14) and its
+    /// `content`, newest first in the store as Linear orders a connection.
+    fn new_document(&mut self, title: &str, input: &Value) -> Result<Value, (u16, Value)> {
+        let slug: String = title
+            .to_ascii_lowercase()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect();
+        let (id, now) = (self.id(), self.now());
+        let me = self.users[0].clone();
+        let person =
+            json!({ "id": me["id"], "name": me["name"], "displayName": me["displayName"] });
+        let project = match input["projectId"].as_str() {
+            Some(pid) => match self.projects.iter().find(|p| p["id"] == pid) {
+                Some(p) => json!({ "id": p["id"], "name": p["name"] }),
+                None => return Err(not_found("Project")),
+            },
+            None => Value::Null,
+        };
+        let issue = match input["issueId"].as_str() {
+            Some(iid) => match self.issues.iter().find(|i| i["id"] == iid) {
+                Some(i) => json!({ "id": i["id"], "identifier": i["identifier"] }),
+                None => return Err(not_found("Issue")),
+            },
+            None => Value::Null,
+        };
+        // Linear, 2026-11-03: "A document needs a project, initiative, team, issue,
+        // release, or cycle."; muster offers the project and the issue.
+        if project.is_null() && issue.is_null() {
+            return Err(Workspace::document_needs_a_home());
+        }
+        let document = json!({
+            "id": id, "title": title, "icon": null, "color": null,
+            "url": format!("https://linear.app/fake/document/{slug}"), "slugId": slug,
+            "createdAt": now, "updatedAt": now, "archivedAt": null, "trashed": null,
+            "creator": person, "owner": person, "updatedBy": person,
+            "project": project, "issue": issue, "content": input["content"],
+        });
+        self.documents.insert(0, document.clone());
+        Ok(document)
+    }
+
+    /// Linear's refusal of a document with nothing to live under, as answered on
+    /// 2026-11-03.
+    fn document_needs_a_home() -> (u16, Value) {
+        (
+            200,
+            json!({ "errors": [ { "message": "invalid document input", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "A document needs a project, initiative, team, issue, release, or cycle." } } ], "data": null }),
+        )
+    }
+
+    /// A document as `DocumentFields` answers it: without `content`.
+    fn document_view(document: &Value) -> Value {
+        let mut view = document.clone();
+        if let Some(map) = view.as_object_mut() {
+            map.remove("content");
+        }
+        view
     }
 
     fn milestone_view(stone: &Value) -> Value {
@@ -1710,6 +1781,135 @@ impl Workspace {
                 (
                     200,
                     json!({ "data": { "projectUpdateCreate": { "success": true, "projectUpdate": Workspace::milestone_view(&post) } } }),
+                )
+            }
+            "Documents" => {
+                let documents: Vec<Value> = self
+                    .documents
+                    .iter()
+                    .filter(|d| d["archivedAt"].is_null() && passes(d, filter))
+                    .map(Workspace::document_view)
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "documents": Workspace::page(documents, first) } }),
+                )
+            }
+            "DocumentByTitle" => {
+                let title = vars["title"].as_str().unwrap_or("");
+                let include_archived = vars["includeArchived"].as_bool().unwrap_or(false);
+                let found: Vec<Value> = self
+                    .documents
+                    .iter()
+                    .filter(|d| {
+                        (include_archived || d["archivedAt"].is_null())
+                            && d["title"]
+                                .as_str()
+                                .is_some_and(|t| t.eq_ignore_ascii_case(title))
+                    })
+                    .cloned()
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "documents": Workspace::page(found, 1) } }),
+                )
+            }
+            "DocumentCreate" => {
+                let input = vars["input"].clone();
+                let Some(title) = input["title"].as_str().filter(|t| !t.trim().is_empty()) else {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "title should not be empty" } } ], "data": null }),
+                    );
+                };
+                match self.new_document(title, &input) {
+                    Ok(document) => (
+                        200,
+                        json!({ "data": { "documentCreate": { "success": true, "document": document } } }),
+                    ),
+                    Err(answer) => answer,
+                }
+            }
+            "DocumentUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "DocumentUpdateInput!");
+                };
+                let Some(index) = self
+                    .documents
+                    .iter()
+                    .position(|d| d["id"] == id && d["archivedAt"].is_null())
+                else {
+                    return not_found("Document");
+                };
+                let now = self.now();
+                let mut document = self.documents[index].clone();
+                for (field, value) in input {
+                    match field.as_str() {
+                        "projectId" => {
+                            document["project"] = match value.as_str() {
+                                Some(pid) => match self.projects.iter().find(|p| p["id"] == pid) {
+                                    Some(p) => json!({ "id": p["id"], "name": p["name"] }),
+                                    None => return not_found("Project"),
+                                },
+                                None => Value::Null,
+                            };
+                        }
+                        "issueId" => {
+                            document["issue"] = match value.as_str() {
+                                Some(iid) => match self.issues.iter().find(|i| i["id"] == iid) {
+                                    Some(i) => {
+                                        json!({ "id": i["id"], "identifier": i["identifier"] })
+                                    }
+                                    None => return not_found("Issue"),
+                                },
+                                None => Value::Null,
+                            };
+                        }
+                        other => {
+                            document[other] = value;
+                        }
+                    }
+                }
+                if document["project"].is_null() && document["issue"].is_null() {
+                    return Workspace::document_needs_a_home();
+                }
+                document["updatedAt"] = json!(now);
+                let me = &self.users[0];
+                document["updatedBy"] =
+                    json!({ "id": me["id"], "name": me["name"], "displayName": me["displayName"] });
+                self.documents[index] = document.clone();
+                (
+                    200,
+                    json!({ "data": { "documentUpdate": { "success": true, "document": document } } }),
+                )
+            }
+            "DocumentDelete" | "DocumentUnarchive" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let deleting = op == "DocumentDelete";
+                let Some(index) = self
+                    .documents
+                    .iter()
+                    .position(|d| d["id"] == id && (d["archivedAt"].is_null() == deleting))
+                else {
+                    return not_found("Document");
+                };
+                let now = self.now();
+                if deleting {
+                    self.documents[index]["archivedAt"] = json!(now);
+                    self.documents[index]["trashed"] = json!(true);
+                } else {
+                    self.documents[index]["archivedAt"] = Value::Null;
+                    self.documents[index]["trashed"] = Value::Null;
+                }
+                let field = if deleting {
+                    "documentDelete"
+                } else {
+                    "documentUnarchive"
+                };
+                (
+                    200,
+                    json!({ "data": { field: { "success": true, "entity": Workspace::document_view(&self.documents[index]) } } }),
                 )
             }
             "ProjectStatusCreate" => {

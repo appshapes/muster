@@ -84,6 +84,13 @@ step "muster project get and update"
 "$bin" project get "Trying muster" | tee "$tmp/project-get.json"
 jq -e '.name == "Trying muster" and .status.name == "In Progress" and (.members.nodes | type) == "array"' "$tmp/project-get.json" >/dev/null
 
+step "muster document create, list --project and get"
+# The fake seeds a document titled "Plan", so the README's is "Kickoff".
+"$bin" document create --title "Kickoff" --project "Trying muster" --content "# Kickoff" | tee "$tmp/document.json"
+jq -e '.title == "Kickoff" and .project.name == "Trying muster" and .content == "# Kickoff"' "$tmp/document.json" >/dev/null
+"$bin" document list --project "Trying muster" | jq -s -e 'map(.title) == ["Kickoff"]' >/dev/null
+"$bin" document get Kickoff | jq -e '.content == "# Kickoff"' >/dev/null
+
 step "muster issue list --project"
 "$bin" issue update "$id" --project "Trying muster" | jq -e '.project.name == "Trying muster"' >/dev/null
 "$bin" issue list --project "Trying muster" | tee "$tmp/in-project.jsonl"

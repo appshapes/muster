@@ -84,6 +84,16 @@ user-visible change, added in the same commit as the change. The format follows
   A project update is Linear's name for a status post; `project update`, two words,
   changes the project itself (ADR 0014, group 11;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `document list [--project <NAME>] [--issue <ISSUE>]` prints documents, Linear's
+  pages of markdown kept with a project or an issue, newest first, each with its
+  `title`, `url`, `project`, `issue`, `creator`, `owner`, `updatedBy` and `trashed`;
+  `document get <TITLE>` adds its `content`; `document create --title <TEXT>
+  [--content <TEXT>|--content-file <PATH>] [--project <NAME>] [--issue <ISSUE>]` makes
+  one (a title a document has is refused, exit 6, unless `--allow-duplicate`);
+  `document update <TITLE>` changes the title, content, project or issue, `none`
+  clearing the last two; `document delete <TITLE>` puts one in the trash and
+  `document unarchive <TITLE>` brings it back, each printing Linear's entity (ADR
+  0014, group 14; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.3.0 - 2026-11-03
 

@@ -130,7 +130,14 @@ doing is a status post: `muster project-update create --project "Trying muster"
 --body "Shipping on Friday." --health onTrack` (one JSON line with the post's `body`,
 `health`, `user` and `url`), and `muster project-update list --project "Trying
 muster"` shows them newest first; the project's own `health` and `lastUpdate` follow
-the latest post.
+the latest post. A document is a page of markdown kept with a project or an issue:
+`muster document create --title "Kickoff" --project "Trying muster" --content "#
+Kickoff"` makes one (one JSON line with its `title`, `url`, `project` and `content`;
+a document with neither a project nor an issue is Linear's refusal, exit 6), `muster
+document list --project "Trying muster"` lists the project's without their content,
+`muster document get Kickoff` prints one with it, `muster document update Kickoff
+--content-file kickoff.md` replaces the text from a file, and `muster document delete
+Kickoff` puts it in the trash (`unarchive` brings it back).
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):

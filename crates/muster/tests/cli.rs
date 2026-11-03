@@ -1863,6 +1863,225 @@ fn user_get_update_role_suspension_and_sessions() {
     assert_eq!(run.code, 7, "{}", run.stderr);
 }
 
+// ---- documents (ADR 0014, group 14) ------------------------------------------------------
+
+#[test]
+fn document_list_get_create_update_delete_and_unarchive() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds one document, "Plan", in the project "Muster".
+    let seeded = muster(&fake, &["document", "list"]);
+    assert_eq!(seeded.code, 0, "{}", seeded.stderr);
+    assert_eq!(seeded.lines().len(), 1);
+    assert_eq!(seeded.lines()[0]["title"], "Plan");
+    assert_eq!(seeded.lines()[0]["project"]["name"], "Muster");
+    assert_eq!(
+        seeded.lines()[0].get("content"),
+        None,
+        "the list shape has no content"
+    );
+    let created = muster(
+        &fake,
+        &[
+            "document",
+            "create",
+            "--title",
+            "Design notes",
+            "--content",
+            "# Design\n\nOne page.",
+            "--project",
+            "Muster",
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let v = created.one();
+    assert_eq!(v["title"], "Design notes");
+    assert_eq!(v["content"], "# Design\n\nOne page.");
+    assert_eq!(v["project"]["name"], "Muster");
+    assert!(v["issue"].is_null() && v["url"].is_string() && v["trashed"].is_null());
+    assert_eq!(v["creator"]["displayName"], "fake");
+    let again = muster(&fake, &["document", "create", "--title", "design notes"]);
+    assert_eq!(again.code, 6, "{}", again.stderr);
+    fake.fail_next("DocumentByTitle", Failure::Drop);
+    let unread = muster(&fake, &["document", "create", "--title", "Unread"]);
+    assert_eq!(unread.code, 7, "the guard's read failed: {}", unread.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "DocumentCreate")
+            .count(),
+        1,
+        "refused and failed before any mutation"
+    );
+    let dir = temp_dir();
+    let file = write(&dir, "notes.md", "From a file.\n");
+    let on_issue = muster(
+        &fake,
+        &[
+            "document",
+            "create",
+            "--title",
+            "APP-1 notes",
+            "--content-file",
+            &file,
+            "--issue",
+            "APP-1",
+        ],
+    );
+    assert_eq!(on_issue.code, 0, "{}", on_issue.stderr);
+    assert_eq!(on_issue.one()["issue"]["identifier"], "APP-1");
+    assert_eq!(on_issue.one()["content"], "From a file.\n");
+    let both = muster(
+        &fake,
+        &[
+            "document",
+            "create",
+            "--title",
+            "Both",
+            "--content",
+            "x",
+            "--content-file",
+            &file,
+        ],
+    );
+    assert_eq!(
+        both.code, 2,
+        "one of --content and --content-file: {}",
+        both.stderr
+    );
+    let no_issue = muster(
+        &fake,
+        &[
+            "document", "create", "--title", "Nowhere", "--issue", "APP-999",
+        ],
+    );
+    assert_eq!(no_issue.code, 4, "{}", no_issue.stderr);
+    let homeless = muster(&fake, &["document", "create", "--title", "Nowhere"]);
+    assert_eq!(homeless.code, 6, "{}", homeless.stderr);
+    assert!(
+        homeless.stderr.contains("A document needs a project"),
+        "Linear's reason on the error: {}",
+        homeless.stderr
+    );
+
+    assert_eq!(muster(&fake, &["document", "list"]).lines().len(), 3);
+    let in_project = muster(&fake, &["document", "list", "--project", "Muster"]);
+    assert_eq!(in_project.lines().len(), 2);
+    let on_app1 = muster(&fake, &["document", "list", "--issue", "APP-1"]);
+    assert_eq!(on_app1.lines().len(), 1);
+    assert_eq!(on_app1.lines()[0]["title"], "APP-1 notes");
+    let cut = muster(&fake, &["document", "list", "--limit", "1"]);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(cut.notices()[0]["code"], "truncated");
+
+    let got = muster(&fake, &["document", "get", "plan"]);
+    assert_eq!(got.code, 0, "{}", got.stderr);
+    assert_eq!(got.one()["title"], "Plan");
+    assert_eq!(got.one()["content"], "# Plan\n\nThe fake project's plan.");
+    assert_eq!(
+        fake.operations().last().map(String::as_str),
+        Some("DocumentByTitle"),
+        "one request"
+    );
+    assert_eq!(muster(&fake, &["document", "get", "Nope"]).code, 4);
+
+    let updated = muster(
+        &fake,
+        &[
+            "document",
+            "update",
+            "Design notes",
+            "--title",
+            "Design",
+            "--content",
+            "Rewritten.",
+            "--project",
+            "none",
+            "--issue",
+            "APP-2",
+        ],
+    );
+    assert_eq!(updated.code, 0, "{}", updated.stderr);
+    let u = updated.one();
+    assert_eq!(u["title"], "Design");
+    assert_eq!(u["content"], "Rewritten.");
+    assert!(u["project"].is_null());
+    assert_eq!(u["issue"]["identifier"], "APP-2");
+    let homeless = muster(&fake, &["document", "update", "Design", "--issue", "none"]);
+    assert_eq!(
+        homeless.code, 6,
+        "neither a project nor an issue: {}",
+        homeless.stderr
+    );
+    let cleared = muster(
+        &fake,
+        &[
+            "document",
+            "update",
+            "Design",
+            "--issue",
+            "none",
+            "--project",
+            "Muster",
+        ],
+    );
+    assert_eq!(cleared.code, 0, "{}", cleared.stderr);
+    assert!(cleared.one()["issue"].is_null());
+    assert_eq!(cleared.one()["project"]["name"], "Muster");
+    let nothing = muster(&fake, &["document", "update", "Design"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    let nope = muster(&fake, &["document", "update", "Nope", "--title", "x"]);
+    assert_eq!(nope.code, 4, "{}", nope.stderr);
+
+    let deleted = muster(&fake, &["document", "delete", "Design"]);
+    assert_eq!(deleted.code, 0, "{}", deleted.stderr);
+    assert_eq!(deleted.one()["trashed"], true);
+    assert!(deleted.one()["archivedAt"].is_string());
+    assert_eq!(muster(&fake, &["document", "list"]).lines().len(), 2);
+    assert_eq!(muster(&fake, &["document", "get", "Design"]).code, 4);
+    assert_eq!(
+        muster(&fake, &["document", "delete", "Design"]).code,
+        4,
+        "a trashed document is not trashed again"
+    );
+    let back = muster(&fake, &["document", "unarchive", "Design"]);
+    assert_eq!(back.code, 0, "{}", back.stderr);
+    assert!(back.one()["archivedAt"].is_null() && back.one()["trashed"].is_null());
+    assert_eq!(muster(&fake, &["document", "list"]).lines().len(), 3);
+
+    for (op, args) in [
+        (
+            "DocumentCreate",
+            vec![
+                "document",
+                "create",
+                "--title",
+                "Dropped",
+                "--project",
+                "Muster",
+            ],
+        ),
+        (
+            "DocumentUpdate",
+            vec!["document", "update", "Design", "--title", "Dropped"],
+        ),
+        ("DocumentDelete", vec!["document", "delete", "Design"]),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+    assert_eq!(muster(&fake, &["document", "delete", "Design"]).code, 0);
+    fake.fail_next("DocumentUnarchive", Failure::Drop);
+    let run = muster(&fake, &["document", "unarchive", "Design"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("Documents", Failure::Drop);
+    let run = muster(&fake, &["document", "list"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+    fake.fail_next("DocumentByTitle", Failure::Drop);
+    let run = muster(&fake, &["document", "get", "Plan"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+}
+
 // ---- project updates (ADR 0014, group 11) ------------------------------------------------
 
 #[test]
@@ -3695,6 +3914,7 @@ fn the_fakes_answers_have_the_recorded_shapes() {
             Some("APP-1"),
             Some("APP"),
             Some("Muster"),
+            Some("Plan"),
         )
         .unwrap();
         let answer = post(
