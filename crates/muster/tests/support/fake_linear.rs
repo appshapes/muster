@@ -3688,6 +3688,36 @@ impl Workspace {
                     json!({ "data": { "attachmentCreate": { "success": true, "attachment": attachment } } }),
                 )
             }
+            "CommentUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.comments.iter().position(|c| c["id"] == id) else {
+                    return not_found("Comment");
+                };
+                let Some(body) = vars["input"]["body"].as_str() else {
+                    return missing_variable("input", "CommentUpdateInput!");
+                };
+                let now = self.now();
+                self.comments[index]["body"] = json!(body);
+                self.comments[index]["updatedAt"] = json!(now);
+                self.comments[index]["editedAt"] = json!(now);
+                let mut comment = self.comments[index].clone();
+                comment.as_object_mut().unwrap().remove("issueId");
+                (
+                    200,
+                    json!({ "data": { "commentUpdate": { "success": true, "comment": comment } } }),
+                )
+            }
+            "CommentDelete" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self.comments.iter().position(|c| c["id"] == id) else {
+                    return not_found("Comment");
+                };
+                self.comments.remove(index);
+                (
+                    200,
+                    json!({ "data": { "commentDelete": { "success": true, "entityId": id } } }),
+                )
+            }
             "CommentCreate" => {
                 let input = &vars["input"];
                 let issue_id = input["issueId"].clone();

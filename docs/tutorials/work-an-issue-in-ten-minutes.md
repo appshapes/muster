@@ -185,6 +185,11 @@ The audit log says what was done, by whom and from where: `muster audit list --l
 projectDeleted` the deletions, `muster audit list --actor me --since
 2026-11-01T00:00:00Z` your own since a time. Linear reserves the log for owners on
 its Enterprise plan; where it refuses, the exit code is 6 and the message is Linear's.
+A comment is changed or removed by the id `issue get` prints under `comments` (and
+`issue comment` prints for a new one): `muster comment update <ID> --body "Second
+thoughts."` replaces its body (one JSON line, with `editedAt` set), `--body-file
+notes.md` takes the body from a file, and `muster comment delete <ID>` deletes it,
+with no undo.
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):

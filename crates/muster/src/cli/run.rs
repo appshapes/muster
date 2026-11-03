@@ -11,20 +11,20 @@ use crate::bounds::{
 };
 use crate::cli::{
     AttachArgs, AuditCommand, AuditListArgs, BatchUpdateArgs, Cli, CloseArgs, Command, CommentArgs,
-    CreateArgs, CycleCommand, CycleListArgs, CycleRefArgs, CycleUpdateArgs, DocumentCommand,
-    DocumentCreateArgs, DocumentListArgs, DocumentRefArgs, DocumentUpdateArgs, GetArgs,
-    InitiativeCommand, InitiativeCreateArgs, InitiativeListArgs, InitiativeProjectArgs,
-    InitiativeRefArgs, InitiativeUpdateArgs, IssueCommand, IssueListArgs, IssueRefArgs,
-    LabelCommand, LabelCreateArgs, LabelRefArgs, LabelUpdateArgs, ListArgs, MemberArgs,
-    MemberCommand, MilestoneCommand, MilestoneCreateArgs, MilestoneListArgs, MilestoneRefArgs,
-    MilestoneUpdateArgs, ProjectCommand, ProjectCreateArgs, ProjectRefArgs, ProjectStatusCommand,
-    ProjectStatusCreateArgs, ProjectStatusRefArgs, ProjectStatusUpdateArgs, ProjectUpdateArgs,
-    ProjectUpdateCommand, ProjectUpdateCreateArgs, ProjectUpdateListArgs, StateCommand,
-    StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs, TeamRefArgs,
-    TeamUpdateArgs, TemplateCommand, TemplateCreateArgs, TemplateListArgs, TemplateRefArgs,
-    TemplateUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs, UserRoleArgs,
-    UserUpdateArgs, WebhookCommand, WebhookCreateArgs, WebhookListArgs, WebhookRefArgs,
-    WebhookUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
+    CommentCommand, CommentRefArgs, CommentUpdateArgs, CreateArgs, CycleCommand, CycleListArgs,
+    CycleRefArgs, CycleUpdateArgs, DocumentCommand, DocumentCreateArgs, DocumentListArgs,
+    DocumentRefArgs, DocumentUpdateArgs, GetArgs, InitiativeCommand, InitiativeCreateArgs,
+    InitiativeListArgs, InitiativeProjectArgs, InitiativeRefArgs, InitiativeUpdateArgs,
+    IssueCommand, IssueListArgs, IssueRefArgs, LabelCommand, LabelCreateArgs, LabelRefArgs,
+    LabelUpdateArgs, ListArgs, MemberArgs, MemberCommand, MilestoneCommand, MilestoneCreateArgs,
+    MilestoneListArgs, MilestoneRefArgs, MilestoneUpdateArgs, ProjectCommand, ProjectCreateArgs,
+    ProjectRefArgs, ProjectStatusCommand, ProjectStatusCreateArgs, ProjectStatusRefArgs,
+    ProjectStatusUpdateArgs, ProjectUpdateArgs, ProjectUpdateCommand, ProjectUpdateCreateArgs,
+    ProjectUpdateListArgs, StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs,
+    TeamCommand, TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, TemplateCommand, TemplateCreateArgs,
+    TemplateListArgs, TemplateRefArgs, TemplateUpdateArgs, UpdateArgs, UserCommand, UserListArgs,
+    UserRefArgs, UserRoleArgs, UserUpdateArgs, WebhookCommand, WebhookCreateArgs, WebhookListArgs,
+    WebhookRefArgs, WebhookUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -197,6 +197,13 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
             let session = Session::open(&config)?;
             match command {
                 AuditCommand::List(args) => audit_list(&session, args, out),
+            }
+        }
+        Command::Comment { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                CommentCommand::Update(args) => comment_update(&session, args, out),
+                CommentCommand::Delete(args) => comment_delete(&session, args, out),
             }
         }
         Command::Milestone { command } => {
@@ -3040,6 +3047,43 @@ fn issue_batch_update(
     for issue in &issues {
         out.emit(issue);
     }
+    Ok(())
+}
+
+/// `comment update`: the body replaced, by the comment's id; Linear's "not found"
+/// is exit 4 (ADR 0014, group 19).
+fn comment_update(session: &Session, args: &CommentUpdateArgs, out: &Output) -> Result<(), Error> {
+    let body = body_from(&args.body, &args.body_file)?
+        .ok_or_else(|| Error::new(ErrorCode::Usage, "a comment needs --body or --body-file"))?;
+    let id = args.id.trim();
+    if id.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "the comment id is empty",
+            "`muster issue get <ISSUE>` prints each comment's id",
+        ));
+    }
+    let data = session.linear.run(
+        &ops::COMMENT_UPDATE,
+        json!({ "id": id, "input": { "body": body } }),
+    )?;
+    out.emit(&payload(&data, "commentUpdate", "comment")?);
+    Ok(())
+}
+
+fn comment_delete(session: &Session, args: &CommentRefArgs, out: &Output) -> Result<(), Error> {
+    let id = args.id.trim();
+    if id.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "the comment id is empty",
+            "`muster issue get <ISSUE>` prints each comment's id",
+        ));
+    }
+    let data = session
+        .linear
+        .run(&ops::COMMENT_DELETE, json!({ "id": id }))?;
+    out.emit(&delete_payload(&data, "commentDelete")?);
     Ok(())
 }
 

@@ -372,6 +372,13 @@ echo
 echo "smoke: muster issue comment $id"
 "$bin" issue comment "$id" --body "Read back by the smoke test." | tee "$tmp/comment.json"
 echo
+echo "smoke: muster comment update and comment delete, on a second comment of $id (ADR 0014)"
+"$bin" issue comment "$id" --body "A second comment, edited and deleted by the smoke test." | jq -r .id > "$tmp/comment2.id"
+"$bin" comment update "$(cat "$tmp/comment2.id")" --body "Edited by the smoke test at $stamp." | jq -c '{id, body, editedAt}' | tee "$tmp/comment-update.json"
+jq -e --arg b "Edited by the smoke test at $stamp." '.body == $b and .editedAt != null' "$tmp/comment-update.json" >/dev/null
+"$bin" comment delete "$(cat "$tmp/comment2.id")" | jq -c '{success, entityId}' | tee "$tmp/comment-delete.json"
+jq -e '.success == true' "$tmp/comment-delete.json" >/dev/null
+echo
 echo "smoke: muster issue get $id"
 "$bin" issue get "$id" | jq '{identifier, title, state: .state.name, comments: [.comments.nodes[].body]}'
 echo

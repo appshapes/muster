@@ -3886,6 +3886,91 @@ fn issue_archive_unarchive_delete_and_batch_update() {
     }
 }
 
+// ---- comments (ADR 0014, group 19) -------------------------------------------------------
+
+#[test]
+fn comment_update_and_delete_by_id() {
+    let fake = Fake::start().unwrap();
+    let made = muster(
+        &fake,
+        &["issue", "comment", "APP-1", "--body", "First draft."],
+    );
+    assert_eq!(made.code, 0, "{}", made.stderr);
+    let id = made.one()["id"].as_str().unwrap().to_string();
+    assert!(made.one()["editedAt"].is_null());
+    let edited = muster(
+        &fake,
+        &["comment", "update", &id, "--body", "Second draft."],
+    );
+    assert_eq!(edited.code, 0, "{}", edited.stderr);
+    assert_eq!(edited.one()["id"], id);
+    assert_eq!(edited.one()["body"], "Second draft.");
+    assert!(
+        edited.one()["editedAt"].is_string(),
+        "Linear marks the edit"
+    );
+    assert_eq!(edited.one()["issue"]["identifier"], "APP-1");
+    assert_eq!(
+        fake.operations().last().map(String::as_str),
+        Some("CommentUpdate"),
+        "one request"
+    );
+    let dir = temp_dir();
+    let file = write(&dir, "body.md", "From a file.\n");
+    let from_file = muster(&fake, &["comment", "update", &id, "--body-file", &file]);
+    assert_eq!(from_file.one()["body"], "From a file.\n");
+    let both = muster(
+        &fake,
+        &[
+            "comment",
+            "update",
+            &id,
+            "--body",
+            "x",
+            "--body-file",
+            &file,
+        ],
+    );
+    assert_eq!(both.code, 2, "{}", both.stderr);
+    let neither = muster(&fake, &["comment", "update", &id]);
+    assert_eq!(neither.code, 2, "{}", neither.stderr);
+    let blank = muster(&fake, &["comment", "update", " ", "--body", "x"]);
+    assert_eq!(blank.code, 2, "{}", blank.stderr);
+    let nope = muster(&fake, &["comment", "update", "no-such-id", "--body", "x"]);
+    assert_eq!(nope.code, 4, "Linear's not found: {}", nope.stderr);
+    let shown = muster(&fake, &["issue", "get", "APP-1"]).one();
+    assert!(
+        shown["comments"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["id"] == id && c["body"] == "From a file.\n"),
+        "`issue get` shows the edit"
+    );
+    let deleted = muster(&fake, &["comment", "delete", &id]);
+    assert_eq!(deleted.code, 0, "{}", deleted.stderr);
+    assert_eq!(deleted.one()["success"], true);
+    assert_eq!(deleted.one()["entityId"], id);
+    let shown = muster(&fake, &["issue", "get", "APP-1"]).one();
+    assert!(
+        shown["comments"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["id"] != id),
+        "`issue get` no longer shows it"
+    );
+    assert_eq!(muster(&fake, &["comment", "delete", &id]).code, 4);
+    let again = muster(&fake, &["issue", "comment", "APP-1", "--body", "Dropped."]);
+    let id = again.one()["id"].as_str().unwrap().to_string();
+    fake.fail_next("CommentUpdate", Failure::Drop);
+    let run = muster(&fake, &["comment", "update", &id, "--body", "x"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("CommentDelete", Failure::Drop);
+    let run = muster(&fake, &["comment", "delete", &id]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+}
+
 // ---- project updates (ADR 0014, group 11) ------------------------------------------------
 
 #[test]

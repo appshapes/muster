@@ -111,6 +111,12 @@ pub enum Command {
         #[command(subcommand)]
         command: AuditCommand,
     },
+    /// A comment on an issue, by the id `issue get` prints: update, delete
+    Comment {
+        /// The comment command.
+        #[command(subcommand)]
+        command: CommentCommand,
+    },
     /// A project's milestones: list, create, update, delete
     Milestone {
         /// The milestone command.
@@ -1527,6 +1533,43 @@ pub struct AuditListArgs {
     /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
     #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
     pub limit: usize,
+}
+
+/// The comment commands (ADR 0014, group 19); `issue comment` makes one, and the id
+/// is the one `issue get` prints under `comments`.
+#[derive(Subcommand, Debug)]
+pub enum CommentCommand {
+    /// Replace a comment's body
+    Update(CommentUpdateArgs),
+    /// Delete a comment; there is no undo
+    Delete(CommentRefArgs),
+}
+
+/// `comment update`.
+#[derive(Args, Debug)]
+pub struct CommentUpdateArgs {
+    /// The comment's id, as `issue get` prints it
+    #[arg(value_name = "ID")]
+    pub id: String,
+    /// The new body, markdown
+    #[arg(
+        long,
+        value_name = "TEXT",
+        conflicts_with = "body_file",
+        required_unless_present = "body_file"
+    )]
+    pub body: Option<String>,
+    /// The new body from a file, or from stdin when PATH is `-`
+    #[arg(long, value_name = "PATH")]
+    pub body_file: Option<String>,
+}
+
+/// A comment, by id.
+#[derive(Args, Debug)]
+pub struct CommentRefArgs {
+    /// The comment's id, as `issue get` prints it
+    #[arg(value_name = "ID")]
+    pub id: String,
 }
 
 /// The milestone commands (ADR 0014, group 10): the steps inside a project.

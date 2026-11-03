@@ -638,6 +638,24 @@ List the workspace's audit entries, newest first, one JSON object per line.
 | `--since` | `<TIME>` | no |  | Only entries at or after this time (2026-11-01T00:00:00Z) |
 | `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
 
+### muster comment update
+
+Replace a comment's body.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<ID>` | `<ID>` | yes |  | The comment's id, as `issue get` prints it |
+| `--body` | `<TEXT>` | no |  | The new body, markdown |
+| `--body-file` | `<PATH>` | no |  | The new body from a file, or from stdin when PATH is `-` |
+
+### muster comment delete
+
+Delete a comment; there is no undo.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<ID>` | `<ID>` | yes |  | The comment's id, as `issue get` prints it |
+
 ### muster milestone list
 
 List a project's milestones, one JSON object per line.
@@ -1132,3 +1150,5 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `IssueUnarchive` | mutation |
 | `IssueDelete` | mutation |
 | `IssueBatchUpdate` | mutation |
+| `CommentUpdate` | mutation |
+| `CommentDelete` | mutation |
