@@ -1370,7 +1370,7 @@ fn team_get_prints_every_setting_by_key_or_by_the_team_rule() {
     assert_eq!(run.code, 0, "{}", run.stderr);
     let v = run.one();
     assert_eq!(v["key"], "APP");
-    assert_eq!(v["cyclesEnabled"], false);
+    assert_eq!(v["cyclesEnabled"], true, "the seeded team uses cycles");
     assert_eq!(v["visibility"], "public");
     assert!(v["timezone"].is_string());
     assert_eq!(v["defaultIssueState"]["name"], "Backlog");
@@ -1387,7 +1387,7 @@ fn team_get_prints_every_setting_by_key_or_by_the_team_rule() {
     assert_eq!(inferred.code, 0, "{}", inferred.stderr);
     assert_eq!(inferred.one()["key"], "APP");
     let listed = muster(&fake, &["team", "list"]).one();
-    assert_eq!(listed["cyclesEnabled"], false);
+    assert_eq!(listed["cyclesEnabled"], true);
     assert!(listed["retiredAt"].is_null() && listed["timezone"].is_string());
 
     let nope = muster(&fake, &["team", "get", "NOPE"]);
@@ -2294,6 +2294,1297 @@ fn initiative_remove_project_refuses_a_link_past_page_cap() {
         gone.code, 4,
         "a whole list tells a missing link: {}",
         gone.stderr
+    );
+}
+
+// ---- cycles (ADR 0014, group 13) ---------------------------------------------------------
+
+#[test]
+fn cycle_list_get_update_and_the_issue_flag() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds three cycles on APP: 1 past, 2 active, 3 next; newest first.
+    let all = muster(&fake, &["cycle", "list"]);
+    assert_eq!(all.code, 0, "{}", all.stderr);
+    assert_eq!(all.lines().len(), 3);
+    assert_eq!(all.lines()[0]["number"], 3.0);
+    assert_eq!(all.lines()[0]["team"]["key"], "APP");
+    assert!(all.lines()[0]["startsAt"].is_string() && all.lines()[0]["endsAt"].is_string());
+    assert_eq!(
+        all.lines()[0].get("issues"),
+        None,
+        "the list shape has no issues"
+    );
+    let active = muster(&fake, &["cycle", "list", "--active"]);
+    assert_eq!(active.lines().len(), 1);
+    assert_eq!(active.lines()[0]["number"], 2.0);
+    assert_eq!(active.lines()[0]["isActive"], true);
+    let upcoming = muster(&fake, &["cycle", "list", "--upcoming"]);
+    assert_eq!(upcoming.lines().len(), 1);
+    assert_eq!(upcoming.lines()[0]["number"], 3.0);
+    let past = muster(&fake, &["cycle", "list", "--past"]);
+    assert_eq!(past.lines().len(), 1);
+    assert!(past.lines()[0]["completedAt"].is_string());
+    let both = muster(&fake, &["cycle", "list", "--active", "--past"]);
+    assert_eq!(both.code, 2, "{}", both.stderr);
+    let cut = muster(&fake, &["cycle", "list", "--limit", "1"]);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(cut.notices()[0]["code"], "truncated");
+
+    let got = muster(&fake, &["cycle", "get", "2"]);
+    assert_eq!(got.code, 0, "{}", got.stderr);
+    assert_eq!(got.one()["number"], 2.0);
+    assert_eq!(
+        got.one()["issues"]["nodes"][0]["identifier"],
+        "APP-2",
+        "the seeded issue in the active cycle"
+    );
+    assert_eq!(got.one()["issues"]["nodes"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        fake.operations().last().map(String::as_str),
+        Some("CycleByNumber"),
+        "one request"
+    );
+    let none = muster(&fake, &["cycle", "get", "9"]);
+    assert_eq!(none.code, 4, "{}", none.stderr);
+    let word = muster(&fake, &["cycle", "get", "active"]);
+    assert_eq!(word.code, 2, "a number: {}", word.stderr);
+
+    let updated = muster(
+        &fake,
+        &[
+            "cycle",
+            "update",
+            "2",
+            "--name",
+            "Sprint 2",
+            "--description",
+            "The one that ships.",
+            "--ends-at",
+            "2026-11-03T00:00:00.000Z",
+        ],
+    );
+    assert_eq!(updated.code, 0, "{}", updated.stderr);
+    assert_eq!(updated.one()["name"], "Sprint 2");
+    assert_eq!(updated.one()["description"], "The one that ships.");
+    assert_eq!(updated.one()["endsAt"], "2026-11-03T00:00:00.000Z");
+    assert_eq!(
+        updated.one()["startsAt"],
+        "2026-10-26T00:00:00.000Z",
+        "left alone"
+    );
+    let nothing = muster(&fake, &["cycle", "update", "2"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    let nope = muster(&fake, &["cycle", "update", "9", "--name", "x"]);
+    assert_eq!(nope.code, 4, "{}", nope.stderr);
+    assert_eq!(
+        nope.error()["message"],
+        "team APP has no cycle 9",
+        "the message a mistyped number gets"
+    );
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "CycleUpdate")
+            .count(),
+        1,
+        "the usage and not-found errors sent no mutation"
+    );
+
+    // --cycle on the issue commands: active, next, a number, none.
+    let in_active = muster(
+        &fake,
+        &[
+            "issue",
+            "create",
+            "--title",
+            "In the active cycle",
+            "--cycle",
+            "active",
+        ],
+    );
+    assert_eq!(in_active.code, 0, "{}", in_active.stderr);
+    assert_eq!(in_active.one()["cycle"]["number"], 2.0);
+    let id = in_active.one()["identifier"].as_str().unwrap().to_string();
+    let in_three = muster(
+        &fake,
+        &[
+            "issue",
+            "create",
+            "--title",
+            "In cycle three",
+            "--cycle",
+            "3",
+        ],
+    );
+    assert_eq!(in_three.one()["cycle"]["number"], 3.0);
+    let no_such = muster(
+        &fake,
+        &["issue", "create", "--title", "Nowhere", "--cycle", "9"],
+    );
+    assert_eq!(no_such.code, 4, "{}", no_such.stderr);
+    let bad_word = muster(
+        &fake,
+        &["issue", "create", "--title", "Nowhere", "--cycle", "soon"],
+    );
+    assert_eq!(bad_word.code, 2, "{}", bad_word.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "IssueCreate")
+            .count(),
+        2,
+        "the unknown cycle and the bad word sent no create"
+    );
+    let listed = muster(&fake, &["issue", "list", "--cycle", "active"]);
+    assert_eq!(listed.lines().len(), 2, "the seeded APP-2 and the new one");
+    assert!(listed.lines().iter().any(|i| i["identifier"] == id));
+    let by_number = muster(&fake, &["issue", "list", "--cycle", "3"]);
+    assert_eq!(by_number.lines().len(), 1);
+    let without = muster(&fake, &["issue", "list", "--cycle", "none", "--all"]);
+    assert!(
+        without.lines().iter().all(|i| i["cycle"].is_null()) && without.lines().len() >= 3,
+        "the other seeded issues are in no cycle"
+    );
+    let moved = muster(&fake, &["issue", "update", &id, "--cycle", "next"]);
+    assert_eq!(moved.code, 0, "{}", moved.stderr);
+    assert_eq!(moved.one()["cycle"]["number"], 3.0);
+    assert_eq!(
+        muster(&fake, &["cycle", "get", "3"]).one()["issues"]["nodes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2,
+        "`cycle get` lists the issues in it"
+    );
+    let out = muster(&fake, &["issue", "update", &id, "--cycle", "none"]);
+    assert!(out.one()["cycle"].is_null());
+
+    // The issues of `cycle get` are bounded by ISSUES_PER_CYCLE.
+    fake.add_cycle_issues("APP", 2.0, 51);
+    let full = muster(&fake, &["cycle", "get", "2"]);
+    assert_eq!(full.code, 0, "{}", full.stderr);
+    assert_eq!(
+        full.one()["issues"]["nodes"].as_array().unwrap().len(),
+        50,
+        "ISSUES_PER_CYCLE"
+    );
+    assert_eq!(full.notices()[0]["code"], "truncated");
+
+    fake.fail_next("CycleUpdate", Failure::Drop);
+    let run = muster(&fake, &["cycle", "update", "2", "--name", "Dropped"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("Cycles", Failure::Drop);
+    let run = muster(&fake, &["cycle", "list"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+    fake.fail_next("CycleByNumber", Failure::Drop);
+    let run = muster(&fake, &["cycle", "get", "2"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+    fake.fail_next("Cycles", Failure::Drop);
+    let run = muster(
+        &fake,
+        &["issue", "create", "--title", "Unread", "--cycle", "active"],
+    );
+    assert_eq!(
+        run.code, 7,
+        "the cycle's read failed before any create: {}",
+        run.stderr
+    );
+}
+
+// ---- documents (ADR 0014, group 14) ------------------------------------------------------
+
+#[test]
+fn document_list_get_create_update_delete_and_unarchive() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds one document, "Plan", in the project "Muster".
+    let seeded = muster(&fake, &["document", "list"]);
+    assert_eq!(seeded.code, 0, "{}", seeded.stderr);
+    assert_eq!(seeded.lines().len(), 1);
+    assert_eq!(seeded.lines()[0]["title"], "Plan");
+    assert_eq!(seeded.lines()[0]["project"]["name"], "Muster");
+    assert_eq!(
+        seeded.lines()[0].get("content"),
+        None,
+        "the list shape has no content"
+    );
+    let created = muster(
+        &fake,
+        &[
+            "document",
+            "create",
+            "--title",
+            "Design notes",
+            "--content",
+            "# Design\n\nOne page.",
+            "--project",
+            "Muster",
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let v = created.one();
+    assert_eq!(v["title"], "Design notes");
+    assert_eq!(v["content"], "# Design\n\nOne page.");
+    assert_eq!(v["project"]["name"], "Muster");
+    assert!(v["issue"].is_null() && v["url"].is_string() && v["trashed"].is_null());
+    assert_eq!(v["creator"]["displayName"], "fake");
+    let again = muster(&fake, &["document", "create", "--title", "design notes"]);
+    assert_eq!(again.code, 6, "{}", again.stderr);
+    fake.fail_next("DocumentByTitle", Failure::Drop);
+    let unread = muster(&fake, &["document", "create", "--title", "Unread"]);
+    assert_eq!(unread.code, 7, "the guard's read failed: {}", unread.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "DocumentCreate")
+            .count(),
+        1,
+        "refused and failed before any mutation"
+    );
+    let dir = temp_dir();
+    let file = write(&dir, "notes.md", "From a file.\n");
+    let on_issue = muster(
+        &fake,
+        &[
+            "document",
+            "create",
+            "--title",
+            "APP-1 notes",
+            "--content-file",
+            &file,
+            "--issue",
+            "APP-1",
+        ],
+    );
+    assert_eq!(on_issue.code, 0, "{}", on_issue.stderr);
+    assert_eq!(on_issue.one()["issue"]["identifier"], "APP-1");
+    assert_eq!(on_issue.one()["content"], "From a file.\n");
+    let both = muster(
+        &fake,
+        &[
+            "document",
+            "create",
+            "--title",
+            "Both",
+            "--content",
+            "x",
+            "--content-file",
+            &file,
+        ],
+    );
+    assert_eq!(
+        both.code, 2,
+        "one of --content and --content-file: {}",
+        both.stderr
+    );
+    let no_issue = muster(
+        &fake,
+        &[
+            "document", "create", "--title", "Nowhere", "--issue", "APP-999",
+        ],
+    );
+    assert_eq!(no_issue.code, 4, "{}", no_issue.stderr);
+    let homeless = muster(&fake, &["document", "create", "--title", "Nowhere"]);
+    assert_eq!(homeless.code, 6, "{}", homeless.stderr);
+    assert!(
+        homeless.stderr.contains("A document needs a project"),
+        "Linear's reason on the error: {}",
+        homeless.stderr
+    );
+
+    assert_eq!(muster(&fake, &["document", "list"]).lines().len(), 3);
+    let in_project = muster(&fake, &["document", "list", "--project", "Muster"]);
+    assert_eq!(in_project.lines().len(), 2);
+    let on_app1 = muster(&fake, &["document", "list", "--issue", "APP-1"]);
+    assert_eq!(on_app1.lines().len(), 1);
+    assert_eq!(on_app1.lines()[0]["title"], "APP-1 notes");
+    let cut = muster(&fake, &["document", "list", "--limit", "1"]);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(cut.notices()[0]["code"], "truncated");
+
+    let got = muster(&fake, &["document", "get", "plan"]);
+    assert_eq!(got.code, 0, "{}", got.stderr);
+    assert_eq!(got.one()["title"], "Plan");
+    assert_eq!(got.one()["content"], "# Plan\n\nThe fake project's plan.");
+    assert_eq!(
+        fake.operations().last().map(String::as_str),
+        Some("DocumentByTitle"),
+        "one request"
+    );
+    assert_eq!(muster(&fake, &["document", "get", "Nope"]).code, 4);
+
+    let updated = muster(
+        &fake,
+        &[
+            "document",
+            "update",
+            "Design notes",
+            "--title",
+            "Design",
+            "--content",
+            "Rewritten.",
+            "--project",
+            "none",
+            "--issue",
+            "APP-2",
+        ],
+    );
+    assert_eq!(updated.code, 0, "{}", updated.stderr);
+    let u = updated.one();
+    assert_eq!(u["title"], "Design");
+    assert_eq!(u["content"], "Rewritten.");
+    assert!(u["project"].is_null());
+    assert_eq!(u["issue"]["identifier"], "APP-2");
+    let homeless = muster(&fake, &["document", "update", "Design", "--issue", "none"]);
+    assert_eq!(
+        homeless.code, 6,
+        "neither a project nor an issue: {}",
+        homeless.stderr
+    );
+    let cleared = muster(
+        &fake,
+        &[
+            "document",
+            "update",
+            "Design",
+            "--issue",
+            "none",
+            "--project",
+            "Muster",
+        ],
+    );
+    assert_eq!(cleared.code, 0, "{}", cleared.stderr);
+    assert!(cleared.one()["issue"].is_null());
+    assert_eq!(cleared.one()["project"]["name"], "Muster");
+    let nothing = muster(&fake, &["document", "update", "Design"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    let nope = muster(&fake, &["document", "update", "Nope", "--title", "x"]);
+    assert_eq!(nope.code, 4, "{}", nope.stderr);
+
+    let deleted = muster(&fake, &["document", "delete", "Design"]);
+    assert_eq!(deleted.code, 0, "{}", deleted.stderr);
+    assert_eq!(deleted.one()["trashed"], true);
+    assert!(deleted.one()["archivedAt"].is_string());
+    assert_eq!(muster(&fake, &["document", "list"]).lines().len(), 2);
+    assert_eq!(muster(&fake, &["document", "get", "Design"]).code, 4);
+    assert_eq!(
+        muster(&fake, &["document", "delete", "Design"]).code,
+        4,
+        "a trashed document is not trashed again"
+    );
+    let back = muster(&fake, &["document", "unarchive", "Design"]);
+    assert_eq!(back.code, 0, "{}", back.stderr);
+    assert!(back.one()["archivedAt"].is_null() && back.one()["trashed"].is_null());
+    assert_eq!(muster(&fake, &["document", "list"]).lines().len(), 3);
+
+    for (op, args) in [
+        (
+            "DocumentCreate",
+            vec![
+                "document",
+                "create",
+                "--title",
+                "Dropped",
+                "--project",
+                "Muster",
+            ],
+        ),
+        (
+            "DocumentUpdate",
+            vec!["document", "update", "Design", "--title", "Dropped"],
+        ),
+        ("DocumentDelete", vec!["document", "delete", "Design"]),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+    assert_eq!(muster(&fake, &["document", "delete", "Design"]).code, 0);
+    fake.fail_next("DocumentUnarchive", Failure::Drop);
+    let run = muster(&fake, &["document", "unarchive", "Design"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("Documents", Failure::Drop);
+    let run = muster(&fake, &["document", "list"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+    fake.fail_next("DocumentByTitle", Failure::Drop);
+    let run = muster(&fake, &["document", "get", "Plan"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+}
+
+// ---- templates (ADR 0014, group 15) ------------------------------------------------------
+
+#[test]
+fn template_list_get_create_update_and_delete() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds one issue template the workspace shares, "Bug report".
+    let seeded = muster(&fake, &["template", "list"]);
+    assert_eq!(seeded.code, 0, "{}", seeded.stderr);
+    assert_eq!(seeded.lines().len(), 1);
+    assert_eq!(seeded.lines()[0]["name"], "Bug report");
+    assert_eq!(seeded.lines()[0]["type"], "issue");
+    assert!(seeded.lines()[0]["team"].is_null(), "the workspace's");
+    let data_of = |v: &Value| -> Value {
+        serde_json::from_str(
+            v["templateData"]
+                .as_str()
+                .expect("templateData is a string of JSON, as Linear returns it"),
+        )
+        .unwrap()
+    };
+    assert_eq!(data_of(&seeded.lines()[0])["title"], "Bug: ");
+    let dir = temp_dir();
+    let data = write(
+        &dir,
+        "feature.json",
+        "{\"title\": \"Feature: \", \"priority\": 3, \"labelIds\": []}\n",
+    );
+    let created = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Feature",
+            "--type",
+            "issue",
+            "--data-file",
+            &data,
+            "--description",
+            "For a feature.",
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let v = created.one();
+    assert_eq!(v["name"], "Feature");
+    assert_eq!(v["type"], "issue");
+    assert_eq!(v["team"]["key"], "APP", "the team's own by the usual rule");
+    assert_eq!(data_of(&v)["priority"], 3);
+    assert_eq!(v["description"], "For a feature.");
+    assert_eq!(v["creator"]["displayName"], "fake");
+    let again = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "feature",
+            "--type",
+            "issue",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(again.code, 6, "{}", again.stderr);
+    fake.fail_next("TemplateByName", Failure::Drop);
+    let unread = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Unread",
+            "--type",
+            "issue",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(unread.code, 7, "the guard's read failed: {}", unread.stderr);
+    let not_json = write(&dir, "bad.json", "{not json");
+    let bad = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Bad",
+            "--type",
+            "issue",
+            "--data-file",
+            &not_json,
+        ],
+    );
+    assert_eq!(bad.code, 2, "{}", bad.stderr);
+    let bad_type = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Bad",
+            "--type",
+            "cycle",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(bad_type.code, 2, "{}", bad_type.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "TemplateCreate")
+            .count(),
+        1,
+        "refused, failed and bad inputs sent no mutation"
+    );
+    let project_data = write(&dir, "project.json", "{\"name\": \"Launch \"}");
+    let shared = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Launch plan",
+            "--type",
+            "project",
+            "--data-file",
+            &project_data,
+            "--workspace",
+        ],
+    );
+    assert_eq!(shared.code, 0, "{}", shared.stderr);
+    assert!(shared.one()["team"].is_null());
+    assert_eq!(shared.one()["type"], "project");
+
+    assert_eq!(muster(&fake, &["template", "list"]).lines().len(), 3);
+    let issues = muster(&fake, &["template", "list", "--type", "issue"]);
+    assert_eq!(issues.lines().len(), 2);
+    let projects = muster(&fake, &["template", "list", "--type", "project"]);
+    assert_eq!(projects.lines().len(), 1);
+    assert_eq!(projects.lines()[0]["name"], "Launch plan");
+    let cut = muster(&fake, &["template", "list", "--limit", "1"]);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(
+        cut.notices()[0]["code"],
+        "truncated",
+        "known from the one extra asked for"
+    );
+    let exact = muster(&fake, &["template", "list", "--limit", "3"]);
+    assert_eq!(exact.lines().len(), 3);
+    assert!(
+        exact.notices().is_empty(),
+        "a list that fits writes no notice"
+    );
+    fake.add_team("SMK", "Smoke tests");
+    let other = muster(&fake, &["template", "list", "--team", "SMK"]);
+    assert_eq!(other.lines().len(), 2, "the workspace's two, not APP's own");
+
+    // A name resolves in the team's scope, its own and the workspace's, as a label
+    // does (ADR 0014): APP's "Feature" is not SMK's to read, change or delete, and the
+    // workspace's "Bug report" is every team's.
+    let elsewhere = muster(&fake, &["template", "get", "Feature", "--team", "SMK"]);
+    assert_eq!(elsewhere.code, 4, "{}", elsewhere.stderr);
+    let not_mine = muster(&fake, &["template", "delete", "Feature", "--team", "SMK"]);
+    assert_eq!(not_mine.code, 4, "{}", not_mine.stderr);
+    let not_changed = muster(
+        &fake,
+        &[
+            "template", "update", "Feature", "--team", "SMK", "--name", "x",
+        ],
+    );
+    assert_eq!(not_changed.code, 4, "{}", not_changed.stderr);
+    assert!(
+        !fake
+            .operations()
+            .iter()
+            .any(|o| o == "TemplateDelete" || o == "TemplateUpdate"),
+        "another team's template was neither deleted nor changed"
+    );
+    let shared_too = muster(&fake, &["template", "get", "Bug report", "--team", "SMK"]);
+    assert_eq!(shared_too.code, 0, "{}", shared_too.stderr);
+    assert!(shared_too.one()["team"].is_null(), "the workspace's");
+    // The guard is on the same scope: SMK may have its own "Feature" while APP has
+    // one, APP may not have a second, a team may have the name the workspace has and
+    // the workspace not a second; the team's own then comes first for the team, and
+    // a delete in the team takes the team's own, not the workspace's.
+    let smk_feature = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Feature",
+            "--type",
+            "issue",
+            "--team",
+            "SMK",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(smk_feature.code, 0, "{}", smk_feature.stderr);
+    assert_eq!(smk_feature.one()["team"]["key"], "SMK");
+    let app_again = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Feature",
+            "--type",
+            "issue",
+            "--team",
+            "APP",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(app_again.code, 6, "{}", app_again.stderr);
+    let shared_again = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "bug report",
+            "--type",
+            "issue",
+            "--team",
+            "APP",
+            "--workspace",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(shared_again.code, 6, "{}", shared_again.stderr);
+    let team_bug = muster(
+        &fake,
+        &[
+            "template",
+            "create",
+            "--name",
+            "Bug report",
+            "--type",
+            "issue",
+            "--team",
+            "APP",
+            "--data-file",
+            &data,
+        ],
+    );
+    assert_eq!(team_bug.code, 0, "{}", team_bug.stderr);
+    assert_eq!(team_bug.one()["team"]["key"], "APP");
+    let own_first = muster(&fake, &["template", "get", "Bug report", "--team", "APP"]);
+    assert_eq!(own_first.code, 0, "{}", own_first.stderr);
+    assert_eq!(
+        own_first.one()["team"]["key"],
+        "APP",
+        "the team's own first"
+    );
+    let still_shared = muster(&fake, &["template", "get", "Bug report", "--team", "SMK"]);
+    assert!(
+        still_shared.one()["team"].is_null(),
+        "the workspace's for SMK"
+    );
+    let own_gone = muster(
+        &fake,
+        &["template", "delete", "Bug report", "--team", "APP"],
+    );
+    assert_eq!(own_gone.code, 0, "{}", own_gone.stderr);
+    assert_eq!(own_gone.one()["entityId"], team_bug.one()["id"]);
+    let shared_left = muster(&fake, &["template", "get", "Bug report", "--team", "APP"]);
+    assert!(
+        shared_left.one()["team"].is_null(),
+        "the workspace's is left"
+    );
+
+    let got = muster(&fake, &["template", "get", "feature", "--team", "APP"]);
+    assert_eq!(got.code, 0, "{}", got.stderr);
+    assert_eq!(got.one()["name"], "Feature");
+    assert_eq!(got.one()["team"]["key"], "APP", "APP's own, not SMK's");
+    assert_eq!(data_of(&got.one())["title"], "Feature: ");
+    assert_eq!(
+        fake.operations().last().map(String::as_str),
+        Some("TemplateByName"),
+        "the template in one request"
+    );
+    assert_eq!(
+        muster(&fake, &["template", "get", "Nope", "--team", "APP"]).code,
+        4
+    );
+
+    let new_data = write(&dir, "feature2.json", "{\"title\": \"Feature request: \"}");
+    let updated = muster(
+        &fake,
+        &[
+            "template",
+            "update",
+            "Feature",
+            "--team",
+            "APP",
+            "--name",
+            "Feature request",
+            "--description",
+            "Renamed.",
+            "--data-file",
+            &new_data,
+        ],
+    );
+    assert_eq!(updated.code, 0, "{}", updated.stderr);
+    assert_eq!(updated.one()["name"], "Feature request");
+    assert_eq!(updated.one()["team"]["key"], "APP", "APP's own, not SMK's");
+    assert_eq!(updated.one()["description"], "Renamed.");
+    assert_eq!(data_of(&updated.one())["title"], "Feature request: ");
+    assert_eq!(updated.one()["type"], "issue", "the type never changes");
+    let nothing = muster(
+        &fake,
+        &["template", "update", "Feature request", "--team", "APP"],
+    );
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    let nope = muster(
+        &fake,
+        &["template", "update", "Nope", "--team", "APP", "--name", "x"],
+    );
+    assert_eq!(nope.code, 4, "{}", nope.stderr);
+
+    let deleted = muster(
+        &fake,
+        &["template", "delete", "Launch plan", "--team", "APP"],
+    );
+    assert_eq!(deleted.code, 0, "{}", deleted.stderr);
+    assert_eq!(deleted.one()["success"], true);
+    assert!(deleted.one()["entityId"].is_string());
+    assert_eq!(
+        muster(&fake, &["template", "list", "--team", "APP"])
+            .lines()
+            .len(),
+        2,
+        "APP's own and the workspace's, not SMK's; two teams now, so the team is named"
+    );
+    assert_eq!(
+        muster(
+            &fake,
+            &["template", "delete", "Launch plan", "--team", "APP"]
+        )
+        .code,
+        4
+    );
+
+    for (op, args) in [
+        (
+            "TemplateCreate",
+            vec![
+                "template",
+                "create",
+                "--name",
+                "Dropped",
+                "--type",
+                "issue",
+                "--data-file",
+                &data,
+                "--team",
+                "APP",
+            ],
+        ),
+        (
+            "TemplateUpdate",
+            vec![
+                "template",
+                "update",
+                "Feature request",
+                "--team",
+                "APP",
+                "--name",
+                "Dropped",
+            ],
+        ),
+        (
+            "TemplateDelete",
+            vec!["template", "delete", "Feature request", "--team", "APP"],
+        ),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+    fake.fail_next("Templates", Failure::Drop);
+    let run = muster(&fake, &["template", "list", "--team", "APP"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+    fake.fail_next("TemplateByName", Failure::Drop);
+    let run = muster(&fake, &["template", "get", "Bug report", "--team", "APP"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+}
+
+// ---- webhooks (ADR 0014, group 16) -------------------------------------------------------
+
+#[test]
+fn webhook_list_create_update_and_delete() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds one webhook of the team, "Fake hook".
+    let seeded = muster(&fake, &["webhook", "list"]);
+    assert_eq!(seeded.code, 0, "{}", seeded.stderr);
+    assert_eq!(seeded.lines().len(), 1);
+    assert_eq!(seeded.lines()[0]["label"], "Fake hook");
+    assert_eq!(seeded.lines()[0]["enabled"], true);
+    assert_eq!(seeded.lines()[0]["team"]["key"], "APP");
+    assert_eq!(
+        seeded.lines()[0].get("secret"),
+        None,
+        "the secret is never asked for"
+    );
+    let dir = temp_dir();
+    let secret = write(&dir, "secret", "s3cr3t-signing-key\n");
+    let created = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/issues",
+            "--resource-type",
+            "Issue",
+            "--resource-type",
+            "Comment",
+            "--label",
+            "Issues and comments",
+            "--secret-file",
+            &secret,
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let v = created.one();
+    assert_eq!(v["url"], "https://example.com/hooks/issues");
+    assert_eq!(v["label"], "Issues and comments");
+    assert_eq!(v["resourceTypes"], serde_json::json!(["Issue", "Comment"]));
+    assert_eq!(v["enabled"], true);
+    assert_eq!(v["team"]["key"], "APP", "the team by the usual rule");
+    assert_eq!(v["allPublicTeams"], false);
+    assert_eq!(v.get("secret"), None);
+    assert!(
+        !created.stdout.contains("s3cr3t") && !created.stderr.contains("s3cr3t"),
+        "the secret is never printed"
+    );
+    let again = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/issues",
+            "--resource-type",
+            "Issue",
+        ],
+    );
+    assert_eq!(
+        again.code, 6,
+        "a webhook posts to that URL: {}",
+        again.stderr
+    );
+    fake.fail_next("Webhooks", Failure::Drop);
+    let unread = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/unread",
+            "--resource-type",
+            "Issue",
+        ],
+    );
+    assert_eq!(unread.code, 7, "the guard's read failed: {}", unread.stderr);
+    let no_type = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/none",
+        ],
+    );
+    assert_eq!(
+        no_type.code, 2,
+        "--resource-type is required: {}",
+        no_type.stderr
+    );
+    let empty_secret = write(&dir, "empty", "\n");
+    let blank = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/blank",
+            "--resource-type",
+            "Issue",
+            "--secret-file",
+            &empty_secret,
+        ],
+    );
+    assert_eq!(blank.code, 2, "{}", blank.stderr);
+    let http = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "http://example.com/hooks/plain",
+            "--resource-type",
+            "Issue",
+        ],
+    );
+    assert_eq!(
+        http.code, 6,
+        "Linear refuses a URL that is not https: {}",
+        http.stderr
+    );
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "WebhookCreate")
+            .count(),
+        2,
+        "the refused, failed and bad inputs sent no mutation but Linear's own refusal"
+    );
+    let public = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/all",
+            "--resource-type",
+            "Project",
+            "--all-public-teams",
+        ],
+    );
+    assert_eq!(public.code, 0, "{}", public.stderr);
+    assert!(public.one()["team"].is_null());
+    assert_eq!(public.one()["allPublicTeams"], true);
+    assert!(public.one()["label"].is_null());
+
+    assert_eq!(muster(&fake, &["webhook", "list"]).lines().len(), 3);
+    let cut = muster(&fake, &["webhook", "list", "--limit", "1"]);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(cut.notices()[0]["code"], "truncated");
+
+    // By label, by URL, by id.
+    let off = muster(
+        &fake,
+        &[
+            "webhook",
+            "update",
+            "issues and comments",
+            "--enabled",
+            "false",
+        ],
+    );
+    assert_eq!(off.code, 0, "{}", off.stderr);
+    assert_eq!(off.one()["enabled"], false);
+    assert_eq!(
+        off.one()["label"],
+        "Issues and comments",
+        "the rest left alone"
+    );
+    let by_url = muster(
+        &fake,
+        &[
+            "webhook",
+            "update",
+            "https://example.com/hooks/all",
+            "--label",
+            "Every project",
+            "--resource-type",
+            "Project",
+            "--resource-type",
+            "ProjectUpdate",
+        ],
+    );
+    assert_eq!(by_url.code, 0, "{}", by_url.stderr);
+    assert_eq!(by_url.one()["label"], "Every project");
+    assert_eq!(
+        by_url.one()["resourceTypes"],
+        serde_json::json!(["Project", "ProjectUpdate"])
+    );
+    let id = by_url.one()["id"].as_str().unwrap().to_string();
+    let new_secret = write(&dir, "secret2", "another-secret");
+    let by_id = muster(
+        &fake,
+        &[
+            "webhook",
+            "update",
+            &id,
+            "--url",
+            "https://example.com/hooks/all-2",
+            "--secret-file",
+            &new_secret,
+        ],
+    );
+    assert_eq!(by_id.code, 0, "{}", by_id.stderr);
+    assert_eq!(by_id.one()["url"], "https://example.com/hooks/all-2");
+    assert!(!by_id.stdout.contains("another-secret"));
+    let bad_bool = muster(
+        &fake,
+        &["webhook", "update", "Every project", "--enabled", "off"],
+    );
+    assert_eq!(bad_bool.code, 2, "{}", bad_bool.stderr);
+    let nothing = muster(&fake, &["webhook", "update", "Every project"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    let nope = muster(&fake, &["webhook", "update", "Nope", "--enabled", "true"]);
+    assert_eq!(nope.code, 4, "{}", nope.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "WebhookUpdate")
+            .count(),
+        3,
+        "the usage and not-found errors sent no mutation"
+    );
+
+    let deleted = muster(&fake, &["webhook", "delete", "Every project"]);
+    assert_eq!(deleted.code, 0, "{}", deleted.stderr);
+    assert_eq!(deleted.one()["success"], true);
+    assert_eq!(deleted.one()["entityId"], id);
+    assert_eq!(muster(&fake, &["webhook", "list"]).lines().len(), 2);
+    assert_eq!(
+        muster(&fake, &["webhook", "delete", "Every project"]).code,
+        4
+    );
+
+    for (op, args) in [
+        (
+            "WebhookCreate",
+            vec![
+                "webhook",
+                "create",
+                "--url",
+                "https://example.com/hooks/dropped",
+                "--resource-type",
+                "Issue",
+            ],
+        ),
+        (
+            "WebhookUpdate",
+            vec!["webhook", "update", "Fake hook", "--enabled", "false"],
+        ),
+        ("WebhookDelete", vec!["webhook", "delete", "Fake hook"]),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+    fake.fail_next("Webhooks", Failure::Drop);
+    let run = muster(&fake, &["webhook", "list"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+    fake.fail_next("Webhooks", Failure::Drop);
+    let run = muster(&fake, &["webhook", "delete", "Fake hook"]);
+    assert_eq!(
+        run.code, 7,
+        "the reference's read failed before any mutation: {}",
+        run.stderr
+    );
+}
+
+/// The secret is the one value that travels in a request body, so `--trace`, which
+/// prints every request, redacts it: an agent's tool log and a CI log keep stderr
+/// (ADR 0008 for the key; ADR 0014, group 16 for the secret).
+#[test]
+fn webhook_trace_never_prints_the_secret() {
+    let fake = Fake::start().unwrap();
+    let dir = temp_dir();
+    let secret = write(&dir, "secret", "s3cr3t-signing-key\n");
+    let created = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--trace",
+            "--url",
+            "https://example.com/hooks/traced",
+            "--resource-type",
+            "Issue",
+            "--secret-file",
+            &secret,
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    assert!(
+        created.stderr.contains("WebhookCreate"),
+        "the request is traced: {}",
+        created.stderr
+    );
+    assert!(
+        created.stderr.contains(r#""secret":"<redacted>""#),
+        "the secret's place is marked: {}",
+        created.stderr
+    );
+    assert!(
+        !created.stdout.contains("s3cr3t") && !created.stderr.contains("s3cr3t"),
+        "the secret is never printed, not even by --trace: {}",
+        created.stderr
+    );
+    assert!(
+        !created.stderr.contains(KEY),
+        "the key is never printed (ADR 0008): {}",
+        created.stderr
+    );
+    let new_secret = write(&dir, "secret2", "another-secret");
+    let updated = muster(
+        &fake,
+        &[
+            "webhook",
+            "update",
+            "--trace",
+            "https://example.com/hooks/traced",
+            "--label",
+            "Traced",
+            "--secret-file",
+            &new_secret,
+        ],
+    );
+    assert_eq!(updated.code, 0, "{}", updated.stderr);
+    assert_eq!(updated.one()["label"], "Traced");
+    assert!(
+        updated.stderr.contains("WebhookUpdate"),
+        "the request is traced: {}",
+        updated.stderr
+    );
+    assert!(
+        updated.stderr.contains(r#""secret":"<redacted>""#),
+        "{}",
+        updated.stderr
+    );
+    assert!(
+        !updated.stdout.contains("another-secret") && !updated.stderr.contains("another-secret"),
+        "the secret is never printed, not even by --trace: {}",
+        updated.stderr
+    );
+    assert!(
+        !updated.stderr.contains(KEY),
+        "the key is never printed (ADR 0008): {}",
+        updated.stderr
+    );
+    // Without a secret, the trace is the request as sent: nothing else is touched.
+    let plain = muster(
+        &fake,
+        &[
+            "webhook",
+            "update",
+            "--trace",
+            "Traced",
+            "--enabled",
+            "false",
+        ],
+    );
+    assert_eq!(plain.code, 0, "{}", plain.stderr);
+    assert!(
+        plain.stderr.contains(r#""input":{"enabled":false}"#),
+        "{}",
+        plain.stderr
+    );
+    assert!(!plain.stderr.contains("redacted"), "{}", plain.stderr);
+}
+
+/// `<WEBHOOK>` and the duplicate guard read one page of up to `PAGE_CAP` webhooks,
+/// since Linear's list takes no filter: a webhook past it is refused, exit 6, rather
+/// than called unknown, and a URL past it is refused rather than assumed new
+/// (ADR 0014, group 16; CLAUDE.md, gate 3).
+#[test]
+fn webhook_past_the_bound_is_refused_rather_than_guessed() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds "Fake hook"; PAGE_CAP newer ones put it past the one page that
+    // `<WEBHOOK>` and the guard read, since the store is newest first.
+    fake.add_webhooks("APP", PAGE_CAP);
+    for args in [
+        vec!["webhook", "update", "Fake hook", "--enabled", "false"],
+        vec!["webhook", "delete", "Fake hook"],
+        vec![
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/new",
+            "--resource-type",
+            "Issue",
+        ],
+    ] {
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 6, "{args:?}: {}", run.stderr);
+        let e = run.error();
+        assert_eq!(e["code"], "refused", "{e}");
+        assert!(
+            e["message"]
+                .as_str()
+                .unwrap()
+                .contains("more than PAGE_CAP (250) webhooks"),
+            "{e}"
+        );
+        assert!(e["hint"].as_str().unwrap().contains("PAGE_CAP"), "{e}");
+        assert!(e["docs"].as_str().unwrap().ends_with("#bounds"), "{e}");
+    }
+    let mutations = ["WebhookCreate", "WebhookUpdate", "WebhookDelete"];
+    assert!(
+        !fake
+            .operations()
+            .iter()
+            .any(|o| mutations.contains(&o.as_str())),
+        "refused before any mutation: {:?}",
+        fake.operations()
+    );
+
+    // The guard's refusal is overridden, the reference's is not.
+    let forced = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/new",
+            "--resource-type",
+            "Issue",
+            "--allow-duplicate",
+        ],
+    );
+    assert_eq!(forced.code, 0, "{}", forced.stderr);
+    let forced_id = forced.one()["id"].as_str().unwrap().to_string();
+    let full = muster(&fake, &["webhook", "list", "--limit", "250"]);
+    assert_eq!(full.code, 0, "{}", full.stderr);
+    assert_eq!(full.lines().len(), 250, "the page is the bound");
+    assert_eq!(full.notices()[0]["code"], "truncated");
+    assert_eq!(full.lines()[0]["id"], forced_id.as_str(), "newest first");
+    assert_eq!(full.lines()[1]["label"], format!("Hook {PAGE_CAP}"));
+
+    // Back to exactly PAGE_CAP, by id, which is inside the page for both.
+    let newest_added = full.lines()[1]["id"].as_str().unwrap().to_string();
+    for id in [&forced_id, &newest_added] {
+        let run = muster(&fake, &["webhook", "delete", id]);
+        assert_eq!(run.code, 0, "{}", run.stderr);
+        assert_eq!(run.one()["entityId"], id.as_str());
+    }
+
+    // At the bound is not over it: the workspace has exactly PAGE_CAP webhooks, the
+    // page is not cut, "Fake hook" is the last one on it, a label no webhook has is
+    // exit 4 as before, and a URL no webhook posts to goes through.
+    let run = muster(
+        &fake,
+        &["webhook", "update", "Fake hook", "--enabled", "false"],
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(run.one()["enabled"], false);
+    let run = muster(&fake, &["webhook", "update", "Nope", "--enabled", "true"]);
+    assert_eq!(run.code, 4, "{}", run.stderr);
+    assert_eq!(run.error()["code"], "not_found");
+    let run = muster(
+        &fake,
+        &[
+            "webhook",
+            "create",
+            "--url",
+            "https://example.com/hooks/new",
+            "--resource-type",
+            "Issue",
+        ],
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(run.one()["url"], "https://example.com/hooks/new");
+    let ops = fake.operations();
+    let count = |name: &str| ops.iter().filter(|o| *o == name).count();
+    assert_eq!(
+        (
+            count("WebhookCreate"),
+            count("WebhookUpdate"),
+            count("WebhookDelete")
+        ),
+        (2, 1, 2),
+        "the two creates, the one update and the two deletes that went, and nothing for the refusals: {ops:?}"
     );
 }
 
@@ -4182,10 +5473,15 @@ fn the_fakes_answers_have_the_recorded_shapes() {
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         let variables = muster::cli::schema::fixture_variables(
             &name,
-            Some("APP-1"),
-            Some("APP"),
-            Some("Muster"),
-            Some("Launch"),
+            &muster::cli::schema::Samples {
+                issue: Some("APP-1"),
+                team: Some("APP"),
+                project: Some("Muster"),
+                initiative: Some("Launch"),
+                cycle: Some(("APP", 2.0)),
+                document: Some("Plan"),
+                template: Some("Bug report"),
+            },
         )
         .unwrap();
         let answer = post(

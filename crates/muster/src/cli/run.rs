@@ -5,12 +5,15 @@
 use serde_json::{Map, Value, json};
 
 use crate::bounds::{
-    ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, MEMBERS_PER_PROJECT,
-    MILESTONES_PER_PROJECT, PAGE_CAP, PROJECTS_PER_INITIATIVE, TEAMS_PER_PROJECT,
+    ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, ISSUES_PER_CYCLE,
+    MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, PAGE_CAP, PROJECTS_PER_INITIATIVE,
+    TEAMS_PER_PROJECT,
 };
 use crate::cli::{
     AttachArgs, AuditCommand, AuditListArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs,
-    GetArgs, InitiativeCommand, InitiativeCreateArgs, InitiativeListArgs, InitiativeProjectArgs,
+    CycleCommand, CycleListArgs, CycleRefArgs, CycleUpdateArgs, DocumentCommand,
+    DocumentCreateArgs, DocumentListArgs, DocumentRefArgs, DocumentUpdateArgs, GetArgs,
+    InitiativeCommand, InitiativeCreateArgs, InitiativeListArgs, InitiativeProjectArgs,
     InitiativeRefArgs, InitiativeUpdateArgs, IssueCommand, IssueListArgs, LabelCommand,
     LabelCreateArgs, LabelRefArgs, LabelUpdateArgs, ListArgs, MemberArgs, MemberCommand,
     MilestoneCommand, MilestoneCreateArgs, MilestoneListArgs, MilestoneRefArgs,
@@ -18,8 +21,10 @@ use crate::cli::{
     ProjectStatusCreateArgs, ProjectStatusRefArgs, ProjectStatusUpdateArgs, ProjectUpdateArgs,
     ProjectUpdateCommand, ProjectUpdateCreateArgs, ProjectUpdateListArgs, StateCommand,
     StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs, TeamRefArgs,
-    TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs, UserRoleArgs,
-    UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
+    TeamUpdateArgs, TemplateCommand, TemplateCreateArgs, TemplateListArgs, TemplateRefArgs,
+    TemplateUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs, UserRoleArgs,
+    UserUpdateArgs, WebhookCommand, WebhookCreateArgs, WebhookListArgs, WebhookRefArgs,
+    WebhookUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -134,6 +139,58 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 InitiativeCommand::RemoveProject(args) => {
                     initiative_remove_project(&session, args, out)
                 }
+            }
+        }
+        Command::Cycle { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                CycleCommand::List(args) => cycle_list(&session, args, out),
+                CycleCommand::Get(args) => cycle_get(&session, args, out),
+                CycleCommand::Update(args) => cycle_update(&session, args, out),
+            }
+        }
+        Command::Document { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                DocumentCommand::List(args) => document_list(&session, args, out),
+                DocumentCommand::Get(args) => document_get(&session, args, out),
+                DocumentCommand::Create(args) => document_create(&session, args, out),
+                DocumentCommand::Update(args) => document_update(&session, args, out),
+                DocumentCommand::Delete(args) => document_lifecycle(
+                    &session,
+                    args,
+                    &ops::DOCUMENT_DELETE,
+                    "documentDelete",
+                    false,
+                    out,
+                ),
+                DocumentCommand::Unarchive(args) => document_lifecycle(
+                    &session,
+                    args,
+                    &ops::DOCUMENT_UNARCHIVE,
+                    "documentUnarchive",
+                    true,
+                    out,
+                ),
+            }
+        }
+        Command::Template { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                TemplateCommand::List(args) => template_list(&session, args, out),
+                TemplateCommand::Get(args) => template_get(&session, args, out),
+                TemplateCommand::Create(args) => template_create(&session, args, out),
+                TemplateCommand::Update(args) => template_update(&session, args, out),
+                TemplateCommand::Delete(args) => template_delete(&session, args, out),
+            }
+        }
+        Command::Webhook { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                WebhookCommand::List(args) => webhook_list(&session, args, out),
+                WebhookCommand::Create(args) => webhook_create(&session, args, out),
+                WebhookCommand::Update(args) => webhook_update(&session, args, out),
+                WebhookCommand::Delete(args) => webhook_delete(&session, args, out),
             }
         }
         Command::Audit { command } => {
@@ -526,6 +583,177 @@ impl Session {
                 ErrorCode::NotFound,
                 format!("no initiative named {name:?}"),
                 "name one from `muster initiative list`; an archived one is reached by `initiative unarchive <NAME>`",
+            )),
+        }
+    }
+
+    /// The team's cycles that pass `filter`, newest first as Linear orders them, at
+    /// most `first` (ADR 0014, group 13).
+    fn cycles(
+        &self,
+        team_key: &str,
+        filter: Map<String, Value>,
+        first: usize,
+    ) -> Result<Value, Error> {
+        let mut filter = filter;
+        filter.insert("team".into(), json!({ "key": { "eq": team_key } }));
+        self.linear.run(
+            &ops::CYCLES,
+            json!({ "first": first, "filter": Value::Object(filter) }),
+        )
+    }
+
+    /// One cycle of the team from `--cycle`'s or a command's word: a number, `active`
+    /// or `next`; exit 2 for another word, exit 4 when the team has no such cycle.
+    fn cycle_ref(&self, team_key: &str, word: &str) -> Result<Value, Error> {
+        let (field, value, what) = match word.trim() {
+            "active" => (
+                "isActive",
+                json!({ "eq": true }),
+                "active cycle".to_string(),
+            ),
+            "next" => ("isNext", json!({ "eq": true }), "next cycle".to_string()),
+            text => match text.parse::<u64>() {
+                Ok(number) => (
+                    "number",
+                    json!({ "eq": number as f64 }),
+                    format!("cycle {number}"),
+                ),
+                Err(_) => {
+                    return Err(Error::with_hint(
+                        ErrorCode::Usage,
+                        format!("a cycle is a number, `active` or `next`, not {word:?}"),
+                        "`muster cycle list` prints the team's cycles with their numbers",
+                    ));
+                }
+            },
+        };
+        let mut filter = Map::new();
+        filter.insert(field.into(), value);
+        let data = self.cycles(team_key, filter, 1)?;
+        match nodes(&data, "cycles").into_iter().next() {
+            Some(cycle) => Ok(cycle),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("team {team_key} has no {what}"),
+                "`muster cycle list` prints the team's cycles; `team update --cycles-enabled true` turns them on",
+            )),
+        }
+    }
+
+    /// One cycle with its issues, by number, in one request, the issues bounded by
+    /// `ISSUES_PER_CYCLE`.
+    fn cycle_full(&self, team_key: &str, number: u64) -> Result<Value, Error> {
+        let data = self.linear.run(
+            &ops::CYCLE_BY_NUMBER,
+            json!({ "key": team_key, "number": number as f64, "issues": ISSUES_PER_CYCLE }),
+        )?;
+        match nodes(&data, "cycles").into_iter().next() {
+            Some(cycle) => Ok(cycle),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("team {team_key} has no cycle {number}"),
+                "`muster cycle list` prints the team's cycles with their numbers",
+            )),
+        }
+    }
+
+    /// One document with its content, by title, in one request; a trashed one only
+    /// when asked (ADR 0014, group 14).
+    fn document_full(&self, title: &str, include_archived: bool) -> Result<Value, Error> {
+        let data = self.linear.run(
+            &ops::DOCUMENT_BY_TITLE,
+            json!({ "title": title, "includeArchived": include_archived }),
+        )?;
+        match nodes(&data, "documents").into_iter().next() {
+            Some(document) => Ok(document),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("no document titled {title:?}"),
+                "name one from `muster document list`; a trashed one is reached by `document unarchive <TITLE>`",
+            )),
+        }
+    }
+
+    /// An issue's id from its identifier, for a document's `issueId`.
+    fn issue_id(&self, identifier: &str) -> Result<String, Error> {
+        let issue = self.issue(identifier, 1, 1, 1)?;
+        need_str(&issue, "id", "IssueById")
+    }
+
+    /// The templates named so in the team's scope, its own and the workspace's, in one
+    /// request; an archived one only when asked (ADR 0014, group 15). Two are asked
+    /// for, one for each scope the filter admits; a scope that `--allow-duplicate` gave
+    /// several of one name is read as Linear lists them, the first two.
+    fn templates_named(
+        &self,
+        team_key: &str,
+        name: &str,
+        include_archived: bool,
+    ) -> Result<Vec<Value>, Error> {
+        let data = self.linear.run(
+            &ops::TEMPLATE_BY_NAME,
+            json!({ "key": team_key, "name": name, "includeArchived": include_archived }),
+        )?;
+        Ok(data["templateSearch"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    /// One template by name among the team's and the workspace's, as `--label`
+    /// resolves a label: the team's own first, then the workspace's (ADR 0014,
+    /// group 15). Another team's template is not in the scope and is not found.
+    fn template_named(
+        &self,
+        team_key: &str,
+        name: &str,
+        include_archived: bool,
+    ) -> Result<Value, Error> {
+        let found = self.templates_named(team_key, name, include_archived)?;
+        let own = found.iter().find(|t| !at(t, "team").is_null());
+        match own.or_else(|| found.first()) {
+            Some(template) => Ok(template.clone()),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("no template named {name:?} for team {team_key} or the workspace"),
+                "name one from `muster template list`",
+            )),
+        }
+    }
+
+    /// The workspace's webhooks, up to `PAGE_CAP`, and whether Linear has more; the
+    /// list takes no filter (ADR 0014, group 16).
+    fn webhooks(&self) -> Result<(Vec<Value>, bool), Error> {
+        let data = self
+            .linear
+            .run(&ops::WEBHOOKS, json!({ "first": PAGE_CAP }))?;
+        Ok((nodes(&data, "webhooks"), has_next_page(&data, "webhooks")))
+    }
+
+    /// One webhook from a word: its label (case aside), else its URL, else its id;
+    /// exit 4 when none matches, exit 6 when the list was cut and none matched.
+    fn webhook_ref(&self, word: &str) -> Result<Value, Error> {
+        let (hooks, cut) = self.webhooks()?;
+        let found = hooks
+            .iter()
+            .find(|h| str_at(h, "label").is_some_and(|l| l.eq_ignore_ascii_case(word)))
+            .or_else(|| hooks.iter().find(|h| str_at(h, "url") == Some(word)))
+            .or_else(|| hooks.iter().find(|h| str_at(h, "id") == Some(word)));
+        match found {
+            Some(hook) => Ok(hook.clone()),
+            None if cut => Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "the workspace has more than PAGE_CAP ({PAGE_CAP}) webhooks and none of the first {PAGE_CAP} is labelled, at or with id {word:?}"
+                ),
+                "Linear's list of webhooks takes no filter; the rest are reached in the browser; PAGE_CAP is the bound",
+            )
+            .at("bounds")),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("no webhook labelled, at or with id {word:?}"),
+                "`muster webhook list` prints the workspace's webhooks with their labels, URLs and ids",
             )),
         }
     }
@@ -2078,6 +2306,540 @@ fn initiative_remove_project(
     Ok(())
 }
 
+fn cycle_list(session: &Session, args: &CycleListArgs, out: &Output) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let team_key = session.team_key()?;
+    let mut filter = Map::new();
+    if args.active {
+        filter.insert("isActive".into(), json!({ "eq": true }));
+    } else if args.upcoming {
+        filter.insert("isFuture".into(), json!({ "eq": true }));
+    } else if args.past {
+        filter.insert("isPast".into(), json!({ "eq": true }));
+    }
+    let data = session.cycles(&team_key, filter, n)?;
+    emit_list(
+        out,
+        nodes(&data, "cycles"),
+        has_next_page(&data, "cycles"),
+        "cycles",
+        n,
+    );
+    Ok(())
+}
+
+fn cycle_get(session: &Session, args: &CycleRefArgs, out: &Output) -> Result<(), Error> {
+    let team_key = session.team_key()?;
+    let cycle = session.cycle_full(&team_key, args.number)?;
+    out.emit(&cycle);
+    if has_next_page(&cycle, "issues") {
+        out.notice(
+            "truncated",
+            &format!(
+                "issues: cycle {} has more than the {ISSUES_PER_CYCLE} printed",
+                args.number
+            ),
+            "ISSUES_PER_CYCLE is the bound (docs/reference/commands.md#bounds); `muster issue list --cycle <NUMBER>` pages them",
+        );
+    }
+    Ok(())
+}
+
+/// The input of `cycleUpdate` from the flags: only what was passed, the texts bounded;
+/// the times go to Linear as given, since Linear validates a `DateTime`.
+fn cycle_input(args: &CycleUpdateArgs) -> Result<Map<String, Value>, Error> {
+    let mut input = Map::new();
+    if let Some(name) = &args.name {
+        check_body(Text::Name, name)?;
+        input.insert("name".into(), json!(name));
+    }
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if let Some(time) = &args.starts_at {
+        input.insert("startsAt".into(), json!(time));
+    }
+    if let Some(time) = &args.ends_at {
+        input.insert("endsAt".into(), json!(time));
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --name, --description, --starts-at, --ends-at",
+        ));
+    }
+    Ok(input)
+}
+
+fn cycle_update(session: &Session, args: &CycleUpdateArgs, out: &Output) -> Result<(), Error> {
+    let input = cycle_input(args)?;
+    let team_key = session.team_key()?;
+    let cycle = session.cycle_ref(&team_key, &args.number.to_string())?;
+    let id = need_str(&cycle, "id", "Cycles")?;
+    let data = session.linear.run(
+        &ops::CYCLE_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "cycleUpdate", "cycle")?);
+    Ok(())
+}
+
+fn document_list(session: &Session, args: &DocumentListArgs, out: &Output) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let mut filter = Map::new();
+    if let Some(project) = &args.project {
+        filter.insert(
+            "project".into(),
+            json!({ "name": { "eqIgnoreCase": project } }),
+        );
+    }
+    if let Some(issue) = &args.issue {
+        filter.insert(
+            "issue".into(),
+            json!({ "id": { "eq": session.issue_id(issue)? } }),
+        );
+    }
+    let filter = if filter.is_empty() {
+        Value::Null
+    } else {
+        Value::Object(filter)
+    };
+    let data = session
+        .linear
+        .run(&ops::DOCUMENTS, json!({ "first": n, "filter": filter }))?;
+    emit_list(
+        out,
+        nodes(&data, "documents"),
+        has_next_page(&data, "documents"),
+        "documents",
+        n,
+    );
+    Ok(())
+}
+
+fn document_get(session: &Session, args: &DocumentRefArgs, out: &Output) -> Result<(), Error> {
+    out.emit(&session.document_full(&args.title, false)?);
+    Ok(())
+}
+
+fn document_create(
+    session: &Session,
+    args: &DocumentCreateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    check_body(Text::Title, &args.title)?;
+    let content = body_from(&args.content, &args.content_file)?;
+    // The guard: `document get <TITLE>` resolves a title to one document. Only a
+    // missing document lets the create go on; any other failure of the read is itself.
+    if !args.allow_duplicate {
+        match session.document_full(&args.title, false) {
+            Ok(existing) => {
+                return Err(Error::with_hint(
+                    ErrorCode::Refused,
+                    format!(
+                        "a document titled {:?} exists: {}",
+                        str_at(&existing, "title").unwrap_or(&args.title),
+                        str_at(&existing, "url").unwrap_or("?")
+                    ),
+                    "use that document, or pass --allow-duplicate if a second one is wanted",
+                )
+                .at("muster-document-create"));
+            }
+            Err(error) if error.code == ErrorCode::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    let mut input = Map::new();
+    input.insert("title".into(), json!(args.title));
+    if let Some(content) = content {
+        input.insert("content".into(), json!(content));
+    }
+    if let Some(project) = &args.project {
+        input.insert("projectId".into(), json!(session.project_id(project)?));
+    }
+    if let Some(issue) = &args.issue {
+        input.insert("issueId".into(), json!(session.issue_id(issue)?));
+    }
+    let data = session.linear.run(
+        &ops::DOCUMENT_CREATE,
+        json!({ "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "documentCreate", "document")?);
+    Ok(())
+}
+
+fn document_update(
+    session: &Session,
+    args: &DocumentUpdateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let mut input = Map::new();
+    if let Some(title) = &args.title {
+        check_body(Text::Title, title)?;
+        input.insert("title".into(), json!(title));
+    }
+    if let Some(content) = body_from(&args.content, &args.content_file)? {
+        input.insert("content".into(), json!(content));
+    }
+    let document = session.document_full(&args.document, false)?;
+    let id = need_str(&document, "id", "DocumentByTitle")?;
+    if let Some(project) = &args.project {
+        let value = if is_none(project) {
+            Value::Null
+        } else {
+            json!(session.project_id(project)?)
+        };
+        input.insert("projectId".into(), value);
+    }
+    if let Some(issue) = &args.issue {
+        let value = if is_none(issue) {
+            Value::Null
+        } else {
+            json!(session.issue_id(issue)?)
+        };
+        input.insert("issueId".into(), value);
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --title, --content, --content-file, --project, --issue",
+        ));
+    }
+    let data = session.linear.run(
+        &ops::DOCUMENT_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "documentUpdate", "document")?);
+    Ok(())
+}
+
+/// `document delete` (the trash) and `document unarchive`: one mutation with the
+/// document's id, and Linear's entity.
+fn document_lifecycle(
+    session: &Session,
+    args: &DocumentRefArgs,
+    op: &ops::Operation,
+    field: &str,
+    include_archived: bool,
+    out: &Output,
+) -> Result<(), Error> {
+    let document = session.document_full(&args.title, include_archived)?;
+    let id = need_str(&document, "id", "DocumentByTitle")?;
+    let data = session.linear.run(op, json!({ "id": id }))?;
+    out.emit(&payload(&data, field, "entity")?);
+    Ok(())
+}
+
+/// `template list`: the team's and the workspace's templates. Linear's
+/// `templateSearch` is a list with no page info, so one more than the limit is asked
+/// for, and a cut list is known from the extra one (ADR 0014, group 15).
+fn template_list(session: &Session, args: &TemplateListArgs, out: &Output) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let team_key = session.team_key()?;
+    let mut filter = Map::new();
+    filter.insert(
+        "or".into(),
+        json!([ { "team": { "key": { "eq": team_key } } }, { "team": { "null": true } } ]),
+    );
+    if let Some(kind) = args.r#type {
+        filter.insert("type".into(), json!({ "eq": kind.linear() }));
+    }
+    let data = session.linear.run(
+        &ops::TEMPLATES,
+        json!({ "first": n + 1, "filter": Value::Object(filter) }),
+    )?;
+    let mut templates = data["templateSearch"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let cut = templates.len() > n;
+    templates.truncate(n);
+    emit_list(out, templates, cut, "templates", n);
+    Ok(())
+}
+
+fn template_get(session: &Session, args: &TemplateRefArgs, out: &Output) -> Result<(), Error> {
+    let team_key = session.team_key()?;
+    out.emit(&session.template_named(&team_key, &args.name, false)?);
+    Ok(())
+}
+
+/// A template's data from its file: JSON, checked against `BODY_MAX_BYTES` by
+/// `read_body` and parsed here, since Linear takes `templateData` as JSON.
+fn template_data(path: &str) -> Result<Value, Error> {
+    let text = read_body(path)?;
+    serde_json::from_str(&text).map_err(|e| {
+        Error::with_hint(
+            ErrorCode::Usage,
+            format!("the data file is not JSON: {e}"),
+            "`--data-file` takes Linear's `templateData` as JSON; `muster template get <NAME>` shows the shape of an existing one",
+        )
+    })
+}
+
+fn template_create(
+    session: &Session,
+    args: &TemplateCreateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    check_body(Text::Name, &args.name)?;
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+    }
+    let data = template_data(&args.data_file)?;
+    let (team, _) = session.team()?;
+    let team_key = need_str(&team, "key", "Teams")?;
+    // The guard is on the name in the template's own scope, the team's templates or
+    // the workspace's, as `label create` guards a label: `template get <NAME>`
+    // resolves a name to the team's own first, then the workspace's. A failed read is
+    // itself; only a scope without the name lets the create go on.
+    if !args.allow_duplicate {
+        let found = session.templates_named(&team_key, &args.name, false)?;
+        let same_scope = found
+            .iter()
+            .find(|t| at(t, "team").is_null() == args.workspace);
+        if let Some(existing) = same_scope {
+            let scope = if args.workspace {
+                "the workspace".to_string()
+            } else {
+                format!("team {team_key}")
+            };
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "a template named {:?} exists for {scope}",
+                    str_at(existing, "name").unwrap_or(&args.name)
+                ),
+                "use that template, or pass --allow-duplicate if a second one is wanted",
+            )
+            .at("muster-template-create"));
+        }
+    }
+    let mut input = Map::new();
+    input.insert("name".into(), json!(args.name));
+    input.insert("type".into(), json!(args.r#type.linear()));
+    input.insert("templateData".into(), data);
+    if let Some(description) = &args.description {
+        input.insert("description".into(), json!(description));
+    }
+    if !args.workspace {
+        input.insert("teamId".into(), json!(need_str(&team, "id", "Teams")?));
+    }
+    let answer = session.linear.run(
+        &ops::TEMPLATE_CREATE,
+        json!({ "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&answer, "templateCreate", "template")?);
+    Ok(())
+}
+
+fn template_update(
+    session: &Session,
+    args: &TemplateUpdateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let mut input = Map::new();
+    if let Some(name) = &args.name {
+        check_body(Text::Name, name)?;
+        input.insert("name".into(), json!(name));
+    }
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if let Some(path) = &args.data_file {
+        input.insert("templateData".into(), template_data(path)?);
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --name, --description, --data-file",
+        ));
+    }
+    let team_key = session.team_key()?;
+    let template = session.template_named(&team_key, &args.template, false)?;
+    let id = need_str(&template, "id", "TemplateByName")?;
+    let answer = session.linear.run(
+        &ops::TEMPLATE_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&answer, "templateUpdate", "template")?);
+    Ok(())
+}
+
+fn template_delete(session: &Session, args: &TemplateRefArgs, out: &Output) -> Result<(), Error> {
+    let team_key = session.team_key()?;
+    let template = session.template_named(&team_key, &args.name, false)?;
+    let id = need_str(&template, "id", "TemplateByName")?;
+    let answer = session
+        .linear
+        .run(&ops::TEMPLATE_DELETE, json!({ "id": id }))?;
+    out.emit(&delete_payload(&answer, "templateDelete")?);
+    Ok(())
+}
+
+fn webhook_list(session: &Session, args: &WebhookListArgs, out: &Output) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let data = session.linear.run(&ops::WEBHOOKS, json!({ "first": n }))?;
+    emit_list(
+        out,
+        nodes(&data, "webhooks"),
+        has_next_page(&data, "webhooks"),
+        "webhooks",
+        n,
+    );
+    Ok(())
+}
+
+/// A webhook's secret from its file: read through `read_body` and its bound, with
+/// the line end a file carries taken off; never from argv, never printed.
+fn secret_from(path: &str) -> Result<String, Error> {
+    let text = read_body(path)?;
+    let secret = text.trim_end_matches(['\n', '\r']).to_string();
+    if secret.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "the secret file is empty",
+            "put the signing secret in the file, on one line",
+        ));
+    }
+    Ok(secret)
+}
+
+/// The resource types of a create or update: each checked as a name, none empty.
+fn resource_types(types: &[String]) -> Result<Vec<String>, Error> {
+    let mut out = Vec::new();
+    for kind in types {
+        let kind = kind.trim();
+        if kind.is_empty() {
+            return Err(Error::with_hint(
+                ErrorCode::Usage,
+                "a resource type is empty",
+                "name a kind of change as Linear does: Issue, Comment, Project, Cycle, IssueLabel, Reaction, ...",
+            ));
+        }
+        check_body(Text::Name, kind)?;
+        out.push(kind.to_string());
+    }
+    Ok(out)
+}
+
+fn webhook_create(session: &Session, args: &WebhookCreateArgs, out: &Output) -> Result<(), Error> {
+    check_body(Text::Link, &args.url)?;
+    let types = resource_types(&args.resource_type)?;
+    if let Some(label) = &args.label {
+        check_body(Text::Name, label)?;
+    }
+    let secret = match &args.secret_file {
+        Some(path) => Some(secret_from(path)?),
+        None => None,
+    };
+    // The guard: a webhook posts to one URL, and `<WEBHOOK>` resolves a URL to one.
+    if !args.allow_duplicate {
+        let (hooks, cut) = session.webhooks()?;
+        if let Some(existing) = hooks
+            .iter()
+            .find(|h| str_at(h, "url") == Some(args.url.as_str()))
+        {
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "a webhook posts to {} already{}",
+                    args.url,
+                    match str_at(existing, "label") {
+                        Some(label) => format!(" ({label:?})"),
+                        None => String::new(),
+                    }
+                ),
+                "use that webhook, or pass --allow-duplicate if a second one is wanted",
+            )
+            .at("muster-webhook-create"));
+        }
+        if cut {
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!("the workspace has more than PAGE_CAP ({PAGE_CAP}) webhooks, so a duplicate of {} cannot be ruled out", args.url),
+                "pass --allow-duplicate to create it anyway; PAGE_CAP is the bound",
+            )
+            .at("bounds"));
+        }
+    }
+    let mut input = Map::new();
+    input.insert("url".into(), json!(args.url));
+    input.insert("resourceTypes".into(), json!(types));
+    if let Some(label) = &args.label {
+        input.insert("label".into(), json!(label));
+    }
+    if let Some(secret) = secret {
+        input.insert("secret".into(), json!(secret));
+    }
+    if args.all_public_teams {
+        input.insert("allPublicTeams".into(), json!(true));
+    } else {
+        let (team, _) = session.team()?;
+        input.insert("teamId".into(), json!(need_str(&team, "id", "Teams")?));
+    }
+    let data = session.linear.run(
+        &ops::WEBHOOK_CREATE,
+        json!({ "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "webhookCreate", "webhook")?);
+    Ok(())
+}
+
+fn webhook_update(session: &Session, args: &WebhookUpdateArgs, out: &Output) -> Result<(), Error> {
+    let mut input = Map::new();
+    if let Some(url) = &args.url {
+        check_body(Text::Link, url)?;
+        input.insert("url".into(), json!(url));
+    }
+    if let Some(label) = &args.label {
+        check_body(Text::Name, label)?;
+        input.insert("label".into(), json!(label));
+    }
+    if let Some(enabled) = args.enabled {
+        input.insert("enabled".into(), json!(enabled));
+    }
+    if !args.resource_type.is_empty() {
+        input.insert(
+            "resourceTypes".into(),
+            json!(resource_types(&args.resource_type)?),
+        );
+    }
+    if let Some(path) = &args.secret_file {
+        input.insert("secret".into(), json!(secret_from(path)?));
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --url, --label, --enabled, --resource-type, --secret-file",
+        ));
+    }
+    let hook = session.webhook_ref(&args.webhook)?;
+    let id = need_str(&hook, "id", "Webhooks")?;
+    let data = session.linear.run(
+        &ops::WEBHOOK_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "webhookUpdate", "webhook")?);
+    Ok(())
+}
+
+fn webhook_delete(session: &Session, args: &WebhookRefArgs, out: &Output) -> Result<(), Error> {
+    let hook = session.webhook_ref(&args.webhook)?;
+    let id = need_str(&hook, "id", "Webhooks")?;
+    let data = session
+        .linear
+        .run(&ops::WEBHOOK_DELETE, json!({ "id": id }))?;
+    out.emit(&delete_payload(&data, "webhookDelete")?);
+    Ok(())
+}
+
 /// `audit list`: the workspace's audit entries through Linear's `auditEntries` and
 /// its filter; the actor resolved as `--assignee` resolves a user, before any
 /// request (ADR 0014, group 17).
@@ -2733,6 +3495,15 @@ fn issue_list(session: &Session, args: &IssueListArgs, out: &Output) -> Result<(
         };
         filter = filter.with("projectMilestone", clause);
     }
+    if let Some(cycle) = &args.cycle {
+        let clause = if is_none(cycle) {
+            json!({ "null": true })
+        } else {
+            let cycle = session.cycle_ref(&team_key, cycle)?;
+            json!({ "id": { "eq": need_str(&cycle, "id", "Cycles")? } })
+        };
+        filter = filter.with("cycle", clause);
+    }
     let data = session.linear.run(
         &ops::ISSUES,
         json!({ "first": n, "filter": filter.build(), "orderBy": "updatedAt" }),
@@ -2847,6 +3618,10 @@ fn issue_create(session: &Session, args: &CreateArgs, out: &Output) -> Result<()
                 json!(need_str(&stone, "id", "Milestones")?),
             );
         }
+    }
+    if let Some(cycle) = &args.cycle {
+        let cycle = session.cycle_ref(&team_key, cycle)?;
+        input.insert("cycleId".into(), json!(need_str(&cycle, "id", "Cycles")?));
     }
     if let Some(who) = &args.assignee {
         input.insert("assigneeId".into(), json!(session.user_id(who)?));
@@ -3021,6 +3796,17 @@ fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<()
         };
         input.insert("projectMilestoneId".into(), value);
     }
+    if let Some(cycle) = &args.cycle {
+        let value = if is_none(cycle) {
+            Value::Null
+        } else {
+            // In the issue's own team: a cycle belongs to one team.
+            let team_key = need_str(&issue, "team.key", "IssueById")?;
+            let cycle = session.cycle_ref(&team_key, cycle)?;
+            json!(need_str(&cycle, "id", "Cycles")?)
+        };
+        input.insert("cycleId".into(), value);
+    }
     if let Some(parent) = &args.parent {
         let value = if is_none(parent) {
             Value::Null
@@ -3044,7 +3830,7 @@ fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<()
         return Err(Error::with_hint(
             ErrorCode::Usage,
             "nothing to change",
-            "pass at least one of --title, --state, --add-label, --remove-label, --priority, --assignee, --project, --milestone, --parent, --description, --description-file",
+            "pass at least one of --title, --state, --add-label, --remove-label, --priority, --assignee, --project, --milestone, --cycle, --parent, --description, --description-file",
         ));
     }
     let data = session.linear.run(
