@@ -95,6 +95,52 @@ Create a team: its creator becomes a member and owner and Linear makes its defau
 | `--copy-settings-from` | `<KEY>` | no |  | A team, by key, whose settings the new team copies |
 | `--allow-duplicate` |  | no |  | Create it even when a team has the same name |
 
+### muster team update
+
+Change a team's settings; a flag left out leaves its setting alone, a boolean takes true or false, and most need a team owner or a workspace admin.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<KEY>` | `<KEY>` | no |  | The team key (APP); when absent, --team, MUSTER_TEAM or the workspace's only team |
+| `--name` | `<TEXT>` | no |  | A new name |
+| `--key` | `<KEY>` | no |  | A new key, the prefix of the team's identifiers; Linear keeps the old one redirecting |
+| `--description` | `<TEXT>` | no |  | A new description, plain text |
+| `--icon` | `<TEXT>` | no |  | The team's icon |
+| `--color` | `<HEX>` | no |  | The team's colour, a hex string (#4ea7fc) |
+| `--private` | `<true|false>` | no |  | Whether the team is private, visible to its members alone |
+| `--timezone` | `<TZ>` | no |  | The team's timezone, an IANA name (Europe/London) |
+| `--parent` | `<KEY>` | no |  | The parent team, by key, or `none` to take the team out from under its parent |
+| `--cycles-enabled` | `<true|false>` | no |  | Whether the team uses cycles; Linear makes the cycles from the settings below |
+| `--cycle-start-day` | `<0-6>` | no |  | The weekday a cycle starts, 0 for Sunday to 6 for Saturday |
+| `--cycle-duration` | `<WEEKS>` | no |  | How many weeks a cycle lasts |
+| `--cycle-cooldown` | `<WEEKS>` | no |  | How many weeks of cooldown follow a cycle |
+| `--cycle-auto-assign-started` | `<true|false>` | no |  | Whether an issue that is started is put in the active cycle |
+| `--cycle-auto-assign-completed` | `<true|false>` | no |  | Whether an issue that is completed is put in the active cycle |
+| `--cycle-lock-to-active` | `<true|false>` | no |  | Whether only issues in a cycle may be active |
+| `--cycle-enabled-start-date` | `<TIME>` | no |  | When cycles begin, a time (2026-11-10T00:00:00Z) |
+| `--upcoming-cycle-count` | `<N>` | no |  | How many upcoming cycles Linear keeps made |
+| `--triage-enabled` | `<true|false>` | no |  | Whether new issues from outside the team land in triage |
+| `--require-priority-to-leave-triage` | `<true|false>` | no |  | Whether an issue needs a priority before it leaves triage |
+| `--default-issue-state` | `<NAME>` | no |  | The state a new issue starts in, by name |
+| `--issue-estimation-type` | `<TYPE>` | no |  | How issues are estimated |
+| `--issue-estimation-allow-zero` | `<true|false>` | no |  | Whether an estimate may be zero |
+| `--issue-estimation-extended` | `<true|false>` | no |  | Whether the estimate scale has its extra points |
+| `--default-issue-estimate` | `<N>` | no |  | The estimate an issue has when none is set |
+| `--auto-close-period` | `<MONTHS|none>` | no |  | The months after which an idle issue is closed, or `none` to never close one |
+| `--auto-close-state` | `<NAME>` | no |  | The canceled state an auto-closed issue goes to, by name |
+| `--auto-close-parent-issues` | `<true|false>` | no |  | Whether a parent issue closes when every sub-issue is closed |
+| `--auto-close-child-issues` | `<true|false>` | no |  | Whether the sub-issues close when their parent is closed |
+| `--auto-archive-period` | `<MONTHS>` | no |  | The months after which a closed issue is archived |
+| `--join-by-default` | `<true|false>` | no |  | Whether a new user joins the team by default; a workspace admin's setting |
+| `--all-members-can-join` | `<true|false>` | no |  | Whether every member of the workspace may join the team |
+| `--initiatives-enabled` | `<true|false>` | no |  | Whether initiatives show in the team's sidebar |
+| `--group-issue-history` | `<true|false>` | no |  | Whether an issue's recent history entries are grouped |
+| `--team-management-role` | `<ROLE>` | no |  | The least team role that may change the team's settings |
+| `--member-management-role` | `<ROLE>` | no |  | The least team role that may add or remove members |
+| `--label-management-role` | `<ROLE>` | no |  | The least team role that may manage the team's labels |
+| `--template-management-role` | `<ROLE>` | no |  | The least team role that may manage the team's templates |
+| `--issue-sharing-role` | `<ROLE>` | no |  | The least team role that may share an issue outside the team |
+
 ### muster team retire
 
 Retire a team: it keeps its issues and accepts no new ones (`retiredAt` set to now).

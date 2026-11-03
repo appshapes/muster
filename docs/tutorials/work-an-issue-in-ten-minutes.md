@@ -63,6 +63,10 @@ TRY` clears it, `muster team delete TRY` archives the team and schedules its dat
 deletion after Linear's grace period (one JSON line, Linear's `success` and
 `entityId`), and `muster team unarchive TRY` cancels that within the period
 ([ADR 0014](../decisions/0014-build-the-third-slice-administrative-commands.md)).
+Every setting `team get` prints is one `muster team update TRY` changes, one flag
+each: `--cycles-enabled true --cycle-enabled-start-date 2026-11-10T00:00:00Z` turns
+cycles on from a date, `--default-issue-state Todo` names a state of the team, and
+`muster team update --help` lists the rest; a flag left out leaves its setting alone.
 
 If you see `"code":"authentication"` on stderr and exit 3, the key was not found or
 was refused; the `hint` says where to put it. If the `team` is `null` with a `warn`
