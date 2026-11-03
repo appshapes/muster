@@ -143,11 +143,12 @@ op!(
 }"
 );
 
-op!(ISSUE_BY_ID, "IssueById", Kind::Query, "query IssueById($id: String!, $comments: Int!, $attachments: Int!) {
+op!(ISSUE_BY_ID, "IssueById", Kind::Query, "query IssueById($id: String!, $comments: Int!, $attachments: Int!, $children: Int!) {
   issue(id: $id) {
     ...IssueFields
     comments(first: $comments, orderBy: createdAt) { nodes { ...CommentFields } pageInfo { hasNextPage } }
     attachments(first: $attachments) { nodes { id title subtitle url sourceType createdAt } pageInfo { hasNextPage } }
+    children(first: $children, orderBy: createdAt) { nodes { id identifier title state { id name type } } pageInfo { hasNextPage } }
   }
 }", &[ISSUE_FIELDS, COMMENT_FIELDS]);
 

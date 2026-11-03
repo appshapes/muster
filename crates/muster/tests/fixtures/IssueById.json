@@ -9,7 +9,24 @@
       }
     },
     "branchName": "<string>",
-    "canceledAt": "<string>",
+    "canceledAt": null,
+    "children": {
+      "nodes": [
+        {
+          "id": "<string>",
+          "identifier": "<string>",
+          "state": {
+            "id": "<string>",
+            "name": "<string>",
+            "type": "<string>"
+          },
+          "title": "<string>"
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": true
+      }
+    },
     "comments": {
       "nodes": [
         {
@@ -45,7 +62,12 @@
     "id": "<string>",
     "identifier": "<string>",
     "labels": {
-      "nodes": []
+      "nodes": [
+        {
+          "id": "<string>",
+          "name": "<string>"
+        }
+      ]
     },
     "number": 0,
     "parent": null,

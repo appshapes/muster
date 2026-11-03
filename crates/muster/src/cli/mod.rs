@@ -96,21 +96,22 @@ pub struct ListArgs {
     pub limit: usize,
 }
 
-/// The issue commands.
+/// The issue commands. The two with many flags are boxed so that the enum stays small
+/// (clippy's `large_enum_variant`); `clap` reads through the box.
 #[derive(Subcommand, Debug)]
 pub enum IssueCommand {
-    /// One issue with its comments and attachments
+    /// One issue with its comments, attachments and sub-issues
     Get(GetArgs),
     /// Issues of the team: the open ones unless --state or --all; most recently updated first
     List(IssueListArgs),
     /// Create an issue in the team; a title an open issue of the team already has is refused unless --allow-duplicate
-    Create(CreateArgs),
+    Create(Box<CreateArgs>),
     /// Add a comment to an issue
     Comment(CommentArgs),
     /// Move an issue to the team's completed state, or to --state, or with --cancel to its canceled state, after an optional comment; prints the comment, then the issue
     Close(CloseArgs),
-    /// Change an issue's title, state, labels, priority, assignee, project or description
-    Update(UpdateArgs),
+    /// Change an issue's title, state, labels, priority, assignee, project, parent or description
+    Update(Box<UpdateArgs>),
 }
 
 /// `issue get`.
@@ -142,6 +143,9 @@ pub struct IssueListArgs {
     /// Only issues whose title contains this text, case-insensitively; how a title is resolved
     #[arg(long, value_name = "TEXT")]
     pub search: Option<String>,
+    /// Only the sub-issues of this issue: the identifier (APP-12), the number alone (12, in the team) or the id; or `none` for issues with no parent
+    #[arg(long, value_name = "ISSUE")]
+    pub parent: Option<String>,
     /// At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr
     #[arg(long, default_value_t = PAGE_SIZE, value_name = "N")]
     pub limit: usize,
@@ -174,6 +178,9 @@ pub struct CreateArgs {
     /// The assignee: `me`, an email address or a name
     #[arg(long, value_name = "WHO")]
     pub assignee: Option<String>,
+    /// The parent, which makes this a sub-issue: the identifier (APP-12), the number alone (12, in the team) or the id; the team is the parent's unless --team or MUSTER_TEAM names one
+    #[arg(long, value_name = "ISSUE")]
+    pub parent: Option<String>,
     /// Create it even when an open issue of the team has the same title
     #[arg(long)]
     pub allow_duplicate: bool,
@@ -245,6 +252,9 @@ pub struct UpdateArgs {
     /// A new project, by name, or `none` to remove it
     #[arg(long, value_name = "NAME")]
     pub project: Option<String>,
+    /// A new parent, which makes this a sub-issue, or `none` to take it out from under its parent
+    #[arg(long, value_name = "ISSUE")]
+    pub parent: Option<String>,
     /// A new description, markdown
     #[arg(long, value_name = "TEXT", conflicts_with = "description_file")]
     pub description: Option<String>,

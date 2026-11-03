@@ -308,8 +308,14 @@ fn issue_get_by_identifier_number_and_id_with_comments() {
     assert_eq!(v["identifier"], "APP-1");
     assert_eq!(v["state"]["name"], "Todo");
     assert_eq!(v["comments"]["nodes"].as_array().unwrap().len(), 2);
-    assert_eq!(v["comments"]["nodes"][0]["body"], "The first comment.");
+    assert_eq!(
+        v["comments"]["nodes"][0]["body"], "The second comment, with `code`.",
+        "newest first, as Linear orders a connection"
+    );
+    assert_eq!(v["comments"]["nodes"][1]["body"], "The first comment.");
     assert_eq!(v["attachments"]["nodes"].as_array().unwrap().len(), 0);
+    assert_eq!(v["children"]["nodes"].as_array().unwrap().len(), 1);
+    assert_eq!(v["children"]["nodes"][0]["identifier"], "APP-4");
     let id = v["id"].as_str().unwrap().to_string();
 
     let by_number = muster(&fake, &["issue", "get", "1"]);
@@ -326,6 +332,10 @@ fn issue_get_by_identifier_number_and_id_with_comments() {
     let without = muster(&fake, &["issue", "get", "APP-1", "--no-comments"]);
     assert_eq!(without.code, 0, "{}", without.stderr);
     assert!(without.one().get("comments").is_none());
+    assert!(
+        without.one().get("children").is_some(),
+        "--no-comments leaves the comments and attachments out; the sub-issues stay"
+    );
 }
 
 #[test]
@@ -370,7 +380,7 @@ fn issue_list_filters_by_state_label_assignee_and_title() {
     );
 
     let all = muster(&fake, &["issue", "list", "--all"]);
-    assert_eq!(all.lines().len(), 3);
+    assert_eq!(all.lines().len(), 4);
     let done = muster(&fake, &["issue", "list", "--state", "Done"]);
     assert_eq!(done.lines().len(), 1);
     assert_eq!(done.lines()[0]["identifier"], "APP-3");
@@ -378,15 +388,19 @@ fn issue_list_filters_by_state_label_assignee_and_title() {
         &fake,
         &["issue", "list", "--state", "Done", "--state", "Todo"],
     );
-    assert_eq!(two.lines().len(), 2);
+    assert_eq!(
+        two.lines().len(),
+        3,
+        "APP-1 and APP-4 in Todo, APP-3 in Done"
+    );
     let feature = muster(&fake, &["issue", "list", "--label", "Feature"]);
     assert_eq!(feature.lines().len(), 1);
     assert_eq!(feature.lines()[0]["identifier"], "APP-2");
     let other = muster(&fake, &["issue", "list", "--assignee", "other@example.com"]);
     assert_eq!(other.lines().len(), 1);
     let none = muster(&fake, &["issue", "list", "--assignee", "none"]);
-    assert_eq!(none.lines().len(), 1);
-    assert_eq!(none.lines()[0]["identifier"], "APP-1");
+    assert_eq!(none.lines().len(), 2, "APP-1 and its sub-issue APP-4");
+    assert!(none.lines().iter().all(|i| i["assignee"].is_null()));
     let me = muster(&fake, &["issue", "list", "--assignee", "me"]);
     assert_eq!(me.lines().len(), 0);
     let search = muster(&fake, &["issue", "list", "--search", "connect"]);
@@ -429,7 +443,7 @@ fn issue_create_prints_linears_issue_and_the_fake_holds_it() {
     );
     assert_eq!(run.code, 0, "{}", run.stderr);
     let v = run.one();
-    assert_eq!(v["identifier"], "APP-4");
+    assert_eq!(v["identifier"], "APP-5");
     assert_eq!(v["title"], "Try muster");
     assert_eq!(v["description"], "# Brief\n\nFrom a file.\n");
     assert_eq!(v["state"]["name"], "In Progress");
@@ -444,7 +458,7 @@ fn issue_create_prints_linears_issue_and_the_fake_holds_it() {
         .map(|l| l["name"].as_str().unwrap())
         .collect();
     assert_eq!(labels, ["Bug", "Release"]);
-    assert_eq!(fake.issue("APP-4").unwrap()["title"], "Try muster");
+    assert_eq!(fake.issue("APP-5").unwrap()["title"], "Try muster");
 
     let plain = muster(&fake, &["issue", "create", "--title", "Plain"]);
     assert_eq!(plain.code, 0, "{}", plain.stderr);
@@ -663,6 +677,213 @@ fn issue_update_changes_what_it_is_told_and_nothing_else() {
     let nothing = muster(&fake, &["issue", "update", "APP-2"]);
     assert_eq!(nothing.code, 2);
     assert_eq!(nothing.error()["message"], "nothing to change");
+}
+
+// ---- sub-issues (ADR 0013, feature 1) ---------------------------------------------------
+
+#[test]
+fn issue_get_prints_the_children_and_the_parent() {
+    let fake = Fake::start().unwrap();
+    let parent = muster(&fake, &["issue", "get", "APP-1"]);
+    assert_eq!(parent.code, 0, "{}", parent.stderr);
+    let v = parent.one();
+    let children = v["children"]["nodes"].as_array().unwrap();
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0]["identifier"], "APP-4");
+    assert_eq!(children[0]["title"], "Read the first comment");
+    assert_eq!(children[0]["state"]["name"], "Todo");
+    assert_eq!(v["children"]["pageInfo"]["hasNextPage"], false);
+    assert!(v["parent"].is_null());
+    assert!(parent.notices().is_empty(), "{}", parent.stderr);
+
+    let child = muster(&fake, &["issue", "get", "APP-4"]);
+    assert_eq!(child.code, 0, "{}", child.stderr);
+    assert_eq!(child.one()["parent"]["identifier"], "APP-1");
+    assert!(
+        child.one()["children"]["nodes"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn issue_create_with_parent_makes_a_sub_issue_and_list_finds_it() {
+    let fake = Fake::start().unwrap();
+    let run = muster(
+        &fake,
+        &["issue", "create", "--title", "A part", "--parent", "APP-2"],
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let v = run.one();
+    assert_eq!(v["parent"]["identifier"], "APP-2");
+    assert_eq!(v["team"]["key"], "APP");
+    let by_number = muster(
+        &fake,
+        &[
+            "issue",
+            "create",
+            "--title",
+            "Another part",
+            "--parent",
+            "2",
+        ],
+    );
+    assert_eq!(by_number.code, 0, "{}", by_number.stderr);
+    assert_eq!(by_number.one()["parent"]["identifier"], "APP-2");
+    let id = fake.issue("APP-2").unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let by_id = muster(
+        &fake,
+        &[
+            "issue",
+            "create",
+            "--title",
+            "A third part",
+            "--parent",
+            &id,
+        ],
+    );
+    assert_eq!(by_id.code, 0, "{}", by_id.stderr);
+    assert_eq!(by_id.one()["parent"]["identifier"], "APP-2");
+
+    let unknown = muster(
+        &fake,
+        &["issue", "create", "--title", "x", "--parent", "APP-999"],
+    );
+    assert_eq!(unknown.code, 4, "{}", unknown.stderr);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "IssueCreate")
+            .count(),
+        3,
+        "an unknown parent is refused before any mutation"
+    );
+
+    let children = muster(&fake, &["issue", "list", "--parent", "APP-2"]);
+    assert_eq!(children.code, 0, "{}", children.stderr);
+    assert_eq!(children.lines().len(), 3);
+    assert!(
+        children
+            .lines()
+            .iter()
+            .all(|i| i["parent"]["identifier"] == "APP-2")
+    );
+    let top = muster(&fake, &["issue", "list", "--parent", "none", "--all"]);
+    assert_eq!(top.code, 0, "{}", top.stderr);
+    assert_eq!(
+        top.lines().len(),
+        3,
+        "APP-1, APP-2 and APP-3; APP-4 and the three parts have parents"
+    );
+    let get = muster(&fake, &["issue", "get", "APP-2"]);
+    assert_eq!(get.one()["children"]["nodes"].as_array().unwrap().len(), 3);
+}
+
+#[test]
+fn issue_update_moves_an_issue_under_a_parent_and_out_again() {
+    let fake = Fake::start().unwrap();
+    let run = muster(&fake, &["issue", "update", "APP-2", "--parent", "APP-1"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(run.one()["parent"]["identifier"], "APP-1");
+    assert_eq!(
+        fake.issue("APP-1").unwrap()["children"]["nodes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let out = muster(&fake, &["issue", "update", "APP-4", "--parent", "none"]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(out.one()["parent"].is_null());
+    let unknown = muster(&fake, &["issue", "update", "APP-2", "--parent", "APP-999"]);
+    assert_eq!(unknown.code, 4, "{}", unknown.stderr);
+}
+
+#[test]
+fn a_sub_issue_takes_the_parents_team_unless_the_flag_or_the_variable_names_one() {
+    let fake = Fake::start().unwrap();
+    fake.add_team("OPS", "Operations");
+    let ops = muster(
+        &fake,
+        &["--team", "OPS", "issue", "create", "--title", "In ops"],
+    );
+    assert_eq!(ops.code, 0, "{}", ops.stderr);
+    assert_eq!(ops.one()["identifier"], "OPS-1");
+
+    // Two teams and none named: a plain create exits 2, a sub-issue goes to its
+    // parent's team (ADR 0013).
+    let plain = muster(&fake, &["issue", "create", "--title", "Nowhere"]);
+    assert_eq!(plain.code, 2, "{}", plain.stderr);
+    let child = muster(
+        &fake,
+        &[
+            "issue",
+            "create",
+            "--title",
+            "Under ops",
+            "--parent",
+            "OPS-1",
+        ],
+    );
+    assert_eq!(child.code, 0, "{}", child.stderr);
+    assert_eq!(child.one()["identifier"], "OPS-2");
+    assert_eq!(child.one()["parent"]["identifier"], "OPS-1");
+
+    // MUSTER_TEAM wins over the parent's team, as --team does (ADR 0008, ADR 0013).
+    let elsewhere = muster_with(
+        &fake,
+        &[
+            "issue",
+            "create",
+            "--title",
+            "Under ops, in app",
+            "--parent",
+            "OPS-1",
+        ],
+        &[("LINEAR_API_KEY", KEY), ("MUSTER_TEAM", "APP")],
+        &temp_dir(),
+        Stdio::null(),
+    );
+    assert_eq!(elsewhere.code, 0, "{}", elsewhere.stderr);
+    assert_eq!(elsewhere.one()["team"]["key"], "APP");
+    assert_eq!(elsewhere.one()["parent"]["identifier"], "OPS-1");
+}
+
+#[test]
+fn a_parent_with_more_sub_issues_than_the_bound_writes_a_notice_and_exits_0() {
+    let fake = Fake::start().unwrap();
+    fake.add_sub_issues("APP-3", 51);
+    let run = muster(&fake, &["issue", "get", "APP-3"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let v = run.one();
+    assert_eq!(v["children"]["nodes"].as_array().unwrap().len(), 50);
+    assert_eq!(
+        v["children"]["nodes"][0]["title"], "Part 51",
+        "newest first, as Linear orders a connection; the oldest are left out"
+    );
+    assert_eq!(v["children"]["pageInfo"]["hasNextPage"], true);
+    let notices = run.notices();
+    assert_eq!(notices.len(), 1, "{}", run.stderr);
+    assert_eq!(notices[0]["code"], "truncated");
+    assert!(
+        notices[0]["hint"]
+            .as_str()
+            .unwrap()
+            .contains("CHILDREN_PER_ISSUE"),
+        "{}",
+        run.stderr
+    );
+
+    let exact = Fake::start().unwrap();
+    exact.add_sub_issues("APP-3", 50);
+    let run = muster(&exact, &["issue", "get", "APP-3"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(run.one()["children"]["nodes"].as_array().unwrap().len(), 50);
+    assert!(run.notices().is_empty(), "at the bound is not over it");
 }
 
 // ---- failures: network, unknown, rate limit, server -------------------------------------

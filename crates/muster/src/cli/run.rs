@@ -4,7 +4,7 @@
 
 use serde_json::{Value, json};
 
-use crate::bounds::{ATTACHMENTS_PER_ISSUE, COMMENTS_PER_ISSUE, PAGE_CAP};
+use crate::bounds::{ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, PAGE_CAP};
 use crate::cli::{
     Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand, IssueListArgs,
     ListArgs, ListCommand, UpdateArgs,
@@ -241,9 +241,26 @@ impl Session {
         }
     }
 
-    /// One issue by identifier, number or id, with `comments` comments and
-    /// `attachments` attachments fetched (at least one of each; the shape is the same).
-    fn issue(&self, reference: &str, comments: usize, attachments: usize) -> Result<Value, Error> {
+    /// The `parent` clause of an issue filter: `none` for issues with no parent, else
+    /// the id of the issue the reference names.
+    fn parent_filter(&self, reference: &str) -> Result<Value, Error> {
+        if reference.eq_ignore_ascii_case("none") {
+            return Ok(json!({ "null": true }));
+        }
+        let parent = self.issue(reference, 1, 1, 1)?;
+        Ok(json!({ "id": { "eq": need_str(&parent, "id", "IssueById")? } }))
+    }
+
+    /// One issue by identifier, number or id, with `comments` comments, `attachments`
+    /// attachments and `children` sub-issues fetched (at least one of each; the shape is
+    /// the same).
+    fn issue(
+        &self,
+        reference: &str,
+        comments: usize,
+        attachments: usize,
+        children: usize,
+    ) -> Result<Value, Error> {
         let reference = reference.trim();
         let id = if is_identifier(reference) || is_uuid(reference) {
             reference.to_string()
@@ -280,7 +297,7 @@ impl Session {
         };
         let data = self.linear.run(
             &ops::ISSUE_BY_ID,
-            json!({ "id": id, "comments": comments.max(1), "attachments": attachments.max(1) }),
+            json!({ "id": id, "comments": comments.max(1), "attachments": attachments.max(1), "children": children.max(1) }),
         )?;
         match data.get("issue") {
             Some(issue) if !issue.is_null() => Ok(issue.clone()),
@@ -453,7 +470,7 @@ fn issue_get(session: &Session, args: &GetArgs, out: &Output) -> Result<(), Erro
     } else {
         (COMMENTS_PER_ISSUE, ATTACHMENTS_PER_ISSUE)
     };
-    let mut issue = session.issue(&args.issue, comments, attachments)?;
+    let mut issue = session.issue(&args.issue, comments, attachments, CHILDREN_PER_ISSUE)?;
     if args.no_comments
         && let Some(map) = issue.as_object_mut()
     {
@@ -465,7 +482,7 @@ fn issue_get(session: &Session, args: &GetArgs, out: &Output) -> Result<(), Erro
         out.notice(
             "truncated",
             &format!(
-                "comments: the issue has more than the {COMMENTS_PER_ISSUE} printed, the oldest"
+                "comments: the issue has more than the {COMMENTS_PER_ISSUE} printed, the newest"
             ),
             "COMMENTS_PER_ISSUE is the bound (docs/reference/commands.md#bounds)",
         );
@@ -475,6 +492,15 @@ fn issue_get(session: &Session, args: &GetArgs, out: &Output) -> Result<(), Erro
             "truncated",
             &format!("attachments: the issue has more than the {ATTACHMENTS_PER_ISSUE} printed"),
             "ATTACHMENTS_PER_ISSUE is the bound (docs/reference/commands.md#bounds)",
+        );
+    }
+    if has_next_page(&issue, "children") {
+        out.notice(
+            "truncated",
+            &format!(
+                "children: the issue has more than the {CHILDREN_PER_ISSUE} sub-issues printed, the newest"
+            ),
+            "CHILDREN_PER_ISSUE is the bound (docs/reference/commands.md#bounds); `muster issue list --parent <ISSUE>` pages through them",
         );
     }
     Ok(())
@@ -513,6 +539,9 @@ fn issue_list(session: &Session, args: &IssueListArgs, out: &Output) -> Result<(
     if let Some(text) = &args.search {
         filter = filter.with("title", json!({ "containsIgnoreCase": text }));
     }
+    if let Some(parent) = &args.parent {
+        filter = filter.with("parent", session.parent_filter(parent)?);
+    }
     let data = session.linear.run(
         &ops::ISSUES,
         json!({ "first": n, "filter": filter.build(), "orderBy": "updatedAt" }),
@@ -540,9 +569,25 @@ fn body_from(text: &Option<String>, file: &Option<String>) -> Result<Option<Stri
 
 fn issue_create(session: &Session, args: &CreateArgs, out: &Output) -> Result<(), Error> {
     let description = body_from(&args.description, &args.description_file)?;
-    let (team, _) = session.team()?;
-    let team_key = need_str(&team, "key", "Teams")?;
-    let team_id = need_str(&team, "id", "Teams")?;
+    let parent = match &args.parent {
+        Some(reference) => Some(session.issue(reference, 1, 1, 1)?),
+        None => None,
+    };
+    // The team: `--team`, else `MUSTER_TEAM`, else the parent's team, else the
+    // workspace's only team (ADR 0008; ADR 0013).
+    let (team_key, team_id) = match (&session.config.team, &parent) {
+        (None, Some(parent)) => (
+            need_str(parent, "team.key", "IssueById")?,
+            need_str(parent, "team.id", "IssueById")?,
+        ),
+        _ => {
+            let (team, _) = session.team()?;
+            (
+                need_str(&team, "key", "Teams")?,
+                need_str(&team, "id", "Teams")?,
+            )
+        }
+    };
     if !args.allow_duplicate {
         let filter = Filter::new()
             .team(&team_key)
@@ -591,6 +636,12 @@ fn issue_create(session: &Session, args: &CreateArgs, out: &Output) -> Result<()
     if let Some(who) = &args.assignee {
         map.insert("assigneeId".into(), json!(session.user_id(who)?));
     }
+    if let Some(parent) = &parent {
+        map.insert(
+            "parentId".into(),
+            json!(need_str(parent, "id", "IssueById")?),
+        );
+    }
     let data = session
         .linear
         .run(&ops::ISSUE_CREATE, json!({ "input": input }))?;
@@ -618,7 +669,7 @@ fn payload(data: &Value, field: &str, object: &str) -> Result<Value, Error> {
 fn issue_comment(session: &Session, args: &CommentArgs, out: &Output) -> Result<(), Error> {
     let body = body_from(&args.body, &args.body_file)?
         .ok_or_else(|| Error::new(ErrorCode::Usage, "a comment needs --body or --body-file"))?;
-    let issue = session.issue(&args.issue, 1, 1)?;
+    let issue = session.issue(&args.issue, 1, 1, 1)?;
     let issue_id = need_str(&issue, "id", "IssueById")?;
     let data = session.linear.run(
         &ops::COMMENT_CREATE,
@@ -630,7 +681,7 @@ fn issue_comment(session: &Session, args: &CommentArgs, out: &Output) -> Result<
 
 fn issue_close(session: &Session, args: &CloseArgs, out: &Output) -> Result<(), Error> {
     let comment = body_from(&args.comment, &args.comment_file)?;
-    let issue = session.issue(&args.issue, 1, 1)?;
+    let issue = session.issue(&args.issue, 1, 1, 1)?;
     let issue_id = need_str(&issue, "id", "IssueById")?;
     let team_key = need_str(&issue, "team.key", "IssueById")?;
     let state_id = match (&args.state, args.cancel) {
@@ -655,7 +706,7 @@ fn issue_close(session: &Session, args: &CloseArgs, out: &Output) -> Result<(), 
 
 fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<(), Error> {
     let description = body_from(&args.description, &args.description_file)?;
-    let issue = session.issue(&args.issue, 1, 1)?;
+    let issue = session.issue(&args.issue, 1, 1, 1)?;
     let issue_id = need_str(&issue, "id", "IssueById")?;
     let team_key = need_str(&issue, "team.key", "IssueById")?;
     let mut input = json!({});
@@ -698,11 +749,23 @@ fn issue_update(session: &Session, args: &UpdateArgs, out: &Output) -> Result<()
         };
         map.insert("projectId".into(), value);
     }
+    if let Some(parent) = &args.parent {
+        let value = if parent.eq_ignore_ascii_case("none") {
+            Value::Null
+        } else {
+            json!(need_str(
+                &session.issue(parent, 1, 1, 1)?,
+                "id",
+                "IssueById"
+            )?)
+        };
+        map.insert("parentId".into(), value);
+    }
     if map.is_empty() {
         return Err(Error::with_hint(
             ErrorCode::Usage,
             "nothing to change",
-            "pass at least one of --title, --state, --add-label, --remove-label, --priority, --assignee, --project, --description, --description-file",
+            "pass at least one of --title, --state, --add-label, --remove-label, --priority, --assignee, --project, --parent, --description, --description-file",
         ));
     }
     let data = session.linear.run(

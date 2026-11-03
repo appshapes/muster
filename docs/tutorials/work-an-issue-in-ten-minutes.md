@@ -60,6 +60,12 @@ Run the same command again and you get exit 6 with `"code":"refused"`: an open i
 of the team already has that title, and the message names it. That guard is for an
 agent that retries after a timeout; `--allow-duplicate` turns it off.
 
+A sub-issue is the same command with `--parent APP-12`: the new issue prints
+`parent.identifier` as `APP-12`, and it is created in the parent's team unless `--team`
+or `MUSTER_TEAM` names one. `muster issue update APP-13 --parent none` takes it out
+from under its parent again, and `--parent APP-12` on `issue update` moves an issue
+under one ([ADR 0013](../decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md)).
+
 ## 5. Comment on it (one minute)
 
 ```sh
@@ -86,9 +92,13 @@ muster issue get APP-12 | jq '{title, state: .state.name, comments: [.comments.n
 }
 ```
 
-Without `jq` you get the whole issue: every field of step 4, plus `comments.nodes`
-oldest first and `attachments.nodes`. The number alone works inside the team:
-`muster issue get 12`. An issue that does not exist is exit 4, `"code":"not_found"`.
+Without `jq` you get the whole issue: every field of step 4, plus `comments.nodes`,
+`attachments.nodes`, and `children.nodes`, its sub-issues (each with its `identifier`,
+`title` and `state`). Linear orders each of them newest first; past `COMMENTS_PER_ISSUE`
+comments or `CHILDREN_PER_ISSUE` sub-issues a `truncated` notice goes to stderr, the
+oldest are the ones left out, and `muster issue list --parent APP-12` lists every
+sub-issue. The number alone works inside the team: `muster issue get 12`. An issue that
+does not exist is exit 4, `"code":"not_found"`.
 
 ## 7. Close it (one minute)
 
