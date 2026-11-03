@@ -4,7 +4,7 @@
 Two modes:
 
   lint-docs.py          every check below, including the change check over a diff range
-  lint-docs.py links    the pages, links and ADR checks only; what `just docs` runs
+  lint-docs.py links    the pages, links, ADR and glossary checks only; what `just docs` runs
 
 Checks:
 
@@ -15,6 +15,14 @@ Checks:
   adrs    every file in docs/decisions/ is NNNN-title.md with a matching "# NNNN." title
           and a Status of Proposed, Accepted, Superseded by NNNN or Rejected; numbers
           are unique
+  glossary every term the command tree introduces has a row in docs/glossary.md: the
+          noun of every command group (`issue` of `muster issue get`) and of every flag
+          (`label` of `--add-label`, `description` of `--description-file`), read from
+          docs/reference/commands.md, which `just lint-commands` holds equal to `muster
+          schema`; a one-word command names an action, and the flags in NOT_TERMS name a
+          switch or a mode, so neither needs a row. Output fields are not checked:
+          `muster schema` lists commands and flags, not the fields an answer carries, so
+          their rows stay by hand, and that clause of ADR 0006's Revisit stays open
   change  over the range: a change to a public item (a line with `pub ` in a crate's
           src/), or any change to the command tree (crates/muster/src/main.rs or
           crates/muster/src/cli/), needs a change under docs/ or to a README; an ADR
@@ -51,6 +59,22 @@ COMMAND_TREE_DIRS = ("crates/muster/src/cli/",)
 STATUSES = re.compile(r"^- \*\*Status:\*\* (Proposed|Accepted|Superseded by \d{4}|Rejected)\s*$")
 ADR_NAME = re.compile(r"^(\d{4})-[a-z0-9-]+\.md$")
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+REFERENCE = DOCS / "reference" / "commands.md"
+GLOSSARY = DOCS / "glossary.md"
+# Flags that name a switch or a mode rather than a thing of Linear's, each with the
+# reason it needs no glossary row. A new flag is a term unless it is listed here.
+NOT_TERMS = {
+    "human": "an output mode (ADR 0008)",
+    "trace": "an output mode (ADR 0008)",
+    "all": "a switch: every state, not only the open ones",
+    "cancel": "a switch: the canceled state, whose row is `state`",
+    "format": "a switch of `schema`: json or markdown",
+    "allow-duplicate": "a switch that turns a guard off",
+    "no-comments": "a switch that leaves fields out",
+}
+# What a flag may carry around its noun: `--description-file`, `--add-label`.
+FLAG_SUFFIXES = ("-file",)
+FLAG_PREFIXES = ("add-", "remove-")
 REF_DEF = re.compile(r"^\s*\[[^\]]+\]:\s*(\S+)", re.M)
 PUB_LINE = re.compile(r"^[+-]\s*pub\s")
 SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*:")
@@ -187,6 +211,79 @@ def check_adrs() -> int:
     return len(files)
 
 
+# ---- glossary ---------------------------------------------------------------------
+
+def glossary_terms() -> set[str]:
+    """The `Muster term` column of the glossary's one table."""
+    terms: set[str] = set()
+    for line in GLOSSARY.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^\| ([^|]+?) \|", line)
+        if m and m.group(1).strip() not in ("Muster term", "---"):
+            terms.add(m.group(1).strip())
+    return terms
+
+
+def flag_noun(flag: str) -> str:
+    for prefix in FLAG_PREFIXES:
+        flag = flag.removeprefix(prefix)
+    for suffix in FLAG_SUFFIXES:
+        flag = flag.removesuffix(suffix)
+    return flag
+
+
+def reference_terms() -> tuple[list[tuple[str, str]], int, int]:
+    """Every (term, where) the generated reference introduces: the noun of a command
+    group and the noun of a flag, each with the command it was read under (`muster
+    --team` for a global flag); and how many commands and flags were parsed, so that a
+    reference whose shape moved cannot pass as one with nothing to check."""
+    out: list[tuple[str, str]] = []
+    command = ""
+    commands = flags = 0
+    for line in REFERENCE.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## Global flags"):
+            command = ""
+            continue
+        m = re.match(r"^### muster (.+?)\s*$", line)
+        if m:
+            command = m.group(1)
+            commands += 1
+            words = command.split()
+            if len(words) > 1:
+                out.append((words[0], f"muster {command}"))
+            continue
+        m = re.match(r"^\| `--([^` ]+)` \|", line)
+        if m:
+            flags += 1
+            if m.group(1) not in NOT_TERMS:
+                where = " ".join(part for part in ("muster", command, f"--{m.group(1)}") if part)
+                out.append((flag_noun(m.group(1)), where))
+    return out, commands, flags
+
+
+def check_glossary() -> int:
+    for path, fix in ((REFERENCE, "run just gen-commands"), (GLOSSARY, "restore it")):
+        if not path.exists():
+            find(f"glossary: {rel(path)} is missing; {fix}")
+            return 0
+    terms, commands, flags = reference_terms()
+    if commands == 0 or flags == 0:
+        find(f"glossary: {commands} commands and {flags} flags parsed from {rel(REFERENCE)}; "
+             "its headings or flag cells changed shape, so reference_terms() in this script "
+             "must follow before the check means anything")
+        return 0
+    have = glossary_terms()
+    seen: set[str] = set()
+    for term, where in terms:
+        if term in have or term in seen:
+            continue
+        seen.add(term)
+        find(f"glossary: `{term}` (from `{where}`) has no row in {rel(GLOSSARY)}; add the row "
+             "(.claude/rules/docs.md, Glossary), or, for a switch or a mode, list the flag in "
+             "scripts/lint-docs.py NOT_TERMS with its reason (docs/how-to/implement-a-feature.md, "
+             "When it does not work)")
+    return len({term for term, _ in terms})
+
+
 # ---- change -----------------------------------------------------------------------
 
 def pick_range() -> tuple[str | None, str | None]:
@@ -306,7 +403,8 @@ def main(argv: list[str]) -> int:
     pages = check_pages()
     links = check_links()
     adrs = check_adrs()
-    summary = f"{pages} pages, {links} links, {adrs} ADRs"
+    terms = check_glossary()
+    summary = f"{pages} pages, {links} links, {adrs} ADRs, {terms} terms"
     if mode == "all":
         label, n = check_change()
         summary += f", {n} files changed in {label}"

@@ -30,6 +30,13 @@ user-visible change, added in the same commit as the change. The format follows
   split over several comments. Linux refuses one argv string over 128 KiB before
   muster runs, so from a flag's value the bound is reached only where the OS allows
   the argument, as macOS does; from a file or stdin it is reached everywhere.
+- `just lint-docs` and `just docs` check the glossary: every command group and every
+  flag noun the reference introduces has a row in `docs/glossary.md`, and a flag that
+  is a switch or a mode is listed in the script with its reason (ADR 0006's Revisit;
+  output fields are not checked, since `muster schema` does not list them, so their
+  rows stay by hand).
+  Ten rows join the glossary: `user`, `title`, `description`, `body`, `parent`, `name`,
+  `url`, `subtitle`, `search` and `limit`.
 - `project create --name <TEXT> [--description <TEXT>]` makes a project for the team
   through Linear's `projectCreate` and prints it as `project list` prints one; a name an
   existing project already has is refused, exit 6, unless `--allow-duplicate`, so that
