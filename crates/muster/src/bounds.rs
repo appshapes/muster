@@ -30,16 +30,19 @@ pub const ATTACHMENTS_PER_ISSUE: usize = 50;
 /// a connection. A parent with more is reported cut with a notice on stderr.
 pub const CHILDREN_PER_ISSUE: usize = 50;
 /// How many teams `project list` and `project create` print with a project, under
-/// `teams.nodes`. A project in more is reported cut with a notice on stderr. Bounded so
-/// that a page of `PAGE_CAP` projects stays inside Linear's query-complexity limit of
-/// 10,000: on 2026-11-03 Linear refused `project list --limit 250` at 20 teams per
-/// project as "Query too complex" (complexity 13,525), and accepts it at 10.
+/// `teams.nodes`. `project list` reports a project in more as cut with a notice on
+/// stderr; a project `project create` makes has the one team, so its page is never cut
+/// and the command writes no notice. Bounded so that a page of `PAGE_CAP` projects stays
+/// inside Linear's query-complexity limit of 10,000: on 2026-11-03 Linear refused
+/// `project list --limit 250` at 20 teams per project as "Query too complex" (complexity
+/// 13,525), and accepts it at 10.
 pub const TEAMS_PER_PROJECT: usize = 10;
 /// How long one request may take, connect to last byte. Past it a query exits 7 and a
 /// mutation exits 8.
 pub const REQUEST_TIMEOUT_SECS: u64 = 30;
-/// The largest description, comment, title, link or subtitle muster sends. A larger
-/// one is refused, exit 6, before any request, and the message names which one it was.
+/// The largest description, comment, title, name, link or subtitle muster sends. A
+/// larger one is refused, exit 6, before any request, and the message names which one it
+/// was.
 /// A flag's value is bounded by the OS first: Linux refuses one argv string over
 /// 128 KiB (`MAX_ARG_STRLEN`) before muster runs, so from `--title`, `--name`, `--url`,
 /// `--subtitle` or `--description` this bound is reached only where the OS allows the
@@ -87,7 +90,7 @@ pub const ALL: &[Bound] = &[
         name: "TEAMS_PER_PROJECT",
         value: TEAMS_PER_PROJECT as u64,
         unit: "items",
-        meaning: "the teams `project list` and `project create` print with a project under `teams.nodes`; a project in more writes a `truncated` notice to stderr; bounded so that a page of PAGE_CAP projects stays inside Linear's query-complexity limit of 10,000",
+        meaning: "the teams `project list` and `project create` print with a project under `teams.nodes`; `project list` writes a `truncated` notice to stderr for a project in more, and a project `project create` makes has the one team, so it is never cut; bounded so that a page of PAGE_CAP projects stays inside Linear's query-complexity limit of 10,000",
     },
     Bound {
         name: "REQUEST_TIMEOUT_SECS",
