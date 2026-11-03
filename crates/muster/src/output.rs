@@ -130,11 +130,11 @@ pub enum Text {
     Body,
     /// An issue's or a link's `--title`.
     Title,
-    /// A link's `--url`.
+    /// A link's `--url`, or the workspace's `--logo-url`.
     Link,
     /// A link's `--subtitle`.
     Subtitle,
-    /// A project's `--name`.
+    /// A project's or the workspace's `--name`.
     Name,
 }
 

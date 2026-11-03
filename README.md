@@ -18,7 +18,11 @@ operations the house's Trello skills use, as `muster` commands, each tested agai
 fake Linear held to recorded shapes and smoke-tested against a real workspace, and the
 second slice ([ADR 0013](docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md)):
 sub-issues, attachments and projects, as `--parent`, `issue attach`, `project create`
-and `issue list --project`. Not yet: cycles, attachments as uploads.
+and `issue list --project`. In progress: the third slice
+([ADR 0014](docs/decisions/0014-build-the-third-slice-administrative-commands.md)),
+Linear's administrative operations as commands, group by group, from the workspace and
+its teams, members and invites to cycles, templates, webhooks and the audit log. Not
+yet: attachments as uploads.
 
 ## Start here
 

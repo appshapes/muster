@@ -1512,6 +1512,17 @@ fn team_update_changes_only_what_is_passed_and_resolves_names() {
     let orphan = muster(&fake, &["team", "update", "SMK", "--parent", "none"]);
     assert_eq!(orphan.code, 0, "{}", orphan.stderr);
     assert!(orphan.one()["parent"].is_null());
+    let lowercase = muster(
+        &fake,
+        &["team", "update", "smk", "--default-issue-state", "Todo"],
+    );
+    assert_eq!(
+        lowercase.code, 0,
+        "the states are filtered by the key Linear returned, not the key as typed: {}",
+        lowercase.stderr
+    );
+    assert_eq!(lowercase.one()["key"], "SMK");
+    assert_eq!(lowercase.one()["defaultIssueState"]["name"], "Todo");
     let inferred = muster_with(
         &fake,
         &["team", "update", "--timezone", "Europe/London"],
@@ -1650,7 +1661,8 @@ fn member_list_add_and_remove_work_on_the_teams_memberships() {
     let own = muster(&fake, &["--team", "SMK", "member", "list"]);
     assert_eq!(own.lines().len(), 1, "the creator is the one member");
     assert_eq!(
-        own.lines()[0]["owner"], false,
+        own.lines()[0]["owner"],
+        false,
         "as Linear answered for a team made through the API (appshapes, 2026-11-03)"
     );
     let added = muster(
@@ -1731,13 +1743,20 @@ fn member_list_add_and_remove_work_on_the_teams_memberships() {
     );
     assert_eq!(run.code, 8, "{}", run.stderr);
     fake.fail_next("TeamMembershipDelete", Failure::Drop);
-    let run = muster(&fake, &["member", "remove", "--user", "other", "--team", "APP"]);
+    let run = muster(
+        &fake,
+        &["member", "remove", "--user", "other", "--team", "APP"],
+    );
     assert_eq!(run.code, 8, "{}", run.stderr);
     fake.fail_next("TeamMembers", Failure::Drop);
     let run = muster(&fake, &["--team", "APP", "member", "list"]);
     assert_eq!(run.code, 7, "{}", run.stderr);
     let nowhere = muster(&fake, &["member", "list"]);
-    assert_eq!(nowhere.code, 2, "two teams and none named: {}", nowhere.stderr);
+    assert_eq!(
+        nowhere.code, 2,
+        "two teams and none named: {}",
+        nowhere.stderr
+    );
 }
 
 #[test]
@@ -1832,6 +1851,21 @@ fn workspace_update_changes_only_what_is_passed_and_reads_back() {
         "the day is spelt as Linear's enum spells it: {}",
         someday.stderr
     );
+    for empty in ["", ","] {
+        let none = muster(
+            &fake,
+            &["workspace", "update", "--allowed-auth-services", empty],
+        );
+        assert_eq!(
+            none.code, 2,
+            "{empty:?} is the empty list too, which only `all` may send: {}",
+            none.stderr
+        );
+        assert_eq!(
+            none.error()["message"],
+            "--allowed-auth-services names no service"
+        );
+    }
     assert_eq!(
         fake.operations()
             .iter()
