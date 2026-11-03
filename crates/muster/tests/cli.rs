@@ -1306,6 +1306,212 @@ fn workspace_get_prints_the_organization_as_linear_returns_it() {
     assert_eq!(run.error()["code"], "network");
 }
 
+// ---- teams (ADR 0014, group 2) -----------------------------------------------------------
+
+#[test]
+fn team_get_prints_every_setting_by_key_or_by_the_team_rule() {
+    let fake = Fake::start().unwrap();
+    let run = muster(&fake, &["team", "get", "app"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let v = run.one();
+    assert_eq!(v["key"], "APP");
+    assert_eq!(v["cyclesEnabled"], false);
+    assert_eq!(v["visibility"], "public");
+    assert!(v["timezone"].is_string());
+    assert_eq!(v["defaultIssueState"]["name"], "Backlog");
+    assert_eq!(v["issueCount"], 4, "the four seeded issues");
+    assert!(v["securitySettings"].is_object() && v["retiredAt"].is_null());
+    assert_eq!(
+        v.get("private"),
+        None,
+        "deprecated on Team, so not asked for"
+    );
+    assert_eq!(fake.operations(), vec!["TeamByKey"], "one request by key");
+
+    let inferred = muster(&fake, &["team", "get"]);
+    assert_eq!(inferred.code, 0, "{}", inferred.stderr);
+    assert_eq!(inferred.one()["key"], "APP");
+    let listed = muster(&fake, &["team", "list"]).one();
+    assert_eq!(listed["cyclesEnabled"], false);
+    assert!(listed["retiredAt"].is_null() && listed["timezone"].is_string());
+
+    let nope = muster(&fake, &["team", "get", "NOPE"]);
+    assert_eq!(nope.code, 4, "{}", nope.stderr);
+    assert_eq!(nope.error()["code"], "not_found");
+    fake.fail_next("TeamByKey", Failure::Drop);
+    let run = muster(&fake, &["team", "get", "APP"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+}
+
+#[test]
+fn team_create_makes_a_team_with_its_states_and_refuses_a_duplicate_name() {
+    let fake = Fake::start().unwrap();
+    let run = muster(
+        &fake,
+        &[
+            "team",
+            "create",
+            "--name",
+            "Smoke tests",
+            "--key",
+            "SMK",
+            "--description",
+            "Where the smoke test's cycles live.",
+            "--timezone",
+            "Europe/London",
+            "--cycles-enabled",
+            "true",
+        ],
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let v = run.one();
+    assert_eq!(v["key"], "SMK");
+    assert_eq!(v["name"], "Smoke tests");
+    assert_eq!(v["timezone"], "Europe/London");
+    assert_eq!(v["cyclesEnabled"], true);
+    assert_eq!(v["issueCount"], 0);
+    assert_eq!(
+        v["defaultIssueState"]["name"], "Backlog",
+        "Linear's default states"
+    );
+    let states = muster(&fake, &["--team", "SMK", "state", "list"]);
+    assert_eq!(states.code, 0, "{}", states.stderr);
+    assert_eq!(states.lines().len(), 7, "the default workflow");
+    let issue = muster(
+        &fake,
+        &["--team", "SMK", "issue", "create", "--title", "First"],
+    );
+    assert_eq!(issue.code, 0, "{}", issue.stderr);
+    assert_eq!(issue.one()["identifier"], "SMK-1");
+
+    let again = muster(&fake, &["team", "create", "--name", "smoke TESTS"]);
+    assert_eq!(again.code, 6, "{}", again.stderr);
+    let e = again.error();
+    assert_eq!(e["code"], "refused");
+    assert!(e["message"].as_str().unwrap().contains("SMK"), "{e}");
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "TeamCreate")
+            .count(),
+        1,
+        "refused before any mutation"
+    );
+    let same_key = muster(
+        &fake,
+        &[
+            "team",
+            "create",
+            "--name",
+            "Another",
+            "--key",
+            "smk",
+            "--allow-duplicate",
+        ],
+    );
+    assert_eq!(
+        same_key.code, 6,
+        "Linear keeps the key unique: {}",
+        same_key.stderr
+    );
+    assert!(same_key.error()["linear"]["message"].is_string());
+
+    let child = muster(
+        &fake,
+        &["team", "create", "--name", "Smoke child", "--parent", "SMK"],
+    );
+    assert_eq!(child.code, 0, "{}", child.stderr);
+    assert_eq!(child.one()["parent"]["key"], "SMK");
+    assert_eq!(child.one()["key"], "SMO", "a key made from the name");
+    let copied = muster(
+        &fake,
+        &[
+            "team",
+            "create",
+            "--name",
+            "Copied",
+            "--copy-settings-from",
+            "NOPE",
+        ],
+    );
+    assert_eq!(copied.code, 4, "{}", copied.stderr);
+    let blank = muster(&fake, &["team", "create", "--name", "Blank", "--key", " "]);
+    assert_eq!(blank.code, 2, "{}", blank.stderr);
+
+    fake.fail_next("TeamCreate", Failure::Drop);
+    let run = muster(&fake, &["team", "create", "--name", "Dropped"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    assert_eq!(run.error()["code"], "unknown");
+}
+
+#[test]
+fn team_retire_and_unretire_set_and_clear_retired_at() {
+    let fake = Fake::start().unwrap();
+    fake.add_team("SMK", "Smoke tests");
+    let retired = muster(&fake, &["team", "retire", "SMK"]);
+    assert_eq!(retired.code, 0, "{}", retired.stderr);
+    assert!(retired.one()["retiredAt"].is_string(), "{}", retired.stdout);
+    let listed = muster(&fake, &["team", "list"]);
+    let smk = listed
+        .lines()
+        .into_iter()
+        .find(|t| t["key"] == "SMK")
+        .unwrap();
+    assert!(
+        smk["retiredAt"].is_string(),
+        "a retired team is still listed"
+    );
+    let back = muster(&fake, &["team", "unretire", "SMK"]);
+    assert_eq!(back.code, 0, "{}", back.stderr);
+    assert!(back.one()["retiredAt"].is_null());
+    assert_eq!(
+        fake.operations(),
+        vec![
+            "TeamByKey",
+            "TeamUpdate",
+            "Teams",
+            "TeamByKey",
+            "TeamUpdate"
+        ]
+    );
+    fake.fail_next("TeamUpdate", Failure::Drop);
+    let run = muster(&fake, &["team", "retire", "SMK"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+}
+
+#[test]
+fn team_delete_archives_the_team_and_unarchive_brings_it_back() {
+    let fake = Fake::start().unwrap();
+    fake.add_team("SMK", "Smoke tests");
+    let gone = muster(&fake, &["team", "delete", "SMK"]);
+    assert_eq!(gone.code, 0, "{}", gone.stderr);
+    let v = gone.one();
+    assert_eq!(v["success"], true);
+    assert!(
+        v["entityId"].is_string(),
+        "Linear's delete payload as it is"
+    );
+    let listed = muster(&fake, &["team", "list"]);
+    assert!(
+        listed.lines().iter().all(|t| t["key"] != "SMK"),
+        "an archived team is not listed"
+    );
+    let get = muster(&fake, &["team", "get", "SMK"]);
+    assert_eq!(get.code, 4, "{}", get.stderr);
+    let back = muster(&fake, &["team", "unarchive", "SMK"]);
+    assert_eq!(back.code, 0, "{}", back.stderr);
+    assert_eq!(back.one()["key"], "SMK");
+    assert!(back.one()["archivedAt"].is_null());
+    let listed = muster(&fake, &["team", "list"]);
+    assert!(listed.lines().iter().any(|t| t["key"] == "SMK"));
+    fake.fail_next("TeamDelete", Failure::Drop);
+    let run = muster(&fake, &["team", "delete", "SMK"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    fake.fail_next("TeamUnarchive", Failure::Drop);
+    let run = muster(&fake, &["team", "unarchive", "SMK"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+}
+
 #[test]
 fn workspace_update_changes_only_what_is_passed_and_reads_back() {
     let fake = Fake::start().unwrap();
@@ -1691,7 +1897,8 @@ fn the_fakes_answers_have_the_recorded_shapes() {
             .unwrap_or_else(|| panic!("fixture {name} names no operation"));
         let fixture: Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        let variables = muster::cli::schema::fixture_variables(&name, Some("APP-1")).unwrap();
+        let variables =
+            muster::cli::schema::fixture_variables(&name, Some("APP-1"), Some("APP")).unwrap();
         let answer = post(
             &fake.endpoint(),
             &json!({ "query": op.document(), "operationName": op.name, "variables": variables }),

@@ -324,6 +324,16 @@ fn classify_transport(e: &ureq::Error, op: &Operation) -> Error {
     }
 }
 
+/// The current time as `YYYY-MM-DDTHH:MM:SSZ`, for a timestamp muster sends, such as a
+/// team's `retiredAt` (ADR 0014, group 2).
+pub fn now_iso() -> String {
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    iso_from_millis(ms)
+}
+
 /// `YYYY-MM-DDTHH:MM:SSZ` from Unix milliseconds, with no date crate (ADR 0002).
 fn iso_from_millis(ms: u64) -> String {
     let secs = ms / 1000;

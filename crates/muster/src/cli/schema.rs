@@ -334,6 +334,7 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
         )
     })?;
     let (sample, lack) = sample_issue(session)?;
+    let team = sample_team(session)?;
     match (&sample, lack) {
         (Some(id), Some(lack)) => out.notice(
             "partial",
@@ -349,8 +350,8 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
     }
     for op in ops::READS {
         // The same variables the fixture test replays against the fake, from one place.
-        let Some(variables) = fixture_variables(op.name, sample.as_deref()) else {
-            if op.name == "IssueById" {
+        let Some(variables) = fixture_variables(op.name, sample.as_deref(), team.as_deref()) else {
+            if op.name == "IssueById" || op.name == "TeamByKey" {
                 continue;
             }
             return Err(Error::new(
@@ -404,11 +405,25 @@ fn sample_issue(session: &Session) -> Result<(Option<String>, Option<&'static st
     Ok((None, None))
 }
 
+/// The key of the team `TeamByKey` is recorded on: the first team `Teams` lists.
+fn sample_team(session: &Session) -> Result<Option<String>, Error> {
+    let data = session.linear.run(&ops::TEAMS, json!({ "first": 1 }))?;
+    Ok(nodes(&data, "teams")
+        .first()
+        .and_then(|t| str_at(t, "key").map(str::to_string)))
+}
+
 /// The variables each read operation is recorded with, and the fixture test replays
-/// against the fake; `None` when `IssueById` has no issue to ask for.
-pub fn fixture_variables(op: &str, first_issue: Option<&str>) -> Option<Value> {
+/// against the fake; `None` when `IssueById` has no issue, or `TeamByKey` no team, to
+/// ask for.
+pub fn fixture_variables(
+    op: &str,
+    first_issue: Option<&str>,
+    first_team: Option<&str>,
+) -> Option<Value> {
     Some(match op {
         "Viewer" | "Workspace" => json!({}),
+        "TeamByKey" => json!({ "key": first_team?, "includeArchived": false }),
         "Teams" => json!({ "first": 5 }),
         "WorkflowStates" | "IssueLabels" | "Users" => {
             json!({ "first": 5, "filter": Value::Null })
@@ -494,7 +509,14 @@ mod tests {
         for want in [
             "whoami",
             "workspace get",
+            "workspace update",
             "team list",
+            "team get",
+            "team create",
+            "team retire",
+            "team unretire",
+            "team delete",
+            "team unarchive",
             "state list",
             "label list",
             "project list",

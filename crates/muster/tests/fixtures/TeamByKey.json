@@ -1,0 +1,56 @@
+{
+  "teams": {
+    "nodes": [
+      {
+        "activeCycle": null,
+        "allMembersCanJoin": true,
+        "archivedAt": null,
+        "autoArchivePeriod": 0,
+        "autoCloseChildIssues": null,
+        "autoCloseParentIssues": null,
+        "autoClosePeriod": 0,
+        "autoCloseStateId": "<string>",
+        "color": "<string>",
+        "createdAt": "<string>",
+        "cycleCooldownTime": 0,
+        "cycleDuration": 0,
+        "cycleIssueAutoAssignCompleted": true,
+        "cycleIssueAutoAssignStarted": true,
+        "cycleLockToActive": true,
+        "cycleStartDay": 0,
+        "cyclesEnabled": true,
+        "defaultIssueEstimate": 0,
+        "defaultIssueState": {
+          "id": "<string>",
+          "name": "<string>",
+          "type": "<string>"
+        },
+        "description": null,
+        "displayName": "<string>",
+        "groupIssueHistory": true,
+        "icon": null,
+        "id": "<string>",
+        "inheritIssueEstimation": true,
+        "initiativesEnabled": true,
+        "issueCount": 0,
+        "issueEstimationAllowZero": true,
+        "issueEstimationExtended": true,
+        "issueEstimationType": "<string>",
+        "key": "<string>",
+        "name": "<string>",
+        "parent": null,
+        "requirePriorityToLeaveTriage": true,
+        "retiredAt": null,
+        "scimGroupName": null,
+        "scimManaged": true,
+        "securitySettings": {},
+        "timezone": "<string>",
+        "triageEnabled": true,
+        "triageIssueState": null,
+        "upcomingCycleCount": 0,
+        "updatedAt": "<string>",
+        "visibility": "<string>"
+      }
+    ]
+  }
+}
