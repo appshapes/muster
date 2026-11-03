@@ -90,16 +90,16 @@ user-visible change, added in the same commit as the change. The format follows
   `projects`, bounded by the new `PROJECTS_PER_INITIATIVE` with a `truncated` notice
   past it; `initiative create --name <TEXT> [--description] [--owner <WHO>]
   [--lead-team <KEY>] [--status] [--target-date <DATE>] [--priority <0-4>]
-  [--content-file <PATH>]` makes one (a name an initiative has is refused, exit 6,
-  unless `--allow-duplicate`); `initiative update <NAME>` changes the same fields,
-  `none` clearing the owner, the lead team or the date; `initiative archive` and
-  `initiative unarchive` take one out and back; `initiative add-project <NAME>
-  --project <NAME>` and `initiative remove-project` put a project in an initiative
-  and take it out, the link found among the workspace's newest `PAGE_CAP` links,
-  since Linear's list takes no filter. A workspace with initiatives off refuses
-  `initiative create`, exit 6; `workspace update --roadmap true` is the switch, and
-  its help now says so. `--lead-team` is a team initiative, which Linear sells on
-  its Business plan and refuses, exit 6, below it (ADR 0014, group 12;
+  [--content <TEXT>|--content-file <PATH>]` makes one (a name an initiative has is
+  refused, exit 6, unless `--allow-duplicate`); `initiative update <NAME>` changes the
+  same fields, `none` clearing the owner, the lead team or the date; `initiative
+  archive` and `initiative unarchive` take one out and back; `initiative add-project
+  <NAME> --project <NAME>` and `initiative remove-project` put a project in an
+  initiative and take it out, the link found among the workspace's newest `PAGE_CAP`
+  links, since Linear's list takes no filter. A workspace with initiatives off
+  refuses `initiative create`, exit 6; `workspace update --roadmap true` is the
+  switch, and its help now says so. `--lead-team` is a team initiative, which Linear
+  sells on its Business plan and refuses, exit 6, below it (ADR 0014, group 12;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.3.0 - 2026-11-03

@@ -1896,6 +1896,8 @@ fn initiative_list_get_create_update_archive_and_projects() {
             "2026-12-01",
             "--priority",
             "2",
+            "--content",
+            "# Growth\n\nThe plan.",
         ],
     );
     assert_eq!(created.code, 0, "{}", created.stderr);
@@ -1907,6 +1909,30 @@ fn initiative_list_get_create_update_archive_and_projects() {
     assert_eq!(v["targetDate"], "2026-12-01");
     assert_eq!(v["priority"], 2);
     assert!(v["url"].is_string() && v["health"].is_null() && v["archivedAt"].is_null());
+    assert_eq!(v.get("content"), None, "the create's answer has no content");
+    assert_eq!(
+        muster(&fake, &["initiative", "get", "Growth"]).one()["content"],
+        "# Growth\n\nThe plan.",
+        "--content inline lands in the content `initiative get` prints"
+    );
+    let both = muster(
+        &fake,
+        &[
+            "initiative",
+            "create",
+            "--name",
+            "Both",
+            "--content",
+            "x",
+            "--content-file",
+            "-",
+        ],
+    );
+    assert_eq!(
+        both.code, 2,
+        "--content and --content-file conflict: {}",
+        both.stderr
+    );
     let again = muster(&fake, &["initiative", "create", "--name", "growth"]);
     assert_eq!(again.code, 6, "{}", again.stderr);
     assert_eq!(
@@ -2073,11 +2099,35 @@ fn initiative_list_get_create_update_archive_and_projects() {
             "Scale",
             "--lead-team",
             "APP",
+            "--content",
+            "Scaled.",
         ],
     );
     assert_eq!(renamed.code, 0, "{}", renamed.stderr);
     assert_eq!(renamed.one()["name"], "Scale");
     assert_eq!(renamed.one()["leadTeam"]["key"], "APP");
+    assert_eq!(
+        muster(&fake, &["initiative", "get", "Scale"]).one()["content"],
+        "Scaled.",
+        "--content inline on update"
+    );
+    let both = muster(
+        &fake,
+        &[
+            "initiative",
+            "update",
+            "Scale",
+            "--content",
+            "x",
+            "--content-file",
+            &content,
+        ],
+    );
+    assert_eq!(
+        both.code, 2,
+        "--content and --content-file conflict: {}",
+        both.stderr
+    );
     let nothing = muster(&fake, &["initiative", "update", "Scale"]);
     assert_eq!(nothing.code, 2, "{}", nothing.stderr);
     let nope = muster(&fake, &["initiative", "update", "Nope", "--priority", "1"]);

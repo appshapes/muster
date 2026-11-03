@@ -1835,15 +1835,15 @@ fn initiative_get(session: &Session, args: &InitiativeRefArgs, out: &Output) -> 
 }
 
 /// The scalar part of an initiative input from the create or update flags: only what
-/// was passed, the texts bounded, the content from its file, `none` clearing the
-/// target date.
-#[allow(clippy::too_many_arguments)]
+/// was passed, the texts bounded, the content inline or from its file, `none`
+/// clearing the target date.
 fn initiative_input(
     name: Option<&str>,
     description: &Option<String>,
     status: Option<crate::cli::InitiativeStatus>,
     target_date: &Option<String>,
     priority: Option<u8>,
+    content: &Option<String>,
     content_file: &Option<String>,
 ) -> Result<Map<String, Value>, Error> {
     let mut input = Map::new();
@@ -1864,8 +1864,8 @@ fn initiative_input(
     if let Some(priority) = priority {
         input.insert("priority".into(), json!(priority));
     }
-    if let Some(path) = content_file {
-        input.insert("content".into(), json!(read_body(path)?));
+    if let Some(content) = body_from(content, content_file)? {
+        input.insert("content".into(), json!(content));
     }
     Ok(input)
 }
@@ -1881,6 +1881,7 @@ fn initiative_create(
         args.status,
         &args.target_date,
         args.priority,
+        &args.content,
         &args.content_file,
     )?;
     // The guard: `initiative get <NAME>` and `--project`'s kin resolve a name to one.
@@ -1936,6 +1937,7 @@ fn initiative_update(
         args.status,
         &args.target_date,
         args.priority,
+        &args.content,
         &args.content_file,
     )?;
     let initiative = session.initiative_full(&args.initiative, false)?;
@@ -1964,7 +1966,7 @@ fn initiative_update(
         return Err(Error::with_hint(
             ErrorCode::Usage,
             "nothing to change",
-            "pass at least one of --name, --description, --owner, --lead-team, --status, --target-date, --priority, --content-file",
+            "pass at least one of --name, --description, --owner, --lead-team, --status, --target-date, --priority, --content, --content-file",
         ));
     }
     let data = session.linear.run(
@@ -3636,6 +3638,53 @@ mod tests {
                 "a name or a content over BODY_MAX_BYTES is refused before any request"
             );
         }
+    }
+
+    #[test]
+    fn an_initiative_input_holds_only_what_was_passed() {
+        use crate::cli::InitiativeStatus;
+        let input = initiative_input(
+            Some("Growth"),
+            &None,
+            Some(InitiativeStatus::Active),
+            &Some("none".into()),
+            None,
+            &Some("# The plan".into()),
+            &None,
+        )
+        .unwrap_or_default();
+        assert_eq!(input.get("name"), Some(&json!("Growth")));
+        assert_eq!(input.get("status"), Some(&json!("Active")));
+        assert_eq!(
+            input.get("targetDate"),
+            Some(&Value::Null),
+            "`none` clears the date"
+        );
+        assert_eq!(
+            input.get("content"),
+            Some(&json!("# The plan")),
+            "--content inline, as it is"
+        );
+        assert_eq!(
+            input.get("description"),
+            None,
+            "a flag left out is not sent"
+        );
+        assert_eq!(input.get("priority"), None);
+        assert!(
+            initiative_input(
+                None,
+                &None,
+                None,
+                &None,
+                None,
+                &Some("c".repeat(BODY_MAX_BYTES + 1)),
+                &None,
+            )
+            .err()
+            .is_some_and(|e| e.code == ErrorCode::Refused),
+            "a content over BODY_MAX_BYTES is refused before any request"
+        );
     }
 
     #[test]

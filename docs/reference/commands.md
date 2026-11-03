@@ -390,7 +390,8 @@ Create an initiative; a name an initiative already has is refused unless --allow
 | `--status` | `<Proposed\|Planned\|Active\|Completed\|Canceled>` | no |  | The status; Linear's default when absent |
 | `--target-date` | `<DATE>` | no |  | The planned end, a date (2026-12-01) |
 | `--priority` | `<0-4>` | no |  | The priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low |
-| `--content-file` | `<PATH>` | no |  | The content, markdown, from a file, or from stdin when PATH is `-` |
+| `--content` | `<TEXT>` | no |  | The content, markdown |
+| `--content-file` | `<PATH>` | no |  | The content from a file, or from stdin when PATH is `-` |
 | `--allow-duplicate` |  | no |  | Create it even when an initiative has the name |
 
 ### muster initiative update
@@ -407,7 +408,8 @@ Change an initiative's name, description, owner, lead team, status, target date,
 | `--status` | `<Proposed\|Planned\|Active\|Completed\|Canceled>` | no |  | A new status |
 | `--target-date` | `<DATE>` | no |  | A new planned end, a date (2026-12-01), or `none` |
 | `--priority` | `<0-4>` | no |  | A new priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low |
-| `--content-file` | `<PATH>` | no |  | The content, markdown, from a file, or from stdin when PATH is `-` |
+| `--content` | `<TEXT>` | no |  | A new content, markdown |
+| `--content-file` | `<PATH>` | no |  | The content from a file, or from stdin when PATH is `-` |
 
 ### muster initiative archive
 

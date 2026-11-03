@@ -1078,7 +1078,10 @@ pub struct InitiativeCreateArgs {
     /// The priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low
     #[arg(long, value_name = "0-4", value_parser = clap::value_parser!(u8).range(0..=4))]
     pub priority: Option<u8>,
-    /// The content, markdown, from a file, or from stdin when PATH is `-`
+    /// The content, markdown
+    #[arg(long, value_name = "TEXT", conflicts_with = "content_file")]
+    pub content: Option<String>,
+    /// The content from a file, or from stdin when PATH is `-`
     #[arg(long, value_name = "PATH")]
     pub content_file: Option<String>,
     /// Create it even when an initiative has the name
@@ -1113,7 +1116,10 @@ pub struct InitiativeUpdateArgs {
     /// A new priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low
     #[arg(long, value_name = "0-4", value_parser = clap::value_parser!(u8).range(0..=4))]
     pub priority: Option<u8>,
-    /// The content, markdown, from a file, or from stdin when PATH is `-`
+    /// A new content, markdown
+    #[arg(long, value_name = "TEXT", conflicts_with = "content_file")]
+    pub content: Option<String>,
+    /// The content from a file, or from stdin when PATH is `-`
     #[arg(long, value_name = "PATH")]
     pub content_file: Option<String>,
 }
