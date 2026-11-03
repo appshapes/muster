@@ -3,7 +3,8 @@
 A how-to page: one task, a feature from a Linear issue to its commits on `master`, for a
 person with write access or for the agent. The rules are in `CLAUDE.md` and the gates
 enforce them; this page is the order of work. Why the first features are the ones they
-are is [ADR 0007](../decisions/0007-build-the-trello-command-set-first.md).
+are is [ADR 0007](../decisions/0007-build-the-trello-command-set-first.md), and the
+next ones [ADR 0013](../decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md).
 
 ## Prerequisites
 
@@ -59,7 +60,8 @@ are is [ADR 0007](../decisions/0007-build-the-trello-command-set-first.md).
       from 3.2; glossary rows; a `CHANGELOG.md` line. The reference page is generated,
       never written by hand.
    6. If a gate prints `not built yet` and would check this change, building it is
-      part of this commit. ADR 0007 names which feature builds which gate.
+      part of this commit. The slice's ADR (ADR 0007, then ADR 0013) names which feature
+      builds which gate.
    7. One command per pull request where the work goes through the review loop, and
       none over about a thousand changed lines, generated files aside. The reviewer
       reads a pull request whole and the fixer applies every blocker of a review in one

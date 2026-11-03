@@ -101,7 +101,7 @@ scripts/              the Python gates: lint-docs, lint-workspace, tidy, release
 
 ## Working rules for agents
 
-- Read `CLAUDE.md`, then the crate's `README.md`, then `docs/decisions/0007-build-the-trello-command-set-first.md`, before the code.
+- Read `CLAUDE.md`, then the crate's `README.md`, then the current slice's ADR (`docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md`; ADR 0007 is the first slice, done), before the code.
 - Trunk-based by default: developers commit directly to `master`. Bots and agent workflows use branches and pull requests. `master` is green after every commit, so run `just lint`, `just test`, `just docs` and `just lint-docs` before each one; `/commit` does. The commit message is the review record: what changed, which invariant, and the evidence.
 - A Claude Code session working a Linear issue uses `/linear-start`; the issue's identifier prefixes its commits (`APP-12: Add the comment command`). After a pull request merges, run `just tidy`.
 - Concurrent branches collide in the files everyone appends to: `CHANGELOG.md`, `docs/SUMMARY.md`, `docs/glossary.md`, `src/linear/operations.rs` and `tests/support/fake_linear.rs`. Append at the end of the section so both sides can be kept, and resolve a conflict by keeping both sides with `master`'s lines first, in the branch that merges second.

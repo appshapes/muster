@@ -76,7 +76,8 @@ line, such as `"APP-5" "Try muster" ("Backlog")`; a missing key is an `Error` wh
 - [`docs/reference/commands.md`](../../docs/reference/commands.md), every command, exit
   code, bound and variable, generated from the binary.
 - [ADR 0007](../../docs/decisions/0007-build-the-trello-command-set-first.md), the first
-  slice; [ADR 0008](../../docs/decisions/0008-speak-to-agents-first.md), the agent
+  slice, and [ADR 0013](../../docs/decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md),
+  the second; [ADR 0008](../../docs/decisions/0008-speak-to-agents-first.md), the agent
   contract; [ADR 0010](../../docs/decisions/0010-test-against-a-fake-linear-held-to-recorded-shapes.md),
   how it is tested; [ADR 0011](../../docs/decisions/0011-release-as-muster-cli.md) and
   [ADR 0012](../../docs/decisions/0012-publish-as-muster-linear.md), how it is released

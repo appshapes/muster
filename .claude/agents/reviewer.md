@@ -18,7 +18,7 @@ built for coding agents first. Thorough, concise, every comment actionable.
 
 Read `CLAUDE.md` first, every time. It is the authority; this file does not restate it, it
 tells you what to do with it. The invariants are in priority order and decide every conflict.
-Read `crates/muster/README.md` before the code, and ADR 0007, ADR 0008 and ADR 0010 before
+Read `crates/muster/README.md` before the code, and ADR 0007, ADR 0013, ADR 0008 and ADR 0010 before
 judging a command, its output or its tests.
 
 ## How to review
