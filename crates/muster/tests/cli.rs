@@ -2297,6 +2297,62 @@ fn initiative_remove_project_refuses_a_link_past_page_cap() {
     );
 }
 
+// ---- the audit log (ADR 0014, group 17) --------------------------------------------------
+
+#[test]
+fn audit_list_filters_by_type_actor_and_time() {
+    let fake = Fake::start().unwrap();
+    // The fake seeds three entries: a login and an issue deletion by the key's owner,
+    // a project deletion by another user; newest first.
+    let all = muster(&fake, &["audit", "list"]);
+    assert_eq!(all.code, 0, "{}", all.stderr);
+    assert_eq!(all.lines().len(), 3);
+    assert_eq!(all.lines()[0]["type"], "issueDeleted");
+    assert_eq!(all.lines()[0]["actor"]["displayName"], "fake");
+    assert!(all.lines()[0]["ip"].is_string() && all.lines()[0]["countryCode"].is_string());
+    assert_eq!(all.lines()[0]["metadata"]["entityIdentifier"], "APP-0");
+    assert_eq!(
+        fake.operations(),
+        vec!["AuditEntries"],
+        "one request, no resolution"
+    );
+    let deletions = muster(&fake, &["audit", "list", "--type", "projectDeleted"]);
+    assert_eq!(deletions.lines().len(), 1);
+    assert_eq!(deletions.lines()[0]["actor"]["displayName"], "other");
+    let mine = muster(&fake, &["audit", "list", "--actor", "me"]);
+    assert_eq!(mine.lines().len(), 2);
+    let others = muster(&fake, &["audit", "list", "--actor", "other@example.com"]);
+    assert_eq!(others.lines().len(), 1);
+    assert_eq!(others.lines()[0]["type"], "projectDeleted");
+    let nobody = muster(&fake, &["audit", "list", "--actor", "nobody"]);
+    assert_eq!(nobody.code, 4, "{}", nobody.stderr);
+    let recent = muster(
+        &fake,
+        &["audit", "list", "--since", "2026-11-02T09:15:00.000Z"],
+    );
+    assert_eq!(recent.lines().len(), 2);
+    let combined = muster(
+        &fake,
+        &[
+            "audit",
+            "list",
+            "--actor",
+            "me",
+            "--since",
+            "2026-11-02T09:15:00.000Z",
+            "--type",
+            "issueDeleted",
+        ],
+    );
+    assert_eq!(combined.lines().len(), 1);
+    let cut = muster(&fake, &["audit", "list", "--limit", "1"]);
+    assert_eq!(cut.lines().len(), 1);
+    assert_eq!(cut.notices()[0]["code"], "truncated");
+    fake.fail_next("AuditEntries", Failure::Drop);
+    let run = muster(&fake, &["audit", "list"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+}
+
 // ---- project updates (ADR 0014, group 11) ------------------------------------------------
 
 #[test]

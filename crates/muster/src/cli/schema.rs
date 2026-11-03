@@ -533,6 +533,7 @@ pub fn fixture_variables(
         "UserById" => json!({ "id": "me" }),
         "ProjectStatuses" => json!({ "first": 5, "includeArchived": false }),
         "Milestones" | "ProjectUpdates" => json!({ "project": first_project?, "first": 5 }),
+        "AuditEntries" => json!({ "first": 5, "filter": Value::Null }),
         "Initiatives" => json!({ "first": 5, "filter": Value::Null }),
         "InitiativeByName" => {
             json!({ "name": first_initiative?, "includeArchived": false, "projects": PROJECTS_PER_INITIATIVE })
@@ -663,6 +664,7 @@ mod tests {
             "milestone delete",
             "project-update list",
             "project-update create",
+            "audit list",
             "initiative list",
             "initiative get",
             "initiative create",

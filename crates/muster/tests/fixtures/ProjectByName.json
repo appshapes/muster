@@ -24,7 +24,14 @@
         },
         "lead": null,
         "members": {
-          "nodes": [],
+          "nodes": [
+            {
+              "displayName": "<string>",
+              "email": "<string>",
+              "id": "<string>",
+              "name": "<string>"
+            }
+          ],
           "pageInfo": {
             "hasNextPage": true
           }

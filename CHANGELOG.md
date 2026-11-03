@@ -6,7 +6,15 @@ user-visible change, added in the same commit as the change. The format follows
 
 ## Unreleased
 
-Nothing yet.
+### Added
+- `audit list [--type <TYPE>] [--actor <WHO>] [--since <TIME>]` prints the
+  workspace's audit log, newest first, each entry with its `type`, `createdAt`,
+  `actor`, `ip`, `countryCode` and Linear's `metadata` as it comes, through Linear's
+  `auditEntries` and its filter; the actor is resolved as `--assignee` is, before any
+  request. Linear's pages reserve the log for owners on the Enterprise plan, and the
+  command prints Linear's answer, or its refusal as exit 6; on 2026-11-03 a Free
+  workspace answered its owner's key (ADR 0014, group 17;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.4.0 - 2026-11-03
 

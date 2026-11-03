@@ -139,6 +139,12 @@ its Business plan and refuses below it), `muster initiative add-project Growth
 --project "Trying muster"` puts the project in it, `muster initiative get Growth`
 prints it with its `projects` (bounded by `PROJECTS_PER_INITIATIVE`), and `muster
 initiative archive Growth` puts it away (`unarchive` brings it back).
+The audit log says what was done, by whom and from where: `muster audit list --limit
+5` prints the five newest entries (one JSON line each, with `type`, `createdAt`,
+`actor`, `ip`, `countryCode` and Linear's `metadata`), `muster audit list --type
+projectDeleted` the deletions, `muster audit list --actor me --since
+2026-11-01T00:00:00Z` your own since a time. Linear reserves the log for owners on
+its Enterprise plan; where it refuses, the exit code is 6 and the message is Linear's.
 
 A label of the team is `muster label create --name "Smoke" --color "#26b5ce"`
 (`--workspace` makes one every team shares, `--group` one that holds other labels):

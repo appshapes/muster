@@ -445,6 +445,17 @@ Take a project out of an initiative.
 | `<NAME>` | `<NAME>` | yes |  | The initiative, by name |
 | `--project` | `<NAME>` | yes |  | The project, by name |
 
+### muster audit list
+
+List the workspace's audit entries, newest first, one JSON object per line.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--type` | `<TYPE>` | no |  | Only entries of this kind, as Linear names it (login, issueDeleted, projectDeleted, ...) |
+| `--actor` | `<WHO>` | no |  | Only entries by this user: `me`, an email address or a name |
+| `--since` | `<TIME>` | no |  | Only entries at or after this time (2026-11-01T00:00:00Z) |
+| `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
 ### muster milestone list
 
 List a project's milestones, one JSON object per line.
@@ -830,6 +841,7 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `Initiatives` | query |
 | `InitiativeByName` | query |
 | `InitiativeLinks` | query |
+| `AuditEntries` | query |
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |

@@ -56,6 +56,8 @@ struct Workspace {
     initiatives: Vec<Value>,
     /// The initiative-to-project links, each with `initiativeId` and `projectId`.
     initiative_links: Vec<Value>,
+    /// The audit log, newest first, as Linear orders it.
+    audit_entries: Vec<Value>,
 }
 
 struct State {
@@ -457,15 +459,23 @@ fn compare(value: &Value, comparator: &Value) -> bool {
             (Some(v), Some(w)) => v.contains(w),
             _ => false,
         },
-        "gt" | "gte" | "lt" | "lte" => match (value.as_f64(), want.as_f64()) {
-            (Some(v), Some(w)) => match op.as_str() {
-                "gt" => v > w,
-                "gte" => v >= w,
-                "lt" => v < w,
-                _ => v <= w,
-            },
-            _ => false,
-        },
+        "gt" | "gte" | "lt" | "lte" => {
+            // Numbers as numbers; else strings, which orders ISO times as Linear does.
+            let ordering = match (value.as_f64(), want.as_f64()) {
+                (Some(v), Some(w)) => v.partial_cmp(&w),
+                _ => match (value.as_str(), want.as_str()) {
+                    (Some(v), Some(w)) => Some(v.cmp(w)),
+                    _ => None,
+                },
+            };
+            match (op.as_str(), ordering) {
+                (_, None) => false,
+                ("gt", Some(o)) => o == std::cmp::Ordering::Greater,
+                ("gte", Some(o)) => o != std::cmp::Ordering::Less,
+                ("lt", Some(o)) => o == std::cmp::Ordering::Less,
+                (_, Some(o)) => o != std::cmp::Ordering::Greater,
+            }
+        }
         "null" => want.as_bool().is_some_and(|n| n == value.is_null()),
         _ => true,
     })
@@ -553,6 +563,7 @@ impl Workspace {
             project_updates: Vec::new(),
             initiatives: Vec::new(),
             initiative_links: Vec::new(),
+            audit_entries: Vec::new(),
         };
         // Every field `Workspace` asks for, with the values a Free workspace shows; the
         // fixture holds this to the recorded shape (ADR 0010; ADR 0014, group 1).
@@ -622,6 +633,30 @@ impl Workspace {
             json!({ "id": me["id"], "name": me["name"], "displayName": me["displayName"] });
         project["memberIds"] = json!([me["id"]]);
         ws.projects.push(project.clone());
+        // Three audit entries, so that every audit answer has a node and the filters
+        // have something to tell apart (ADR 0014, group 17).
+        ws.new_audit_entry("login", &me, "2026-11-02T09:00:00.000Z", json!({}));
+        ws.new_audit_entry(
+            "projectDeleted",
+            &other,
+            "2026-11-02T09:30:00.000Z",
+            json!({ "entityType": "project", "entityIdentifier": "old-plan" }),
+        );
+        // The newest entry carries Linear's fullest `metadata` seen (a deletion), so the
+        // fixture test can hold the fake to that shape.
+        let app = ws
+            .teams
+            .iter()
+            .find(|t| t["key"] == "APP")
+            .map(|t| t["id"].clone())
+            .unwrap_or(Value::Null);
+        ws.new_audit_entry(
+            "issueDeleted",
+            &me,
+            "2026-11-02T10:00:00.000Z",
+            json!({ "id": "00000000-0000-4000-8000-00000000a0d1", "name": "An old thing", "slugId": "an-old-thing",
+                    "teamIds": [app], "entityId": "00000000-0000-4000-8000-00000000a0d1", "entityType": "issue", "entityIdentifier": "APP-0" }),
+        );
         // One milestone, so that `project get` prints a node and the recorder finds
         // one (ADR 0014, group 8).
         ws.new_milestone(&project, "First cut", None, Some("2026-12-01"));
@@ -1120,6 +1155,19 @@ impl Workspace {
             .map(|i| json!({ "id": i["id"], "name": i["name"] }))
             .unwrap_or(Value::Null);
         json!({ "id": link["id"], "createdAt": link["createdAt"], "project": project, "initiative": initiative })
+    }
+
+    /// An audit entry with every `AuditEntryFields` field (ADR 0014, group 17), newest
+    /// first in the store.
+    fn new_audit_entry(&mut self, kind: &str, actor: &Value, at: &str, metadata: Value) -> Value {
+        let id = self.id();
+        let entry = json!({
+            "id": id, "type": kind, "createdAt": at, "ip": "203.0.113.7", "countryCode": "GB",
+            "metadata": metadata,
+            "actor": { "id": actor["id"], "name": actor["name"], "displayName": actor["displayName"] },
+        });
+        self.audit_entries.insert(0, entry.clone());
+        entry
     }
 
     fn milestone_view(stone: &Value) -> Value {
@@ -2002,6 +2050,18 @@ impl Workspace {
                 (
                     200,
                     json!({ "data": { "initiativeToProjectDelete": { "success": true, "entityId": id } } }),
+                )
+            }
+            "AuditEntries" => {
+                let entries: Vec<Value> = self
+                    .audit_entries
+                    .iter()
+                    .filter(|e| passes(e, filter))
+                    .cloned()
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "auditEntries": Workspace::page(entries, first) } }),
                 )
             }
             "ProjectStatusCreate" => {

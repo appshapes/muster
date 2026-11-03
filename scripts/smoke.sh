@@ -181,6 +181,24 @@ else
   esac
 fi
 echo
+echo "smoke: muster audit list --limit 3, --type projectDeleted, --actor me --since today (ADR 0014; exit 6 where the plan reserves the log)"
+set +e
+"$bin" audit list --limit 3 > "$tmp/audit.jsonl" 2> "$tmp/audit.err"
+code=$?
+set -e
+case "$code" in
+  0)
+    jq -c '{type, createdAt, countryCode, actor: .actor.displayName}' "$tmp/audit.jsonl"
+    jq -s -e 'length >= 1' "$tmp/audit.jsonl" >/dev/null
+    "$bin" audit list --type projectDeleted --limit 2 | jq -c '{type, createdAt, entity: .metadata.entityType}' | tee "$tmp/audit-type.jsonl"
+    jq -s -e 'all(.type == "projectDeleted")' "$tmp/audit-type.jsonl" >/dev/null
+    "$bin" audit list --actor me --since "${stamp:0:10}T00:00:00Z" --limit 3 | jq -c '{type, createdAt}' | tee "$tmp/audit-mine.jsonl"
+    jq -s -e 'length >= 1' "$tmp/audit-mine.jsonl" >/dev/null
+    ;;
+  6) cat "$tmp/audit.err"; jq -e '.error.code == "refused"' "$tmp/audit.err" >/dev/null; echo "smoke: the plan reserves the audit log; the audit steps are skipped" ;;
+  *) echo "smoke: audit list exited $code" >&2; cat "$tmp/audit.err" >&2; exit 1 ;;
+esac
+echo
 echo "smoke: muster project get 'Smoke tests', then a throwaway project updated, deleted, unarchived and deleted again (ADR 0014)"
 "$bin" project get "Smoke tests" | jq -c '{name, status: .status.name, members: (.members.nodes | length), milestones: (.projectMilestones.nodes | length), trashed}' | tee "$tmp/project-get.json"
 jq -e '.name == "Smoke tests"' "$tmp/project-get.json" >/dev/null
