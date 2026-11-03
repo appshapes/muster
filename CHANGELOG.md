@@ -6,7 +6,13 @@ user-visible change, added in the same commit as the change. The format follows
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- `workspace get` prints the workspace as Linear returns it, one JSON line and no team
+  needed: its `name` and `urlKey`, its settings, `securitySettings` and
+  `authSettings`, `userCount`, `createdIssueCount`, `previousUrlKeys` and
+  `subscription` (ADR 0014, group 1;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.2.0 - 2026-11-03
 

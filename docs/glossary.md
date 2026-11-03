@@ -7,7 +7,7 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 
 | Muster term | Definition | Linear API name | Trello word | Reference |
 | --- | --- | --- | --- | --- |
-| workspace | One Linear organisation, reached with one API key; `muster whoami` names it. | `organization` | workspace | `docs/reference/commands.md#muster-whoami` |
+| workspace | One Linear organisation, reached with one API key; `muster whoami` names it and `muster workspace get` prints its settings. | `organization` | workspace | `docs/reference/commands.md#muster-workspace-get` |
 | key | The Linear API key muster authenticates with, read from the environment or a file, never from argv. | API key | API key and token | `docs/reference/commands.md#the-key` |
 | team | The unit that owns issues and gives them their identifier prefix (`APP`). | `team`, `team.key` | board | `docs/reference/commands.md#muster-team-list` |
 | issue | One unit of work, with a title, a description in markdown, a state, labels and comments. | `issue` | card | `docs/reference/commands.md#muster-issue-get` |

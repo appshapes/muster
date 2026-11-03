@@ -167,6 +167,27 @@ op!(ISSUES, "Issues", Kind::Query, "query Issues($first: Int!, $filter: IssueFil
   issues(first: $first, filter: $filter, orderBy: $orderBy) { nodes { ...IssueFields } pageInfo { hasNextPage } }
 }", &[ISSUE_FIELDS]);
 
+op!(
+    WORKSPACE,
+    "Workspace",
+    Kind::Query,
+    "query Workspace {
+  organization {
+    id name urlKey logoUrl createdAt updatedAt
+    gitBranchFormat gitLinkbackMessagesEnabled gitPublicLinkbackMessagesEnabled gitLinkbackDescriptionsEnabled suggestedBranchNameEnabled
+    roadmapEnabled feedEnabled pullRequestTourEnabled pullRequestIssueMode aiThreadSummariesEnabled aiDiscussionSummariesEnabled
+    projectUpdateReminderFrequencyInWeeks projectUpdateRemindersDay projectUpdateRemindersHour
+    initiativeUpdateReminderFrequencyInWeeks initiativeUpdateRemindersDay initiativeUpdateRemindersHour
+    fiscalYearStartMonth defaultHomeView
+    samlEnabled scimEnabled hipaaComplianceEnabled releaseChannel
+    securitySettings authSettings allowedFileUploadContentTypes
+    previousUrlKeys deletionRequestedAt trialStartsAt trialEndsAt
+    userCount createdIssueCount
+    subscription { id type seats seatsMinimum seatsMaximum collectionMethod nextBillingAt canceledAt cancelAt pendingChangeType }
+  }
+}"
+);
+
 // ---- writes --------------------------------------------------------------------------
 
 op!(
@@ -228,6 +249,7 @@ pub static READS: &[&Operation] = &[
     &USERS,
     &ISSUE_BY_ID,
     &ISSUES,
+    &WORKSPACE,
 ];
 
 /// Every write operation.

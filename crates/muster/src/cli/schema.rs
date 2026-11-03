@@ -408,7 +408,7 @@ fn sample_issue(session: &Session) -> Result<(Option<String>, Option<&'static st
 /// against the fake; `None` when `IssueById` has no issue to ask for.
 pub fn fixture_variables(op: &str, first_issue: Option<&str>) -> Option<Value> {
     Some(match op {
-        "Viewer" => json!({}),
+        "Viewer" | "Workspace" => json!({}),
         "Teams" => json!({ "first": 5 }),
         "WorkflowStates" | "IssueLabels" | "Users" => {
             json!({ "first": 5, "filter": Value::Null })
@@ -493,6 +493,7 @@ mod tests {
             .collect();
         for want in [
             "whoami",
+            "workspace get",
             "team list",
             "state list",
             "label list",

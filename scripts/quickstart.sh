@@ -34,6 +34,10 @@ step "muster whoami"
 "$bin" whoami | tee "$tmp/whoami.json"
 jq -e '.viewer.id and .muster.team.key == "APP" and .muster.key.source == "LINEAR_API_KEY"' "$tmp/whoami.json" >/dev/null
 
+step "muster workspace get"
+"$bin" workspace get | tee "$tmp/workspace.json"
+jq -e '.urlKey == "fake" and (.userCount | type) == "number" and .subscription == null' "$tmp/workspace.json" >/dev/null
+
 step "muster issue create"
 "$bin" issue create --title "Try muster" --description "Created from the README." | tee "$tmp/create.json"
 id=$(jq -r .identifier "$tmp/create.json")

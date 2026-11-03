@@ -835,7 +835,11 @@ fn fixtures_records_the_newest_issue_that_has_comments_attachments_and_sub_issue
     let dir = temp_dir();
     let run = muster(&fake, &["fixtures", dir.to_str().unwrap()]);
     assert_eq!(run.code, 0, "{}", run.stderr);
-    assert_eq!(run.lines().len(), 8, "one line per read operation");
+    assert_eq!(
+        run.lines().len(),
+        muster::linear::operations::READS.len(),
+        "one line per read operation"
+    );
     assert!(
         run.notices().is_empty(),
         "APP-1 has comments, a link and a sub-issue, so the recording lacks nothing: {}",
@@ -1268,6 +1272,40 @@ fn a_project_in_more_teams_than_the_bound_prints_the_bound_and_a_notice() {
     assert!(run.notices().is_empty(), "at the bound is not over it");
 }
 
+// ---- the workspace (ADR 0014, group 1) ---------------------------------------------------
+
+#[test]
+fn workspace_get_prints_the_organization_as_linear_returns_it() {
+    let fake = Fake::start().unwrap();
+    let run = muster(&fake, &["workspace", "get"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let v = run.one();
+    assert_eq!(v["urlKey"], "fake");
+    assert_eq!(v["name"], "Fake Workspace");
+    assert!(v["userCount"].is_number() && v["createdIssueCount"].is_number());
+    assert!(v["securitySettings"].is_object() && v["authSettings"].is_object());
+    assert!(
+        v["subscription"].is_null(),
+        "a Free workspace has no subscription"
+    );
+    assert!(v["previousUrlKeys"].is_array());
+    assert_eq!(v.get("muster"), None, "nothing muster made up");
+    assert_eq!(
+        fake.operations(),
+        vec!["Workspace"],
+        "one request, and no team is resolved"
+    );
+
+    fake.fail_next("Workspace", Failure::Drop);
+    let run = muster(&fake, &["workspace", "get"]);
+    assert_eq!(
+        run.code, 7,
+        "a query whose answer never came: {}",
+        run.stderr
+    );
+    assert_eq!(run.error()["code"], "network");
+}
+
 // ---- failures: network, unknown, rate limit, server -------------------------------------
 
 #[test]
@@ -1564,7 +1602,7 @@ fn the_fakes_answers_have_the_recorded_shapes() {
         checked += 1;
     }
     assert!(
-        checked >= 8,
+        checked >= muster::linear::operations::READS.len(),
         "only {checked} fixtures; run just record-fixtures"
     );
 }
