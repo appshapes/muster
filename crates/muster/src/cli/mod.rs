@@ -110,7 +110,7 @@ pub struct WorkspaceUpdateArgs {
     #[arg(long, value_name = "URL")]
     pub logo_url: Option<String>,
     /// The template for the branch name Linear suggests for an issue, or `none` for Linear's default
-    #[arg(long, value_name = "TEXT")]
+    #[arg(long, value_name = "TEXT|none")]
     pub git_branch_format: Option<String>,
     /// Whether the git integration posts a linkback comment on a private repository's pull request
     #[arg(long, value_name = "true|false")]
@@ -187,7 +187,7 @@ pub struct WorkspaceUpdateArgs {
     /// The least role that may create a workspace-wide initiative
     #[arg(long, value_name = "ROLE", value_enum)]
     pub workspace_initiatives_role: Option<Role>,
-    /// The sign-in services allowed, comma-separated (google,saml), or `all`
+    /// The sign-in services allowed, comma-separated (google,saml), or `all` for every one; a value that names none is a usage error, exit 2
     #[arg(long, value_name = "SERVICE,...|all")]
     pub allowed_auth_services: Option<String>,
     /// Whether a new user whose email domain this workspace claims is shown no other workspace at sign-up

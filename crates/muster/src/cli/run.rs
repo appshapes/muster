@@ -473,8 +473,9 @@ fn workspace_get(session: &Session, out: &Output) -> Result<(), Error> {
 /// The input of `organizationUpdate` from `workspace update`'s flags: only what was
 /// passed, so that a flag left out leaves its setting alone; `none` clears the branch
 /// format; the roles go under `securitySettings` and the sign-in services under
-/// `authSettings`, as Linear nests them; `all` is Linear's empty list. No flag at all
-/// is a usage error before any request.
+/// `authSettings`, as Linear nests them; `all` is Linear's empty list, and the one way
+/// to send it, since a value that names no service is a usage error. No flag at all is
+/// a usage error too, before any request.
 fn workspace_input(args: &WorkspaceUpdateArgs) -> Result<Map<String, Value>, Error> {
     let mut input = Map::new();
     if let Some(name) = &args.name {
@@ -560,11 +561,22 @@ fn workspace_input(args: &WorkspaceUpdateArgs) -> Result<Map<String, Value>, Err
         let list: Vec<&str> = if services.trim().eq_ignore_ascii_case("all") {
             Vec::new()
         } else {
-            services
+            let named: Vec<&str> = services
                 .split(',')
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
-                .collect()
+                .collect();
+            // An empty value, or commas alone, would also be the empty list, which
+            // Linear reads as every service allowed: a security setting opened by an
+            // empty variable. Exit 2 rather than guess (CLAUDE.md, When in doubt).
+            if named.is_empty() {
+                return Err(Error::with_hint(
+                    ErrorCode::Usage,
+                    "--allowed-auth-services names no service",
+                    "name the services to allow, comma-separated (google,saml); `all`, which lets every service sign in, is the one spelling of Linear's empty list",
+                ));
+            }
+            named
         };
         auth.insert("allowedAuthServices".into(), json!(list));
     }
@@ -1552,6 +1564,22 @@ mod tests {
             at(&Value::Object(input), "authSettings.allowedAuthServices"),
             &json!(["google", "saml"])
         );
+        for empty in ["", " ", ",", " , ,"] {
+            let none = WorkspaceUpdateArgs {
+                allowed_auth_services: Some(empty.into()),
+                ..WorkspaceUpdateArgs::default()
+            };
+            let e = workspace_input(&none).err();
+            assert_eq!(
+                e.as_ref().map(|e| e.code),
+                Some(ErrorCode::Usage),
+                "{empty:?} is not `all`: {e:?}"
+            );
+            assert!(
+                e.is_some_and(|e| e.message == "--allowed-auth-services names no service"),
+                "{empty:?}"
+            );
+        }
         let long = WorkspaceUpdateArgs {
             name: Some("n".repeat(BODY_MAX_BYTES + 1)),
             ..WorkspaceUpdateArgs::default()

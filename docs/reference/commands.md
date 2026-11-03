@@ -35,34 +35,34 @@ Change the workspace's settings; a flag left out leaves its setting alone, a boo
 | `--name` | `<TEXT>` | no |  | A new name |
 | `--url-key` | `<KEY>` | no |  | A new URL key, the `appshapes` of linear.app/appshapes; Linear keeps the last three previous keys redirecting |
 | `--logo-url` | `<URL>` | no |  | A new logo, by URL |
-| `--git-branch-format` | `<TEXT>` | no |  | The template for the branch name Linear suggests for an issue, or `none` for Linear's default |
-| `--git-linkback-messages` | `<true|false>` | no |  | Whether the git integration posts a linkback comment on a private repository's pull request |
-| `--git-public-linkback-messages` | `<true|false>` | no |  | Whether the git integration posts a linkback comment on a public repository's pull request |
-| `--git-linkback-descriptions` | `<true|false>` | no |  | Whether a linkback comment carries the issue's description |
-| `--suggested-branch-name` | `<true|false>` | no |  | Whether copying an issue, or opening it in a coding tool, suggests a branch name |
-| `--roadmap` | `<true|false>` | no |  | Whether the roadmap is on |
+| `--git-branch-format` | `<TEXT\|none>` | no |  | The template for the branch name Linear suggests for an issue, or `none` for Linear's default |
+| `--git-linkback-messages` | `<true\|false>` | no |  | Whether the git integration posts a linkback comment on a private repository's pull request |
+| `--git-public-linkback-messages` | `<true\|false>` | no |  | Whether the git integration posts a linkback comment on a public repository's pull request |
+| `--git-linkback-descriptions` | `<true\|false>` | no |  | Whether a linkback comment carries the issue's description |
+| `--suggested-branch-name` | `<true\|false>` | no |  | Whether copying an issue, or opening it in a coding tool, suggests a branch name |
+| `--roadmap` | `<true\|false>` | no |  | Whether the roadmap is on |
 | `--project-update-reminder-weeks` | `<N>` | no |  | How many weeks apart Linear asks for project updates |
-| `--project-update-reminders-day` | `<DAY>` | no |  | The weekday project update reminders go out |
+| `--project-update-reminders-day` | `<Sunday\|Monday\|Tuesday\|Wednesday\|Thursday\|Friday\|Saturday>` | no |  | The weekday project update reminders go out |
 | `--project-update-reminders-hour` | `<0-23>` | no |  | The hour project update reminders go out, 0 to 23 |
 | `--fiscal-year-start-month` | `<0-11>` | no |  | The month the fiscal year starts, 0 for January to 11 for December |
-| `--feed` | `<true|false>` | no |  | Whether the activity feed is on |
-| `--pull-request-tour` | `<true|false>` | no |  | Whether Linear writes an AI guide for a new pull request |
-| `--pull-request-issue-mode` | `<MODE>` | no |  | How Linear links an issue to a pull request that names none |
-| `--ai-thread-summaries` | `<true|false>` | no |  | Whether a resolved comment thread gets an AI summary |
-| `--ai-discussion-summaries` | `<true|false>` | no |  | Whether an issue's discussion gets an AI summary |
+| `--feed` | `<true\|false>` | no |  | Whether the activity feed is on |
+| `--pull-request-tour` | `<true\|false>` | no |  | Whether Linear writes an AI guide for a new pull request |
+| `--pull-request-issue-mode` | `<off\|suggest\|autoOnMerge>` | no |  | How Linear links an issue to a pull request that names none |
+| `--ai-thread-summaries` | `<true\|false>` | no |  | Whether a resolved comment thread gets an AI summary |
+| `--ai-discussion-summaries` | `<true\|false>` | no |  | Whether an issue's discussion gets an AI summary |
 | `--allowed-file-upload-content-types` | `<TYPE,...>` | no |  | The content types an upload may have, comma-separated (image/png,application/pdf); repeatable |
-| `--invitations-role` | `<ROLE>` | no |  | The least role that may invite users |
-| `--team-creation-role` | `<ROLE>` | no |  | The least role that may create a team |
-| `--label-management-role` | `<ROLE>` | no |  | The least role that may manage workspace labels |
-| `--personal-api-keys-role` | `<ROLE>` | no |  | The least role that may create a personal API key |
-| `--admin-management-role` | `<ROLE>` | no |  | The least role that may grant or revoke the admin role |
-| `--template-management-role` | `<ROLE>` | no |  | The least role that may manage workspace templates |
-| `--integration-creation-role` | `<ROLE>` | no |  | The least role that may install an integration |
-| `--import-role` | `<ROLE>` | no |  | The least role that may import data |
-| `--api-settings-role` | `<ROLE>` | no |  | The least role that may manage API settings |
-| `--workspace-initiatives-role` | `<ROLE>` | no |  | The least role that may create a workspace-wide initiative |
-| `--allowed-auth-services` | `<SERVICE,...|all>` | no |  | The sign-in services allowed, comma-separated (google,saml), or `all` |
-| `--hide-non-primary-organizations` | `<true|false>` | no |  | Whether a new user whose email domain this workspace claims is shown no other workspace at sign-up |
+| `--invitations-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may invite users |
+| `--team-creation-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may create a team |
+| `--label-management-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may manage workspace labels |
+| `--personal-api-keys-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may create a personal API key |
+| `--admin-management-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may grant or revoke the admin role |
+| `--template-management-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may manage workspace templates |
+| `--integration-creation-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may install an integration |
+| `--import-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may import data |
+| `--api-settings-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may manage API settings |
+| `--workspace-initiatives-role` | `<owner\|admin\|user\|guest>` | no |  | The least role that may create a workspace-wide initiative |
+| `--allowed-auth-services` | `<SERVICE,...\|all>` | no |  | The sign-in services allowed, comma-separated (google,saml), or `all` for every one; a value that names none is a usage error, exit 2 |
+| `--hide-non-primary-organizations` | `<true\|false>` | no |  | Whether a new user whose email domain this workspace claims is shown no other workspace at sign-up |
 
 ### muster team list
 
@@ -267,7 +267,7 @@ The command tree, exit codes, notices, bounds and environment variables, as JSON
 
 | Argument or flag | Value | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `--format` | `<FORMAT>` | no | `json` | `json`, one object; or `markdown`, the text of docs/reference/commands.md |
+| `--format` | `<json\|markdown>` | no | `json` | `json`, one object; or `markdown`, the text of docs/reference/commands.md |
 
 ### muster fixtures
 
