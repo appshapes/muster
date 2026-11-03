@@ -25,7 +25,11 @@ user-visible change, added in the same commit as the change. The format follows
   out stays, as Linear does; an empty URL or title is a usage error, exit 2, before any
   request (ADR 0013, feature 2; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 - `BODY_MAX_BYTES` now bounds a title, a link and a subtitle as it bounds a description
-  and a comment: a larger one is refused, exit 6, before any request.
+  and a comment: a larger one is refused, exit 6, before any request, and the message
+  names which one was too long with a hint that fits it; only a body is told it can be
+  split over several comments. Linux refuses one argv string over 128 KiB before
+  muster runs, so from a flag's value the bound is reached only where the OS allows
+  the argument, as macOS does; from a file or stdin it is reached everywhere.
 - `project create --name <TEXT> [--description <TEXT>]` makes a project for the team
   through Linear's `projectCreate` and prints it as `project list` prints one; a name an
   existing project already has is refused, exit 6, unless `--allow-duplicate`, so that
@@ -43,7 +47,6 @@ user-visible change, added in the same commit as the change. The format follows
   `project create` now print at most `TEAMS_PER_PROJECT` teams per project, with a
   `truncated` notice past it, so that a page of `PAGE_CAP` projects stays inside the
   limit; the project lookup behind `--project <NAME>` asks for one project, not a page.
-
 - The reference, the tutorial and the `linear-read` skill said `issue get` prints
   comments oldest first. Linear orders a connection newest first, `orderBy: createdAt`
   included, and muster prints what Linear returns; the pages now say so, and a cut thread

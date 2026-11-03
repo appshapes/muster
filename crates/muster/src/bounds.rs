@@ -39,7 +39,11 @@ pub const TEAMS_PER_PROJECT: usize = 10;
 /// mutation exits 8.
 pub const REQUEST_TIMEOUT_SECS: u64 = 30;
 /// The largest description, comment, title, link or subtitle muster sends. A larger
-/// one is refused, exit 6, before any request.
+/// one is refused, exit 6, before any request, and the message names which one it was.
+/// A flag's value is bounded by the OS first: Linux refuses one argv string over
+/// 128 KiB (`MAX_ARG_STRLEN`) before muster runs, so from `--title`, `--url`,
+/// `--subtitle` or `--description` this bound is reached only where the OS allows the
+/// argument, as macOS does; from a file or stdin it is reached everywhere.
 pub const BODY_MAX_BYTES: usize = 256 * 1024;
 /// The largest answer muster reads. A larger one is muster's failure, exit 1.
 pub const RESPONSE_MAX_BYTES: u64 = 16 * 1024 * 1024;
@@ -95,7 +99,7 @@ pub const ALL: &[Bound] = &[
         name: "BODY_MAX_BYTES",
         value: BODY_MAX_BYTES as u64,
         unit: "bytes",
-        meaning: "the largest description, comment, title, link or subtitle sent; a larger one is refused, exit 6, before any request",
+        meaning: "the largest description, comment, title, link or subtitle sent; a larger one is refused, exit 6, before any request, and the message names which one it was; Linux refuses one argv string over 128 KiB before muster runs, so from a flag's value the bound is reached only where the OS allows the argument, from a file or stdin everywhere",
     },
     Bound {
         name: "RESPONSE_MAX_BYTES",

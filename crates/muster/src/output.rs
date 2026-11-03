@@ -117,20 +117,61 @@ pub fn read_body(path: &str) -> Result<String, Error> {
             format!("the body {path} is not UTF-8 text: {e}"),
         ));
     }
-    check_body(&text)?;
+    check_body(Text::Body, &text)?;
     Ok(text)
 }
 
-/// Refuse a body over [`BODY_MAX_BYTES`], before any request (invariant 3).
-pub fn check_body(text: &str) -> Result<(), Error> {
+/// What [`check_body`] bounds: the word the message names it by, and the hint that
+/// fits it, since a title cannot be split over several comments as a body can.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Text {
+    /// A description or a comment: `--description`, `--body`, `--comment`, or the file
+    /// or stdin their `-file` twins read.
+    Body,
+    /// An issue's or a link's `--title`.
+    Title,
+    /// A link's `--url`.
+    Link,
+    /// A link's `--subtitle`.
+    Subtitle,
+}
+
+impl Text {
+    /// The words the message names it by.
+    pub fn name(self) -> &'static str {
+        match self {
+            Text::Body => "the body",
+            Text::Title => "the title",
+            Text::Link => "the link",
+            Text::Subtitle => "the subtitle",
+        }
+    }
+
+    /// What to do when it is over the bound.
+    pub fn hint(self) -> &'static str {
+        match self {
+            Text::Body => "shorten the body, or split it over several comments",
+            Text::Title => {
+                "shorten the title; the detail belongs in the description or in a comment"
+            }
+            Text::Link => "shorten the link; muster sends a URL as it is and never cuts one",
+            Text::Subtitle => "shorten the subtitle; the detail belongs in a comment on the issue",
+        }
+    }
+}
+
+/// Refuse a text over [`BODY_MAX_BYTES`], before any request (invariant 3). The
+/// message names what was too long and the hint says what to do with it.
+pub fn check_body(what: Text, text: &str) -> Result<(), Error> {
     if text.len() > BODY_MAX_BYTES {
         return Err(Error::with_hint(
             ErrorCode::Refused,
             format!(
-                "the body is {} bytes; BODY_MAX_BYTES is {BODY_MAX_BYTES}",
+                "{} is {} bytes; BODY_MAX_BYTES is {BODY_MAX_BYTES}",
+                what.name(),
                 text.len()
             ),
-            "shorten the body, or split it over several comments",
+            what.hint(),
         )
         .at("bounds"));
     }
@@ -195,5 +236,37 @@ fn scalar(value: &Value) -> String {
         Value::Object(map) if map.is_empty() => "{}".to_string(),
         Value::Array(items) if items.is_empty() => "[]".to_string(),
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_text_over_the_bound_is_refused_by_the_name_the_caller_gave_it() {
+        let at_bound = "x".repeat(BODY_MAX_BYTES);
+        let over = "x".repeat(BODY_MAX_BYTES + 1);
+        for what in [Text::Body, Text::Title, Text::Link, Text::Subtitle] {
+            assert_eq!(check_body(what, &at_bound), Ok(()), "{what:?} at the bound");
+            let e = check_body(what, &over).err();
+            assert_eq!(e.as_ref().map(|e| e.code), Some(ErrorCode::Refused));
+            assert_eq!(e.as_ref().map(|e| e.anchor), Some("bounds"));
+            let message = e.as_ref().map(|e| e.message.as_str()).unwrap_or_default();
+            assert!(
+                message.starts_with(what.name()) && message.contains("BODY_MAX_BYTES"),
+                "{what:?}: {message}"
+            );
+            let hint = e.as_ref().map(|e| e.hint.as_str()).unwrap_or_default();
+            assert!(
+                hint.starts_with(&format!("shorten {}", what.name())),
+                "{what:?}: {hint}"
+            );
+            assert_eq!(
+                hint.contains("several comments"),
+                what == Text::Body,
+                "only a body can be split over comments: {what:?}: {hint}"
+            );
+        }
     }
 }

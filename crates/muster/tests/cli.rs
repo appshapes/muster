@@ -1055,34 +1055,20 @@ fn issue_attach_adds_a_link_that_issue_get_prints_newest_first() {
                 .contains("must not be empty")
         );
     }
-    let big = "x".repeat(256 * 1024 + 1);
-    let huge = muster(
-        &fake,
-        &[
-            "issue",
-            "attach",
-            "APP-1",
-            "--url",
-            "https://example.com/big",
-            "--title",
-            &big,
-        ],
-    );
-    assert_eq!(huge.code, 6, "{}", huge.stderr);
-    assert!(
-        huge.error()["message"]
-            .as_str()
-            .unwrap()
-            .contains("BODY_MAX_BYTES")
-    );
     assert_eq!(
         fake.operations()
             .iter()
             .filter(|o| *o == "AttachmentCreate")
             .count(),
         2,
-        "an empty or oversized value is refused before any request"
+        "an empty value is refused before any request"
     );
+    // An oversized --url, --title or --subtitle is not sent through the binary: Linux
+    // refuses one argv string over 128 KiB (MAX_ARG_STRLEN) before muster runs, and
+    // BODY_MAX_BYTES is 256 KiB, so the run would fail here and pass on macOS. The
+    // bound on a flag's value is held in process by the unit tests in src/cli/run.rs,
+    // on every OS; a body from a file reaches it through the binary in
+    // a_body_over_the_bound_exits_6_before_any_request.
 
     // A URL the issue already has is updated in place, not added again (Linear's own
     // behaviour, read on 2026-11-03): the same id comes back with the new title, and
