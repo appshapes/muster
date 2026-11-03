@@ -67,6 +67,17 @@ user-visible change, added in the same commit as the change. The format follows
   read back, two JSON lines; a suspended user is still found by email or name, so that
   `unsuspend` reaches them (ADR 0014, group 4;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `invite list` prints the workspace's invites, pending and accepted, newest first,
+  bounded by `--limit`; `invite create --email <ADDRESS> [--role <admin|user|guest>]
+  [--teams <KEY,...>]` sends an invitation through Linear's
+  `organizationInviteCreate`, and a pending invite for the address is refused, exit
+  6, unless `--allow-duplicate` (`--teams` is comma-separated, since `--team` is the
+  global flag that names the one team a command works in); `invite update <EMAIL>
+  --teams <KEY,...>` replaces the teams, `invite resend <EMAIL>` sends the email again,
+  and `invite delete <EMAIL>` deletes it, which Linear's pages call revoking. An
+  invite is named by its address, found among the workspace's newest `PAGE_CAP`
+  invites, since Linear's list takes no filter (ADR 0014, group 5;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.2.0 - 2026-11-03
 

@@ -75,6 +75,12 @@ pub enum Command {
         #[command(subcommand)]
         command: ProjectCommand,
     },
+    /// Workspace invites: list, create, update, resend, delete
+    Invite {
+        /// The invite command.
+        #[command(subcommand)]
+        command: InviteCommand,
+    },
     /// Users: list, get, update, change-role, suspend, unsuspend, revoke-sessions
     User {
         /// The user command.
@@ -622,6 +628,80 @@ pub struct UserUpdateArgs {
     /// A new avatar, by URL
     #[arg(long, value_name = "URL")]
     pub avatar_url: Option<String>,
+}
+
+/// The invite commands (ADR 0014, group 5): the workspace's invitations.
+#[derive(Subcommand, Debug)]
+pub enum InviteCommand {
+    /// List the workspace's invites, pending and accepted, one JSON object per line
+    List(ListArgs),
+    /// Invite an address to the workspace, which sends it an email; a pending invite for the address is refused unless --allow-duplicate
+    Create(InviteCreateArgs),
+    /// Change the teams an invite adds its invitee to
+    Update(InviteUpdateArgs),
+    /// Send the invitation email again
+    Resend(InviteRefArgs),
+    /// Delete an invite, so that it can no longer be accepted; Linear's pages call this revoking
+    Delete(InviteRefArgs),
+}
+
+/// An invite named by the address it went to.
+#[derive(Args, Debug)]
+pub struct InviteRefArgs {
+    /// The email address the invite went to
+    #[arg(value_name = "EMAIL")]
+    pub email: String,
+}
+
+/// `invite create`.
+#[derive(Args, Debug, Default)]
+pub struct InviteCreateArgs {
+    /// The email address to invite
+    #[arg(long, value_name = "ADDRESS")]
+    pub email: String,
+    /// The role the invitee gets; Linear's default is user
+    #[arg(long, value_name = "ROLE", value_enum)]
+    pub role: Option<InviteRole>,
+    /// The teams the invitee joins, by key, comma-separated
+    #[arg(long, value_name = "KEY,...", value_delimiter = ',')]
+    pub teams: Vec<String>,
+    /// Invite the address even when a pending invite for it exists
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `invite update`.
+#[derive(Args, Debug)]
+pub struct InviteUpdateArgs {
+    /// The email address the invite went to
+    #[arg(value_name = "EMAIL")]
+    pub email: String,
+    /// The teams the invitee joins, by key, comma-separated; replaces the invite's list
+    #[arg(long, value_name = "KEY,...", value_delimiter = ',', required = true)]
+    pub teams: Vec<String>,
+}
+
+/// A role an invite grants: `owner` is not granted by invitation, and `app` is not a
+/// person's role.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InviteRole {
+    /// A workspace administrator.
+    Admin,
+    /// A member.
+    User,
+    /// A guest, limited to the teams the invite names.
+    Guest,
+}
+
+impl InviteRole {
+    /// The value Linear takes.
+    pub fn linear(self) -> &'static str {
+        match self {
+            InviteRole::Admin => "admin",
+            InviteRole::User => "user",
+            InviteRole::Guest => "guest",
+        }
+    }
 }
 
 /// `list` under `state` and `label`.

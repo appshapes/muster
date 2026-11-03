@@ -8,11 +8,11 @@ use crate::bounds::{
     ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, PAGE_CAP, TEAMS_PER_PROJECT,
 };
 use crate::cli::{
-    AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
-    IssueListArgs, ListArgs, ListCommand, MemberArgs, MemberCommand, ProjectCommand,
-    ProjectCreateArgs, TeamCommand, TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs,
-    UserCommand, UserListArgs, UserRefArgs, UserRoleArgs, UserUpdateArgs, WorkspaceCommand,
-    WorkspaceUpdateArgs,
+    AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, InviteCommand,
+    InviteCreateArgs, InviteRefArgs, InviteUpdateArgs, IssueCommand, IssueListArgs, ListArgs,
+    ListCommand, MemberArgs, MemberCommand, ProjectCommand, ProjectCreateArgs, TeamCommand,
+    TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs,
+    UserRefArgs, UserRoleArgs, UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -72,6 +72,16 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
             match command {
                 ProjectCommand::List(args) => list_projects(&session, args, out),
                 ProjectCommand::Create(args) => project_create(&session, args, out),
+            }
+        }
+        Command::Invite { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                InviteCommand::List(args) => invite_list(&session, args, out),
+                InviteCommand::Create(args) => invite_create(&session, args, out),
+                InviteCommand::Update(args) => invite_update(&session, args, out),
+                InviteCommand::Resend(args) => invite_resend(&session, args, out),
+                InviteCommand::Delete(args) => invite_delete(&session, args, out),
             }
         }
         Command::User { command } => {
@@ -648,6 +658,144 @@ fn workspace_update(
         json!({ "input": Value::Object(input) }),
     )?;
     out.emit(&payload(&data, "organizationUpdate", "organization")?);
+    Ok(())
+}
+
+/// The invite an address has, among the workspace's up to `PAGE_CAP` invites, read
+/// in one request, since Linear's `organizationInvites` takes no filter; the newest
+/// when the address has several. Exit 4 when none, exit 6 when the list was cut and
+/// the invite may be past the bound (ADR 0014, group 5).
+fn find_invite(session: &Session, email: &str, pending_only: bool) -> Result<Value, Error> {
+    let data = session
+        .linear
+        .run(&ops::INVITES, json!({ "first": PAGE_CAP }))?;
+    let invites = nodes(&data, "organizationInvites");
+    let found = invites.iter().find(|i| {
+        str_at(i, "email").is_some_and(|e| e.eq_ignore_ascii_case(email))
+            && (!pending_only || at(i, "acceptedAt").is_null())
+    });
+    match found {
+        Some(invite) => Ok(invite.clone()),
+        None if has_next_page(&data, "organizationInvites") => Err(Error::with_hint(
+            ErrorCode::Refused,
+            format!(
+                "no invite for {email:?} among the {PAGE_CAP} newest, and the workspace has more"
+            ),
+            "Linear's invite list takes no filter; INVITES past PAGE_CAP are reached in the browser",
+        )
+        .at("bounds")),
+        None => Err(Error::with_hint(
+            ErrorCode::NotFound,
+            format!("no invite for {email:?}"),
+            "`muster invite list` shows the workspace's invites",
+        )),
+    }
+}
+
+/// The team ids of `--teams`, each key resolved with `TeamByKey`.
+fn team_ids(session: &Session, keys: &[String]) -> Result<Vec<String>, Error> {
+    keys.iter()
+        .map(|key| need_str(&session.team_full(key, false)?, "id", "TeamByKey"))
+        .collect()
+}
+
+fn invite_list(session: &Session, args: &ListArgs, out: &Output) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let data = session.linear.run(&ops::INVITES, json!({ "first": n }))?;
+    emit_list(
+        out,
+        nodes(&data, "organizationInvites"),
+        has_next_page(&data, "organizationInvites"),
+        "invites",
+        n,
+    );
+    Ok(())
+}
+
+/// The input of `organizationInviteCreate` but its `teamIds`: the address, checked,
+/// and the role when given.
+fn invite_input(args: &InviteCreateArgs) -> Result<Map<String, Value>, Error> {
+    let email = args.email.trim();
+    if email.is_empty() || !email.contains('@') {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            format!("--email {:?} is not an email address", args.email),
+            "pass the address the invitation goes to",
+        ));
+    }
+    let mut input = Map::new();
+    input.insert("email".into(), json!(email));
+    if let Some(role) = args.role {
+        input.insert("role".into(), json!(role.linear()));
+    }
+    Ok(input)
+}
+
+fn invite_create(session: &Session, args: &InviteCreateArgs, out: &Output) -> Result<(), Error> {
+    let mut input = invite_input(args)?;
+    let email = args.email.trim();
+    // The guard: a pending invite for the address is one too many, as a second open
+    // issue with a title is; `--allow-duplicate` turns it off (ADR 0008; ADR 0014).
+    if !args.allow_duplicate
+        && let Ok(existing) = find_invite(session, email, true)
+    {
+        return Err(Error::with_hint(
+            ErrorCode::Refused,
+            format!(
+                "a pending invite for {email:?} exists, sent {}",
+                str_at(&existing, "createdAt").unwrap_or("?")
+            ),
+            "`muster invite resend <EMAIL>` sends it again; pass --allow-duplicate if a second one is wanted",
+        )
+        .at("muster-invite-create"));
+    }
+    let teams = team_ids(session, &args.teams)?;
+    if !teams.is_empty() {
+        input.insert("teamIds".into(), json!(teams));
+    }
+    let data = session.linear.run(
+        &ops::INVITE_CREATE,
+        json!({ "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(
+        &data,
+        "organizationInviteCreate",
+        "organizationInvite",
+    )?);
+    Ok(())
+}
+
+fn invite_update(session: &Session, args: &InviteUpdateArgs, out: &Output) -> Result<(), Error> {
+    let invite = find_invite(session, &args.email, true)?;
+    let id = need_str(&invite, "id", "Invites")?;
+    let teams = team_ids(session, &args.teams)?;
+    let data = session.linear.run(
+        &ops::INVITE_UPDATE,
+        json!({ "id": id, "input": { "teamIds": teams } }),
+    )?;
+    out.emit(&payload(
+        &data,
+        "organizationInviteUpdate",
+        "organizationInvite",
+    )?);
+    Ok(())
+}
+
+fn invite_resend(session: &Session, args: &InviteRefArgs, out: &Output) -> Result<(), Error> {
+    let data = session
+        .linear
+        .run(&ops::INVITE_RESEND, json!({ "email": args.email.trim() }))?;
+    out.emit(&delete_payload(&data, "resendOrganizationInviteByEmail")?);
+    Ok(())
+}
+
+fn invite_delete(session: &Session, args: &InviteRefArgs, out: &Output) -> Result<(), Error> {
+    let invite = find_invite(session, &args.email, false)?;
+    let id = need_str(&invite, "id", "Invites")?;
+    let data = session
+        .linear
+        .run(&ops::INVITE_DELETE, json!({ "id": id }))?;
+    out.emit(&delete_payload(&data, "organizationInviteDelete")?);
     Ok(())
 }
 
@@ -2109,6 +2257,39 @@ mod tests {
             .err()
             .map(|e| e.code),
             Some(ErrorCode::Refused)
+        );
+    }
+
+    #[test]
+    fn an_invite_input_is_checked_before_any_request() {
+        use crate::cli::InviteRole;
+        let bad = InviteCreateArgs {
+            email: "nobody".into(),
+            ..InviteCreateArgs::default()
+        };
+        assert_eq!(
+            invite_input(&bad).err().map(|e| e.code),
+            Some(ErrorCode::Usage)
+        );
+        let plain = InviteCreateArgs {
+            email: " a@example.com ".into(),
+            ..InviteCreateArgs::default()
+        };
+        let input = invite_input(&plain).unwrap_or_default();
+        assert_eq!(input.get("email"), Some(&json!("a@example.com")), "trimmed");
+        assert_eq!(
+            input.get("role"),
+            None,
+            "Linear's default role is not restated"
+        );
+        let guest = InviteCreateArgs {
+            email: "a@example.com".into(),
+            role: Some(InviteRole::Guest),
+            ..InviteCreateArgs::default()
+        };
+        assert_eq!(
+            invite_input(&guest).unwrap_or_default().get("role"),
+            Some(&json!("guest"))
         );
     }
 

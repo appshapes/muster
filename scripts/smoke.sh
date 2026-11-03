@@ -41,6 +41,26 @@ jq -e --slurpfile who "$tmp/whoami.json" '.displayName == $who[0].viewer.display
 "$bin" user update me --status-emoji "🧪" --status-label "Smoke test at $stamp" --status-until "$stamp" | jq -c '{displayName, statusEmoji, statusLabel, statusUntilAt}' | tee "$tmp/user-update.json"
 jq -e --arg stamp "Smoke test at $stamp" '.statusLabel == $stamp' "$tmp/user-update.json" >/dev/null
 echo
+echo "smoke: muster invite create --email <the house's team address> --role user --teams SMK, list, delete (one email to the house's gateway per run; ADR 0014)"
+echo "smoke: on the Free plan Linear refuses an invitation through the API (FORBIDDEN, \"Not allowed on free plan\", 2026-11-03), which is exit 6; the steps run in full on a paid plan"
+invitee="appshapes-team@appshapes.com"
+set +e
+"$bin" invite create --email "$invitee" --role user --teams SMK > "$tmp/invite.json" 2> "$tmp/invite.err"
+code=$?
+set -e
+case "$code" in
+  0)
+    jq -c '{email, role, external, acceptedAt}' "$tmp/invite.json"
+    jq -e --arg e "$invitee" '.email == $e and .role == "user" and .acceptedAt == null' "$tmp/invite.json" >/dev/null
+    "$bin" invite list | jq -c '{email, role}' | tee "$tmp/invites.jsonl"
+    jq -s -e --arg e "$invitee" 'map(.email) | index($e) != null' "$tmp/invites.jsonl" >/dev/null
+    "$bin" invite delete "$invitee" | tee "$tmp/invite-delete.json"
+    jq -e '.success == true' "$tmp/invite-delete.json" >/dev/null
+    ;;
+  6) cat "$tmp/invite.err"; jq -e '.error.code == "refused" and .error.linear.code == "FORBIDDEN"' "$tmp/invite.err" >/dev/null; "$bin" invite list | jq -c '{email, role}' ;;
+  *) echo "smoke: invite create exited $code" >&2; cat "$tmp/invite.err" >&2; exit 1 ;;
+esac
+echo
 echo "smoke: muster team create --name 'Smoke tests' --key SMK (exit 6 after the first run: the duplicate guard; ADR 0014)"
 set +e
 "$bin" team create --name "Smoke tests" --key SMK --description "The smoke test's own team (ADR 0014): where its cycles, members and lifecycle are tested, so that APP is never touched." --timezone Etc/UTC > "$tmp/team.json" 2> "$tmp/team.err"

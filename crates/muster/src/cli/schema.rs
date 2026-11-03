@@ -429,6 +429,7 @@ pub fn fixture_variables(
         "WorkflowStates" | "IssueLabels" => json!({ "first": 5, "filter": Value::Null }),
         "Users" => json!({ "first": 5, "filter": Value::Null, "includeDisabled": true }),
         "UserById" => json!({ "id": "me" }),
+        "Invites" => json!({ "first": 5 }),
         "Projects" => json!({ "first": 5, "filter": Value::Null, "teams": TEAMS_PER_PROJECT }),
         // Issues that carry a label, so that the label node shape is recorded too.
         "Issues" => {
@@ -528,6 +529,11 @@ mod tests {
             "user suspend",
             "user unsuspend",
             "user revoke-sessions",
+            "invite list",
+            "invite create",
+            "invite update",
+            "invite resend",
+            "invite delete",
             "state list",
             "label list",
             "project list",

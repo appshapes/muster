@@ -231,6 +231,50 @@ Create a project for the team; a name a project of the workspace already has is 
 | `--description` | `<TEXT>` | no |  | The description, plain text |
 | `--allow-duplicate` |  | no |  | Create it even when a project of the workspace has the same name |
 
+### muster invite list
+
+List the workspace's invites, pending and accepted, one JSON object per line.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
+### muster invite create
+
+Invite an address to the workspace, which sends it an email; a pending invite for the address is refused unless --allow-duplicate.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--email` | `<ADDRESS>` | yes |  | The email address to invite |
+| `--role` | `<ROLE>` | no |  | The role the invitee gets; Linear's default is user |
+| `--teams` | `<KEY,...>` | no |  | The teams the invitee joins, by key, comma-separated; repeatable |
+| `--allow-duplicate` |  | no |  | Invite the address even when a pending invite for it exists |
+
+### muster invite update
+
+Change the teams an invite adds its invitee to.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<EMAIL>` | `<EMAIL>` | yes |  | The email address the invite went to |
+| `--teams` | `<KEY,...>` | yes |  | The teams the invitee joins, by key, comma-separated; replaces the invite's list; repeatable |
+
+### muster invite resend
+
+Send the invitation email again.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<EMAIL>` | `<EMAIL>` | yes |  | The email address the invite went to |
+
+### muster invite delete
+
+Delete an invite, so that it can no longer be accepted; Linear's pages call this revoking.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<EMAIL>` | `<EMAIL>` | yes |  | The email address the invite went to |
+
 ### muster user list
 
 List the workspace's users, one JSON object per line; the active ones unless --all.
@@ -489,6 +533,7 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `TeamByKey` | query |
 | `TeamMembers` | query |
 | `UserById` | query |
+| `Invites` | query |
 | `IssueCreate` | mutation |
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
@@ -506,3 +551,7 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `UserSuspend` | mutation |
 | `UserUnsuspend` | mutation |
 | `UserRevokeAllSessions` | mutation |
+| `InviteCreate` | mutation |
+| `InviteUpdate` | mutation |
+| `InviteResend` | mutation |
+| `InviteDelete` | mutation |

@@ -77,6 +77,11 @@ and status, and `lastSeen`. `muster user update me --status-label "Heads down"` 
 your own profile, and a workspace admin changes anyone's; `muster user change-role`,
 `muster user suspend`, `muster user unsuspend` and `muster user revoke-sessions` are
 the admin's, and each prints Linear's `success` and then the user read back.
+Someone new is `muster invite create --email them@example.com --role user --teams
+APP`: Linear sends the email, and the invite prints with its `role`, `expiresAt` and
+`acceptedAt` (null until they accept); `muster invite list` shows the workspace's
+invites, `muster invite resend them@example.com` sends the email again, and
+`muster invite delete them@example.com` takes the invitation back.
 
 If you see `"code":"authentication"` on stderr and exit 3, the key was not found or
 was refused; the `hint` says where to put it. If the `team` is `null` with a `warn`

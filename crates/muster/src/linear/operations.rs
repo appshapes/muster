@@ -109,6 +109,13 @@ pub const USER_FIELDS: &str = "fragment UserFields on User {
   lastSeen createdAt updatedAt
 }";
 
+/// The fields every workspace invite answer carries (ADR 0014, group 5).
+pub const INVITE_FIELDS: &str = "fragment InviteFields on OrganizationInvite {
+  id email role external acceptedAt expiresAt createdAt
+  inviter { id name displayName }
+  invitee { id name displayName }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -247,6 +254,16 @@ op!(
   user(id: $id) { ...UserFields }
 }",
     &[USER_FIELDS]
+);
+
+op!(
+    INVITES,
+    "Invites",
+    Kind::Query,
+    "query Invites($first: Int!) {
+  organizationInvites(first: $first) { nodes { ...InviteFields } pageInfo { hasNextPage } }
+}",
+    &[INVITE_FIELDS]
 );
 
 op!(
@@ -424,6 +441,44 @@ op!(
 }"
 );
 
+op!(
+    INVITE_CREATE,
+    "InviteCreate",
+    Kind::Mutation,
+    "mutation InviteCreate($input: OrganizationInviteCreateInput!) {
+  organizationInviteCreate(input: $input) { success organizationInvite { ...InviteFields } }
+}",
+    &[INVITE_FIELDS]
+);
+
+op!(
+    INVITE_UPDATE,
+    "InviteUpdate",
+    Kind::Mutation,
+    "mutation InviteUpdate($id: String!, $input: OrganizationInviteUpdateInput!) {
+  organizationInviteUpdate(id: $id, input: $input) { success organizationInvite { ...InviteFields } }
+}",
+    &[INVITE_FIELDS]
+);
+
+op!(
+    INVITE_RESEND,
+    "InviteResend",
+    Kind::Mutation,
+    "mutation InviteResend($email: String!) {
+  resendOrganizationInviteByEmail(email: $email) { success entityId }
+}"
+);
+
+op!(
+    INVITE_DELETE,
+    "InviteDelete",
+    Kind::Mutation,
+    "mutation InviteDelete($id: String!) {
+  organizationInviteDelete(id: $id) { success entityId }
+}"
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -438,6 +493,7 @@ pub static READS: &[&Operation] = &[
     &TEAM_BY_KEY,
     &TEAM_MEMBERS,
     &USER_BY_ID,
+    &INVITES,
 ];
 
 /// Every write operation.
@@ -459,6 +515,10 @@ pub static WRITES: &[&Operation] = &[
     &USER_SUSPEND,
     &USER_UNSUSPEND,
     &USER_REVOKE_SESSIONS,
+    &INVITE_CREATE,
+    &INVITE_UPDATE,
+    &INVITE_RESEND,
+    &INVITE_DELETE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -507,6 +567,7 @@ mod tests {
                 "TeamFields",
                 "MembershipFields",
                 "UserFields",
+                "InviteFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));

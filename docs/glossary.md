@@ -92,6 +92,9 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 | status label | The text of a user's status; `--status-label` on `user update`. | `statusLabel` | none | `docs/reference/commands.md#muster-user-update` |
 | status until | When a user's status clears, a time, or `none` to keep it; `--status-until` on `user update`. | `statusUntilAt` | none | `docs/reference/commands.md#muster-user-update` |
 | avatar url | The address of a user's avatar image; `--avatar-url` on `user update`. | `avatarUrl` | avatar | `docs/reference/commands.md#muster-user-update` |
+| invite | An invitation to join the workspace, sent by email with a role and the teams to join; `invite list` shows them, `invite create --email` sends one, `invite update`, `invite resend` and `invite delete` change it, each by the address. | `organizationInvite`, `organizationInvites` | invite | `docs/reference/commands.md#muster-invite-create` |
+| email | The address an invite goes to; `--email` on `invite create`, and the address that names an invite on `invite update`, `invite resend` and `invite delete`. | `email` | email | `docs/reference/commands.md#muster-invite-create` |
+| teams | The teams an invitee joins, by key, comma-separated; `--teams` on `invite create` and `invite update` (the global `--team` names the one team a command works in). | `teamIds` | none | `docs/reference/commands.md#muster-invite-create` |
 | assignee | The user responsible for an issue; `me` is the key's owner. | `assignee` | member | `docs/reference/commands.md#muster-issue-create` |
 | title | An issue's one-line name, or an attachment's; `--title` on `issue create`, `issue update` and `issue attach`. | `title` | name | `docs/reference/commands.md#muster-issue-create` |
 | description | An issue's text, markdown; `--description` or `--description-file`. | `description` | desc | `docs/reference/commands.md#muster-issue-create` |

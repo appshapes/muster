@@ -46,6 +46,10 @@ step "muster user get me"
 "$bin" user get me | tee "$tmp/user.json"
 jq -e '.isMe == true and .admin == true and .active == true' "$tmp/user.json" >/dev/null
 
+step "muster invite list"
+"$bin" invite list | tee "$tmp/invites.jsonl"
+[ ! -s "$tmp/invites.jsonl" ] || { echo "quickstart: the fake workspace has no invite" >&2; exit 1; }
+
 step "muster member list"
 "$bin" member list | tee "$tmp/members.jsonl"
 jq -s -e 'length == 2 and .[0].owner == true and .[0].user.email == "fake@example.com"' "$tmp/members.jsonl" >/dev/null

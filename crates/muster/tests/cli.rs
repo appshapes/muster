@@ -1742,6 +1742,149 @@ fn user_get_update_role_suspension_and_sessions() {
     assert_eq!(run.code, 7, "{}", run.stderr);
 }
 
+// ---- invites (ADR 0014, group 5) ---------------------------------------------------------
+
+#[test]
+fn invite_create_list_update_resend_and_delete() {
+    let fake = Fake::start().unwrap();
+    let none = muster(&fake, &["invite", "list"]);
+    assert_eq!(none.code, 0, "{}", none.stderr);
+    assert_eq!(none.lines().len(), 0, "the fake starts with no invite");
+    let created = muster(
+        &fake,
+        &[
+            "invite",
+            "create",
+            "--email",
+            "new@example.org",
+            "--role",
+            "guest",
+            "--teams",
+            "APP",
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let v = created.one();
+    assert_eq!(v["email"], "new@example.org");
+    assert_eq!(v["role"], "guest");
+    assert_eq!(v["external"], true);
+    assert!(v["acceptedAt"].is_null() && v["expiresAt"].is_string());
+    assert_eq!(v["inviter"]["displayName"], "fake");
+    assert_eq!(
+        v.get("teamIds"),
+        None,
+        "nothing the fragment does not ask for"
+    );
+    let listed = muster(&fake, &["invite", "list"]);
+    assert_eq!(listed.lines().len(), 1);
+    assert_eq!(listed.lines()[0]["email"], "new@example.org");
+
+    let again = muster(&fake, &["invite", "create", "--email", "NEW@example.org"]);
+    assert_eq!(again.code, 6, "{}", again.stderr);
+    assert!(
+        again.error()["hint"].as_str().unwrap().contains("resend"),
+        "{}",
+        again.stderr
+    );
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "InviteCreate")
+            .count(),
+        1,
+        "refused before any mutation"
+    );
+    let second = muster(
+        &fake,
+        &[
+            "invite",
+            "create",
+            "--email",
+            "new@example.org",
+            "--allow-duplicate",
+        ],
+    );
+    assert_eq!(second.code, 0, "{}", second.stderr);
+    assert_eq!(second.one()["role"], "user", "Linear's default role");
+    assert_eq!(muster(&fake, &["invite", "list"]).lines().len(), 2);
+    let owner = muster(
+        &fake,
+        &[
+            "invite",
+            "create",
+            "--email",
+            "x@example.org",
+            "--role",
+            "owner",
+        ],
+    );
+    assert_eq!(
+        owner.code, 2,
+        "owner is not granted by invitation: {}",
+        owner.stderr
+    );
+    let bad = muster(&fake, &["invite", "create", "--email", "nobody"]);
+    assert_eq!(bad.code, 2, "{}", bad.stderr);
+    let no_team = muster(
+        &fake,
+        &[
+            "invite",
+            "create",
+            "--email",
+            "y@example.org",
+            "--teams",
+            "NOPE",
+        ],
+    );
+    assert_eq!(no_team.code, 4, "{}", no_team.stderr);
+
+    fake.add_team("OPS", "Operations");
+    let updated = muster(
+        &fake,
+        &["invite", "update", "new@example.org", "--teams", "APP,OPS"],
+    );
+    assert_eq!(updated.code, 0, "{}", updated.stderr);
+    assert_eq!(updated.one()["email"], "new@example.org");
+    let resent = muster(&fake, &["invite", "resend", "new@example.org"]);
+    assert_eq!(resent.code, 0, "{}", resent.stderr);
+    assert_eq!(resent.one()["success"], true);
+    let unknown = muster(&fake, &["invite", "resend", "nobody@example.org"]);
+    assert_eq!(
+        unknown.code, 4,
+        "Linear has no such invite: {}",
+        unknown.stderr
+    );
+
+    let deleted = muster(&fake, &["invite", "delete", "new@example.org"]);
+    assert_eq!(deleted.code, 0, "{}", deleted.stderr);
+    assert_eq!(deleted.one()["success"], true);
+    assert_eq!(
+        muster(&fake, &["invite", "list"]).lines().len(),
+        1,
+        "the newest of the two went"
+    );
+    let deleted = muster(&fake, &["invite", "delete", "new@example.org"]);
+    assert_eq!(deleted.code, 0, "{}", deleted.stderr);
+    assert_eq!(muster(&fake, &["invite", "list"]).lines().len(), 0);
+    let gone = muster(&fake, &["invite", "delete", "new@example.org"]);
+    assert_eq!(gone.code, 4, "{}", gone.stderr);
+
+    for (op, args) in [
+        (
+            "InviteCreate",
+            vec!["invite", "create", "--email", "z@example.org"],
+        ),
+        ("InviteResend", vec!["invite", "resend", "z@example.org"]),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+    fake.fail_next("Invites", Failure::Drop);
+    let run = muster(&fake, &["invite", "list"]);
+    assert_eq!(run.code, 7, "{}", run.stderr);
+}
+
 // ---- members (ADR 0014, group 3) ---------------------------------------------------------
 
 #[test]

@@ -46,6 +46,7 @@ struct Workspace {
     comments: Vec<Value>,
     attachments: Vec<Value>,
     memberships: Vec<Value>,
+    invites: Vec<Value>,
 }
 
 struct State {
@@ -447,6 +448,7 @@ impl Workspace {
             comments: Vec::new(),
             attachments: Vec::new(),
             memberships: Vec::new(),
+            invites: Vec::new(),
         };
         // Every field `Workspace` asks for, with the values a Free workspace shows; the
         // fixture holds this to the recorded shape (ADR 0010; ADR 0014, group 1).
@@ -626,6 +628,30 @@ impl Workspace {
         });
         self.users.push(user.clone());
         user
+    }
+
+    /// An invite as `InviteFields` answers it, with the team ids kept beside for
+    /// `InviteUpdate` and the archive flag for `InviteDelete`.
+    fn new_invite(&mut self, email: &str, role: &str, team_ids: Vec<Value>) -> Value {
+        let (id, now) = (self.id(), self.now());
+        let me = &self.users[0];
+        let invite = json!({
+            "id": id, "email": email, "role": role, "external": !email.ends_with("@example.com"),
+            "acceptedAt": null, "expiresAt": "2026-12-03T10:00:00.000Z", "createdAt": now,
+            "inviter": { "id": me["id"], "name": me["name"], "displayName": me["displayName"] },
+            "invitee": null, "teamIds": team_ids, "archivedAt": null,
+        });
+        self.invites.push(invite.clone());
+        invite
+    }
+
+    fn invite_view(invite: &Value) -> Value {
+        let mut view = invite.clone();
+        if let Some(map) = view.as_object_mut() {
+            map.remove("teamIds");
+            map.remove("archivedAt");
+        }
+        view
     }
 
     fn new_membership(&mut self, team_id: &Value, user_id: &Value, owner: bool) -> Value {
@@ -1227,6 +1253,93 @@ impl Workspace {
                 (
                     200,
                     json!({ "data": { "users": Workspace::page(users, first) } }),
+                )
+            }
+            "Invites" => {
+                // Newest first, archived left out, as Linear lists a connection.
+                let mut invites: Vec<Value> = self
+                    .invites
+                    .iter()
+                    .filter(|i| i["archivedAt"].is_null())
+                    .map(Workspace::invite_view)
+                    .collect();
+                invites.reverse();
+                (
+                    200,
+                    json!({ "data": { "organizationInvites": Workspace::page(invites, first) } }),
+                )
+            }
+            "InviteCreate" => {
+                let input = &vars["input"];
+                let Some(email) = input["email"].as_str().filter(|e| e.contains('@')) else {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "email must be an email" } } ], "data": null }),
+                    );
+                };
+                let team_ids: Vec<Value> = input["teamIds"].as_array().cloned().unwrap_or_default();
+                if team_ids
+                    .iter()
+                    .any(|id| !self.teams.iter().any(|t| &t["id"] == id))
+                {
+                    return not_found("Team");
+                }
+                let role = input["role"].as_str().unwrap_or("user").to_string();
+                let invite = self.new_invite(email, &role, team_ids);
+                (
+                    200,
+                    json!({ "data": { "organizationInviteCreate": { "success": true, "organizationInvite": Workspace::invite_view(&invite) } } }),
+                )
+            }
+            "InviteUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self
+                    .invites
+                    .iter()
+                    .position(|i| i["id"] == id && i["archivedAt"].is_null())
+                else {
+                    return not_found("OrganizationInvite");
+                };
+                let team_ids: Vec<Value> = vars["input"]["teamIds"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
+                self.invites[index]["teamIds"] = json!(team_ids);
+                (
+                    200,
+                    json!({ "data": { "organizationInviteUpdate": { "success": true, "organizationInvite": Workspace::invite_view(&self.invites[index]) } } }),
+                )
+            }
+            "InviteResend" => {
+                let email = vars["email"].as_str().unwrap_or("");
+                match self.invites.iter().find(|i| {
+                    i["email"]
+                        .as_str()
+                        .is_some_and(|e| e.eq_ignore_ascii_case(email))
+                        && i["archivedAt"].is_null()
+                        && i["acceptedAt"].is_null()
+                }) {
+                    Some(invite) => (
+                        200,
+                        json!({ "data": { "resendOrganizationInviteByEmail": { "success": true, "entityId": invite["id"] } } }),
+                    ),
+                    None => not_found("OrganizationInvite"),
+                }
+            }
+            "InviteDelete" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self
+                    .invites
+                    .iter()
+                    .position(|i| i["id"] == id && i["archivedAt"].is_null())
+                else {
+                    return not_found("OrganizationInvite");
+                };
+                let now = self.now();
+                self.invites[index]["archivedAt"] = json!(now);
+                (
+                    200,
+                    json!({ "data": { "organizationInviteDelete": { "success": true, "entityId": id } } }),
                 )
             }
             "UserById" => {
