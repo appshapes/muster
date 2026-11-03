@@ -22,7 +22,7 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 | sub-issue | An issue whose `parent` is another issue; the parent prints its `children`, and `--parent` on `issue create`, `issue update` and `issue list` names one. | `parent`, `children`, `parentId` | checklist item (the nearest) | `docs/reference/commands.md#muster-issue-get` |
 | user | A member of the workspace, named by `me`, an email address or a name; `muster user list` shows them. | `user` | member | `docs/reference/commands.md#muster-user-list` |
 | assignee | The user responsible for an issue; `me` is the key's owner. | `assignee` | member | `docs/reference/commands.md#muster-issue-create` |
-| title | An issue's one-line name; `--title` on `issue create` and `issue update`. | `title` | name | `docs/reference/commands.md#muster-issue-create` |
+| title | An issue's one-line name, or an attachment's; `--title` on `issue create`, `issue update` and `issue attach`. | `title` | name | `docs/reference/commands.md#muster-issue-create` |
 | description | An issue's text, markdown; `--description` or `--description-file`. | `description` | desc | `docs/reference/commands.md#muster-issue-create` |
 | body | A comment's text, markdown; `--body` or `--body-file`. | `body` | text | `docs/reference/commands.md#muster-issue-comment` |
 | parent | The issue a sub-issue belongs to; `--parent` on `issue create`, `issue update` and `issue list`. | `parent`, `parentId` | checklist item (the nearest) | `docs/reference/commands.md#muster-issue-get` |
