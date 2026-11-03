@@ -1868,7 +1868,20 @@ fn user_get_update_role_suspension_and_sessions() {
 #[test]
 fn project_update_list_and_create() {
     let fake = Fake::start().unwrap();
-    let none = muster(&fake, &["project-update", "list", "--project", "Muster"]);
+    // The fake seeds one post on Muster, "Kicked off.", so that the project carries
+    // `lastUpdate` and `health` as the fixture records them.
+    let seeded = muster(&fake, &["project-update", "list", "--project", "Muster"]);
+    assert_eq!(seeded.code, 0, "{}", seeded.stderr);
+    assert_eq!(seeded.lines().len(), 1);
+    assert_eq!(seeded.lines()[0]["body"], "Kicked off.");
+    assert_eq!(seeded.lines()[0]["health"], "onTrack");
+    let before = muster(&fake, &["project", "get", "Muster"]).one();
+    assert_eq!(before["health"], "onTrack");
+    assert_eq!(before["lastUpdate"]["health"], "onTrack");
+    // A project with no posts lists nothing and exits 0.
+    let quiet = muster(&fake, &["project", "create", "--name", "Quiet"]);
+    assert_eq!(quiet.code, 0, "{}", quiet.stderr);
+    let none = muster(&fake, &["project-update", "list", "--project", "Quiet"]);
     assert_eq!(none.code, 0, "{}", none.stderr);
     assert_eq!(none.lines().len(), 0);
     let posted = muster(
@@ -1891,6 +1904,12 @@ fn project_update_list_and_create() {
     assert_eq!(v["project"]["name"], "Muster");
     assert_eq!(v["user"]["displayName"], "fake");
     assert!(v["url"].is_string() && v["createdAt"].is_string() && v["editedAt"].is_null());
+    let moved = muster(&fake, &["project", "get", "Muster"]).one();
+    assert_eq!(
+        moved["health"], "atRisk",
+        "the project's health moves with its latest update"
+    );
+    assert_eq!(moved["lastUpdate"]["id"], v["id"]);
     let dir = temp_dir();
     let file = write(
         &dir,
@@ -1922,14 +1941,25 @@ All green.
 "
     );
     let listed = muster(&fake, &["project-update", "list", "--project", "Muster"]);
-    assert_eq!(listed.lines().len(), 2);
-    assert_eq!(listed.lines()[0]["health"], "onTrack", "newest first");
+    assert_eq!(listed.lines().len(), 3);
+    assert_eq!(
+        listed.lines()[0]["body"].as_str().unwrap().lines().next(),
+        Some("# Week 2"),
+        "newest first"
+    );
+    assert_eq!(listed.lines()[1]["health"], "atRisk");
+    assert_eq!(
+        listed.lines()[2]["body"],
+        "Kicked off.",
+        "the seeded post last"
+    );
     let detail = muster(&fake, &["project", "get", "Muster"]).one();
     assert_eq!(
         detail["health"], "onTrack",
         "the project's health follows its last update"
     );
     assert_eq!(detail["lastUpdate"]["health"], "onTrack");
+    assert_eq!(detail["lastUpdate"]["id"], from_file.one()["id"]);
     let cut = muster(
         &fake,
         &[

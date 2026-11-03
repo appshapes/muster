@@ -591,6 +591,11 @@ impl Workspace {
         // One milestone, so that `project get` prints a node and the recorder finds
         // one (ADR 0014, group 8).
         ws.new_milestone(&project, "First cut", None, Some("2026-12-01"));
+        // One project update, so that the project carries `lastUpdate` and `health` as
+        // the fixture records them, `project-update list` prints a node and the
+        // recorder finds one (ADR 0014, group 11).
+        let muster = ws.projects.len() - 1;
+        ws.new_project_update(muster, Some("Kicked off."), Some("onTrack"));
         let a = ws.new_issue(
             "APP",
             "Get familiar with Linear",
