@@ -9,7 +9,10 @@ use clap::{ArgAction, Command, CommandFactory};
 use serde_json::{Map, Value, json};
 
 use crate::bounds;
-use crate::bounds::{MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, TEAMS_PER_PROJECT};
+use crate::bounds::{
+    ISSUES_PER_CYCLE, MEMBERS_PER_PROJECT, MILESTONES_PER_PROJECT, PROJECTS_PER_INITIATIVE,
+    TEAMS_PER_PROJECT,
+};
 use crate::cli::{Cli, SchemaArgs, SchemaFormat};
 use crate::config::{ENVIRONMENT, LINEAR_ENDPOINT};
 use crate::error::{Error, ErrorCode};
@@ -351,6 +354,9 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
     let (sample, lack) = sample_issue(session)?;
     let team = sample_team(session)?;
     let project = sample_project(session)?;
+    let initiative = sample_initiative(session)?;
+    let cycle = sample_cycle(session)?;
+    let document = sample_document(session)?;
     let template = sample_template(session)?;
     match (&sample, lack) {
         (Some(id), Some(lack)) => out.notice(
@@ -369,10 +375,15 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
         // The same variables the fixture test replays against the fake, from one place.
         let Some(variables) = fixture_variables(
             op.name,
-            sample.as_deref(),
-            team.as_deref(),
-            project.as_deref(),
-            template.as_deref(),
+            &Samples {
+                issue: sample.as_deref(),
+                team: team.as_deref(),
+                project: project.as_deref(),
+                initiative: initiative.as_deref(),
+                cycle: cycle.as_ref().map(|(k, n)| (k.as_str(), *n)),
+                document: document.as_deref(),
+                template: template.as_deref(),
+            },
         ) else {
             if [
                 "IssueById",
@@ -381,6 +392,9 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
                 "ProjectByName",
                 "Milestones",
                 "ProjectUpdates",
+                "InitiativeByName",
+                "CycleByNumber",
+                "DocumentByTitle",
                 "TemplateByName",
             ]
             .contains(&op.name)
@@ -499,6 +513,46 @@ fn project_lack(data: &Value) -> Option<&'static str> {
     }
 }
 
+/// The name of the initiative `InitiativeByName` is recorded on: the first one
+/// `Initiatives` lists.
+fn sample_initiative(session: &Session) -> Result<Option<String>, Error> {
+    let data = session.linear.run(
+        &ops::INITIATIVES,
+        json!({ "first": 1, "filter": Value::Null }),
+    )?;
+    Ok(nodes(&data, "initiatives")
+        .first()
+        .and_then(|i| str_at(i, "name").map(str::to_string)))
+}
+
+/// The team key and number of the cycle `CycleByNumber` is recorded on: the first
+/// cycle with an issue in it that `Cycles` lists across the workspace, since the
+/// first team may have no cycles and a cycle without issues records no issue node;
+/// the smoke run leaves a canceled issue in the smoke team's cycle for this.
+fn sample_cycle(session: &Session) -> Result<Option<(String, f64)>, Error> {
+    let data = session.linear.run(
+        &ops::CYCLES,
+        json!({ "first": 1, "filter": { "issues": { "length": { "gt": 0 } } } }),
+    )?;
+    Ok(nodes(&data, "cycles").first().and_then(|c| {
+        let key = str_at(c, "team.key")?.to_string();
+        let number = c["number"].as_f64()?;
+        Some((key, number))
+    }))
+}
+
+/// The title of the document `DocumentByTitle` is recorded on: the first one
+/// `Documents` lists.
+fn sample_document(session: &Session) -> Result<Option<String>, Error> {
+    let data = session.linear.run(
+        &ops::DOCUMENTS,
+        json!({ "first": 1, "filter": Value::Null }),
+    )?;
+    Ok(nodes(&data, "documents")
+        .first()
+        .and_then(|d| str_at(d, "title").map(str::to_string)))
+}
+
 /// The name of the template `TemplateByName` is recorded on: the first one
 /// `Templates` lists.
 fn sample_template(session: &Session) -> Result<Option<String>, Error> {
@@ -512,30 +566,57 @@ fn sample_template(session: &Session) -> Result<Option<String>, Error> {
         .and_then(|t| str_at(t, "name").map(str::to_string)))
 }
 
+/// What a workspace had when the fixtures were recorded, and what the fixture test
+/// replays against the fake: the first issue, team, project, initiative, cycle,
+/// document and template the lists gave, each `None` when the workspace had none.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Samples<'a> {
+    /// The newest issue with comments, attachments and sub-issues, for `IssueById`.
+    pub issue: Option<&'a str>,
+    /// The first team's key, for `TeamByKey` and `TeamMembers`.
+    pub team: Option<&'a str>,
+    /// The first project's name, for `ProjectByName`, `Milestones` and `ProjectUpdates`.
+    pub project: Option<&'a str>,
+    /// The first initiative's name, for `InitiativeByName`.
+    pub initiative: Option<&'a str>,
+    /// The team key and number of the first cycle that holds an issue, for `CycleByNumber`.
+    pub cycle: Option<(&'a str, f64)>,
+    /// The first document's title, for `DocumentByTitle`.
+    pub document: Option<&'a str>,
+    /// The first template's name, for `TemplateByName`.
+    pub template: Option<&'a str>,
+}
+
 /// The variables each read operation is recorded with, and the fixture test replays
-/// against the fake; `None` when `IssueById` has no issue, `TeamByKey` no team, or
-/// `ProjectByName` no project, to ask for.
-pub fn fixture_variables(
-    op: &str,
-    first_issue: Option<&str>,
-    first_team: Option<&str>,
-    first_project: Option<&str>,
-    first_template: Option<&str>,
-) -> Option<Value> {
+/// against the fake; `None` when `IssueById` has no issue, `TeamByKey` no team,
+/// `ProjectByName` no project, or `InitiativeByName` no initiative, to ask for.
+pub fn fixture_variables(op: &str, s: &Samples<'_>) -> Option<Value> {
     Some(match op {
         "Viewer" | "Workspace" => json!({}),
-        "TeamByKey" => json!({ "key": first_team?, "includeArchived": false }),
-        "TeamMembers" => json!({ "key": first_team?, "first": 5 }),
+        "TeamByKey" => json!({ "key": s.team?, "includeArchived": false }),
+        "TeamMembers" => json!({ "key": s.team?, "first": 5 }),
         "Teams" => json!({ "first": 5 }),
         "WorkflowStates" | "IssueLabels" => json!({ "first": 5, "filter": Value::Null }),
         "Users" => json!({ "first": 5, "filter": Value::Null, "includeDisabled": true }),
         "UserById" => json!({ "id": "me" }),
         "ProjectStatuses" => json!({ "first": 5, "includeArchived": false }),
-        "Milestones" | "ProjectUpdates" => json!({ "project": first_project?, "first": 5 }),
+        "Milestones" | "ProjectUpdates" => json!({ "project": s.project?, "first": 5 }),
         "Templates" => json!({ "first": 6, "filter": Value::Null }),
-        "TemplateByName" => json!({ "name": first_template?, "includeArchived": false }),
+        "TemplateByName" => json!({ "name": s.template?, "includeArchived": false }),
+        "Documents" => json!({ "first": 5, "filter": Value::Null }),
+        "DocumentByTitle" => json!({ "title": s.document?, "includeArchived": false }),
+        "Cycles" => json!({ "first": 5, "filter": Value::Null }),
+        "CycleByNumber" => {
+            let (key, number) = s.cycle?;
+            json!({ "key": key, "number": number, "issues": ISSUES_PER_CYCLE })
+        }
+        "Initiatives" => json!({ "first": 5, "filter": Value::Null }),
+        "InitiativeByName" => {
+            json!({ "name": s.initiative?, "includeArchived": false, "projects": PROJECTS_PER_INITIATIVE })
+        }
+        "InitiativeLinks" => json!({ "first": 5 }),
         "ProjectByName" => {
-            json!({ "name": first_project?, "includeArchived": false, "teams": TEAMS_PER_PROJECT, "members": MEMBERS_PER_PROJECT, "milestones": MILESTONES_PER_PROJECT })
+            json!({ "name": s.project?, "includeArchived": false, "teams": TEAMS_PER_PROJECT, "members": MEMBERS_PER_PROJECT, "milestones": MILESTONES_PER_PROJECT })
         }
         "Projects" => json!({ "first": 5, "filter": Value::Null, "teams": TEAMS_PER_PROJECT }),
         // Issues that carry a label, so that the label node shape is recorded too.
@@ -543,7 +624,7 @@ pub fn fixture_variables(
             json!({ "first": 2, "filter": { "labels": { "length": { "gt": 0 } } }, "orderBy": "createdAt" })
         }
         "IssueById" => {
-            json!({ "id": first_issue?, "comments": 5, "attachments": 5, "children": 5 })
+            json!({ "id": s.issue?, "comments": 5, "attachments": 5, "children": 5 })
         }
         _ => return None,
     })
@@ -664,6 +745,23 @@ mod tests {
             "template create",
             "template update",
             "template delete",
+            "document list",
+            "document get",
+            "document create",
+            "document update",
+            "document delete",
+            "document unarchive",
+            "cycle list",
+            "cycle get",
+            "cycle update",
+            "initiative list",
+            "initiative get",
+            "initiative create",
+            "initiative update",
+            "initiative archive",
+            "initiative unarchive",
+            "initiative add-project",
+            "initiative remove-project",
             "state list",
             "label list",
             "project list",

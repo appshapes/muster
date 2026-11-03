@@ -8,6 +8,58 @@ user-visible change, added in the same commit as the change. The format follows
 
 ### Added
 
+- `cycle list [--active|--upcoming|--past]` prints the team's cycles, Linear's
+  time-boxed sprints, newest first, each with its `number`, `name`, `startsAt`,
+  `endsAt`, `completedAt`, the `isActive`, `isNext`, `isPrevious`, `isFuture` and
+  `isPast` flags, `progress` and `team`; `cycle get <NUMBER>` adds its `issues`,
+  bounded by the new `ISSUES_PER_CYCLE` with a `truncated` notice past it; `cycle
+  update <NUMBER> [--name] [--description] [--starts-at <TIME>] [--ends-at <TIME>]`
+  changes one. `--cycle <NUMBER|active|next>` on `issue list`, `issue create` and
+  `issue update` names a cycle of the team, and `none` on `issue list` and `issue
+  update` the issues in no cycle, or takes an issue out (`issue create` does not
+  take it: a new issue starts in no cycle); a word that is none of these is exit 2
+  and a cycle the team does not have is exit 4, before any request. Linear makes cycles from a team's
+  settings, so there is no create, and `cycleArchive`, which unlinks every issue
+  with no inverse, stays out (ADR 0014, group 13;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `document list [--project <NAME>] [--issue <ISSUE>]` prints documents, Linear's
+  pages of markdown kept with a project or an issue, newest first, each with its
+  `title`, `url`, `project`, `issue`, `creator`, `owner`, `updatedBy` and `trashed`;
+  `document get <TITLE>` adds its `content`; `document create --title <TEXT>
+  [--content <TEXT>|--content-file <PATH>] [--project <NAME>] [--issue <ISSUE>]` makes
+  one (a title a document has is refused, exit 6, unless `--allow-duplicate`);
+  `document update <TITLE>` changes the title, content, project or issue, `none`
+  clearing the last two; `document delete <TITLE>` puts one in the trash and
+  `document unarchive <TITLE>` brings it back, each printing Linear's entity (ADR
+  0014, group 14; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `template list [--type <issue|project|document>]` prints the team's and the
+  workspace's templates, each with its `type`, `name`, `description`, `templateData`
+  as Linear returns it (a string of JSON), `team`, `creator` and `lastAppliedAt`
+  (Linear's search is a
+  list with no page info, so one more than `--limit` is asked for and a cut list is
+  known from it); `template get <NAME>` prints one; `template create --name <TEXT>
+  --type <TYPE> --data-file <PATH> [--workspace] [--description <TEXT>]` makes one
+  from JSON in a file, or stdin as `-` (a file that is not JSON is exit 2 before any
+  request; a name a template has is refused, exit 6, unless `--allow-duplicate`);
+  `template update <NAME> [--name] [--description] [--data-file <PATH>]` changes one;
+  `template delete <NAME>` deletes one, with no undo, printing Linear's answer (ADR
+  0014, group 15; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+
+## 0.4.0 - 2026-11-03
+
+The second block of the third slice ([ADR 0014](docs/decisions/0014-build-the-third-slice-administrative-commands.md)),
+the things a project is made of, for an agent that sets up a team's work and keeps it
+in order: `label create`, `update`, `retire`, `restore` and `delete`; `state create`,
+`update` and `archive`; `project get`, `update`, `delete` and `unarchive`;
+`project-status list`, `create`, `update`, `archive` and `unarchive`; `milestone list`,
+`create`, `update` and `delete` with `--milestone` on the issue commands;
+`project-update list` and `create`; and `initiative list`, `get`, `create`, `update`,
+`archive`, `unarchive`, `add-project` and `remove-project`. Every list is bounded, a
+name an object already has is refused before any request, `none` clears, and a delete
+prints Linear's own answer. The crate is `muster-linear`: `cargo install muster-linear`.
+
+### Added
+
 - `label create --name <TEXT> [--workspace] [--color <HEX>] [--description <TEXT>]
   [--parent <NAME>] [--group]` makes a label for the team, or for every team with
   `--workspace`, through Linear's `issueLabelCreate`; a name a label of the same
@@ -84,18 +136,23 @@ user-visible change, added in the same commit as the change. The format follows
   A project update is Linear's name for a status post; `project update`, two words,
   changes the project itself (ADR 0014, group 11;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
-- `template list [--type <issue|project|document>]` prints the team's and the
-  workspace's templates, each with its `type`, `name`, `description`, `templateData`
-  as Linear returns it (a string of JSON), `team`, `creator` and `lastAppliedAt`
-  (Linear's search is a
-  list with no page info, so one more than `--limit` is asked for and a cut list is
-  known from it); `template get <NAME>` prints one; `template create --name <TEXT>
-  --type <TYPE> --data-file <PATH> [--workspace] [--description <TEXT>]` makes one
-  from JSON in a file, or stdin as `-` (a file that is not JSON is exit 2 before any
-  request; a name a template has is refused, exit 6, unless `--allow-duplicate`);
-  `template update <NAME> [--name] [--description] [--data-file <PATH>]` changes one;
-  `template delete <NAME>` deletes one, with no undo, printing Linear's answer (ADR
-  0014, group 15; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `initiative list [--status <Proposed|Planned|Active|Completed|Canceled>]` prints
+  the workspace's initiatives, each with its `status`, `health`, `owner`, `leadTeam`,
+  `targetDate` and `priority`; `initiative get <NAME>` adds its `content` and its
+  `projects`, bounded by the new `PROJECTS_PER_INITIATIVE` with a `truncated` notice
+  past it; `initiative create --name <TEXT> [--description] [--owner <WHO>]
+  [--lead-team <KEY>] [--status] [--target-date <DATE>] [--priority <0-4>]
+  [--content <TEXT>|--content-file <PATH>]` makes one (a name an initiative has is
+  refused, exit 6, unless `--allow-duplicate`); `initiative update <NAME>` changes the
+  same fields, `none` clearing the owner, the lead team or the date; `initiative
+  archive` and `initiative unarchive` take one out and back; `initiative add-project
+  <NAME> --project <NAME>` and `initiative remove-project` put a project in an
+  initiative and take it out, the link found among the workspace's newest `PAGE_CAP`
+  links, since Linear's list takes no filter. A workspace with initiatives off
+  refuses `initiative create`, exit 6; `workspace update --roadmap true` is the
+  switch, and its help now says so. `--lead-team` is a team initiative, which Linear
+  sells on its Business plan and refuses, exit 6, below it (ADR 0014, group 12;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.3.0 - 2026-11-03
 
