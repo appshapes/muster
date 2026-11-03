@@ -57,11 +57,11 @@ pub enum Command {
         #[command(subcommand)]
         command: MemberCommand,
     },
-    /// Workflow states of the team
+    /// Workflow states of the team: list, create, update, archive
     State {
-        /// `list`.
+        /// The state command.
         #[command(subcommand)]
-        command: ListCommand,
+        command: StateCommand,
     },
     /// Labels: list, create, update, retire, restore, delete
     Label {
@@ -695,13 +695,99 @@ pub struct LabelUpdateArgs {
     pub parent: Option<String>,
 }
 
-/// `list` under `state`.
+/// The state commands (ADR 0007; ADR 0014, group 7): the team's workflow.
 #[derive(Subcommand, Debug)]
-pub enum ListCommand {
-    /// List them, one JSON object per line
+pub enum StateCommand {
+    /// List the team's states by position, one JSON object per line
     List(ListArgs),
+    /// Add a state to the team's workflow; its type cannot change afterwards; a name a state of the team has is refused unless --allow-duplicate
+    Create(StateCreateArgs),
+    /// Change a state's name, colour, description or position
+    Update(StateUpdateArgs),
+    /// Archive a state; Linear refuses it while the state holds an issue that is not archived, and nothing unarchives a state
+    Archive(StateRefArgs),
 }
 
+/// A state named as `--state` names one, in the team.
+#[derive(Args, Debug)]
+pub struct StateRefArgs {
+    /// The state, by name
+    #[arg(value_name = "NAME")]
+    pub name: String,
+}
+
+/// `state create`.
+#[derive(Args, Debug, Default)]
+pub struct StateCreateArgs {
+    /// The name
+    #[arg(long, value_name = "TEXT")]
+    pub name: String,
+    /// The type, which says how Linear treats the state; `triage` is Linear's own
+    #[arg(long, value_name = "TYPE", value_enum)]
+    pub r#type: StateType,
+    /// The colour, a hex string (#bec2c8)
+    #[arg(long, value_name = "HEX")]
+    pub color: String,
+    /// The description, plain text
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// Where the state sits among the team's, a finite number; Linear's default is the end
+    #[arg(long, value_name = "N")]
+    pub position: Option<f64>,
+    /// Create it even when a state of the team has the name
+    #[arg(long)]
+    pub allow_duplicate: bool,
+}
+
+/// `state update`.
+#[derive(Args, Debug, Default)]
+pub struct StateUpdateArgs {
+    /// The state, by name
+    #[arg(value_name = "NAME")]
+    pub state: String,
+    /// A new name
+    #[arg(long, value_name = "TEXT")]
+    pub name: Option<String>,
+    /// A new colour, a hex string (#bec2c8)
+    #[arg(long, value_name = "HEX")]
+    pub color: Option<String>,
+    /// A new description, plain text
+    #[arg(long, value_name = "TEXT")]
+    pub description: Option<String>,
+    /// A new position among the team's states, a finite number
+    #[arg(long, value_name = "N")]
+    pub position: Option<f64>,
+}
+
+/// A workflow state's type, as Linear's `WorkflowState.type` spells the ones a team
+/// may create (`triage` and `duplicate` are Linear's own).
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StateType {
+    /// Not yet planned.
+    #[default]
+    Backlog,
+    /// Planned, not started.
+    Unstarted,
+    /// In progress.
+    Started,
+    /// Done.
+    Completed,
+    /// Not going to be done.
+    Canceled,
+}
+
+impl StateType {
+    /// The value Linear takes.
+    pub fn linear(self) -> &'static str {
+        match self {
+            StateType::Backlog => "backlog",
+            StateType::Unstarted => "unstarted",
+            StateType::Started => "started",
+            StateType::Completed => "completed",
+            StateType::Canceled => "canceled",
+        }
+    }
+}
 /// The one flag of every plain list.
 #[derive(Args, Debug)]
 pub struct ListArgs {

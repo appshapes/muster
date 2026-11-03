@@ -19,6 +19,17 @@ user-visible change, added in the same commit as the change. The format follows
   reference names retire first. A label is named as `--label` names one, the team's
   own before the workspace's; `label list` now prints `retiredAt` and `createdAt`
   (ADR 0014, group 6; [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
+- `state create --name <TEXT> --type <backlog|unstarted|started|completed|canceled>
+  --color <HEX> [--description <TEXT>] [--position <N>]` adds a state to the team's
+  workflow through Linear's `workflowStateCreate`; a name a state of the team has is
+  refused, exit 6, unless `--allow-duplicate`, and the type cannot change
+  afterwards. `state update <NAME>` changes the name, colour, description or
+  position; `state archive <NAME>` takes a state out of the workflow, which Linear
+  refuses, exit 6, while the state holds an issue that is not archived, and nothing
+  brings an archived state back. `--position` takes a finite number; `nan`, `inf`
+  and a number too large for one, such as `1e400`, are usage errors, exit 2, before
+  any request (ADR 0014, group 7;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 
 ## 0.3.0 - 2026-11-03
 

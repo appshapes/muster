@@ -199,11 +199,44 @@ Remove a user from the team; a user may remove themselves, a team owner or a wor
 
 ### muster state list
 
-List them, one JSON object per line.
+List the team's states by position, one JSON object per line.
 
 | Argument or flag | Value | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
+
+### muster state create
+
+Add a state to the team's workflow; its type cannot change afterwards; a name a state of the team has is refused unless --allow-duplicate.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--name` | `<TEXT>` | yes |  | The name |
+| `--type` | `<backlog\|unstarted\|started\|completed\|canceled>` | yes |  | The type, which says how Linear treats the state; `triage` is Linear's own |
+| `--color` | `<HEX>` | yes |  | The colour, a hex string (#bec2c8) |
+| `--description` | `<TEXT>` | no |  | The description, plain text |
+| `--position` | `<N>` | no |  | Where the state sits among the team's, a finite number; Linear's default is the end |
+| `--allow-duplicate` |  | no |  | Create it even when a state of the team has the name |
+
+### muster state update
+
+Change a state's name, colour, description or position.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The state, by name |
+| `--name` | `<TEXT>` | no |  | A new name |
+| `--color` | `<HEX>` | no |  | A new colour, a hex string (#bec2c8) |
+| `--description` | `<TEXT>` | no |  | A new description, plain text |
+| `--position` | `<N>` | no |  | A new position among the team's states, a finite number |
+
+### muster state archive
+
+Archive a state; Linear refuses it while the state holds an issue that is not archived, and nothing unarchives a state.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<NAME>` | `<NAME>` | yes |  | The state, by name |
 
 ### muster label list
 
@@ -561,3 +594,6 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `IssueLabelRetire` | mutation |
 | `IssueLabelRestore` | mutation |
 | `IssueLabelDelete` | mutation |
+| `WorkflowStateCreate` | mutation |
+| `WorkflowStateUpdate` | mutation |
+| `WorkflowStateArchive` | mutation |

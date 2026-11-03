@@ -1789,6 +1789,159 @@ fn user_get_update_role_suspension_and_sessions() {
     assert_eq!(run.code, 7, "{}", run.stderr);
 }
 
+// ---- states (ADR 0014, group 7) ----------------------------------------------------------
+
+#[test]
+fn state_create_update_and_archive() {
+    let fake = Fake::start().unwrap();
+    let created = muster(
+        &fake,
+        &[
+            "state",
+            "create",
+            "--name",
+            "Blocked",
+            "--type",
+            "started",
+            "--color",
+            "#eb5757",
+            "--description",
+            "Waiting on someone else.",
+        ],
+    );
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let v = created.one();
+    assert_eq!(v["name"], "Blocked");
+    assert_eq!(v["type"], "started");
+    assert_eq!(v["color"], "#eb5757");
+    assert_eq!(v["team"]["key"], "APP");
+    assert!(v["position"].is_number(), "Linear puts it at the end");
+    let listed = muster(&fake, &["state", "list"]);
+    assert_eq!(
+        listed.lines().len(),
+        8,
+        "the seven default states and the new one"
+    );
+    assert_eq!(listed.lines()[7]["name"], "Blocked", "by position");
+    let again = muster(
+        &fake,
+        &[
+            "state", "create", "--name", "blocked", "--type", "backlog", "--color", "#000000",
+        ],
+    );
+    assert_eq!(again.code, 6, "{}", again.stderr);
+    let triage = muster(
+        &fake,
+        &[
+            "state", "create", "--name", "Inbox", "--type", "triage", "--color", "#000000",
+        ],
+    );
+    assert_eq!(
+        triage.code, 2,
+        "triage is Linear's own type: {}",
+        triage.stderr
+    );
+    // `f64::from_str`, which `clap` parses `--position` with, takes `nan`, `inf` and
+    // `1e400` (which overflows to infinity), and serde_json would write each as `null`:
+    // a position the caller never typed. Each is muster's usage error, before any
+    // request. The `=` form, since `clap` reads a bare `-inf` as flags.
+    for position in ["nan", "inf", "-inf", "1e400"] {
+        let flag = format!("--position={position}");
+        let create = muster(
+            &fake,
+            &[
+                "state", "create", "--name", "Nowhere", "--type", "backlog", "--color", "#000000",
+                &flag,
+            ],
+        );
+        assert_eq!(create.code, 2, "{flag}: {}", create.stderr);
+        assert_eq!(create.error()["code"], "usage", "{flag}: {}", create.stderr);
+        let update = muster(&fake, &["state", "update", "Blocked", &flag]);
+        assert_eq!(update.code, 2, "{flag}: {}", update.stderr);
+        assert_eq!(update.error()["code"], "usage", "{flag}: {}", update.stderr);
+    }
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "WorkflowStateCreate")
+            .count(),
+        1,
+        "refused before any mutation"
+    );
+    assert!(
+        !fake.operations().iter().any(|o| o == "WorkflowStateUpdate"),
+        "refused before any mutation"
+    );
+    let moved = muster(&fake, &["issue", "update", "APP-1", "--state", "Blocked"]);
+    assert_eq!(moved.code, 0, "a new state takes issues: {}", moved.stderr);
+
+    let renamed = muster(
+        &fake,
+        &[
+            "state",
+            "update",
+            "Blocked",
+            "--name",
+            "Waiting",
+            "--position",
+            "2.5",
+        ],
+    );
+    assert_eq!(renamed.code, 0, "{}", renamed.stderr);
+    assert_eq!(renamed.one()["name"], "Waiting");
+    assert_eq!(renamed.one()["position"], 2.5);
+    assert_eq!(
+        muster(&fake, &["issue", "get", "APP-1"]).one()["state"]["name"],
+        "Waiting",
+        "the issue shows the new name"
+    );
+    let nothing = muster(&fake, &["state", "update", "Waiting"]);
+    assert_eq!(nothing.code, 2, "{}", nothing.stderr);
+    let nope = muster(&fake, &["state", "update", "Nope", "--name", "x"]);
+    assert_eq!(nope.code, 4, "{}", nope.stderr);
+
+    let held = muster(&fake, &["state", "archive", "Waiting"]);
+    assert_eq!(
+        held.code, 6,
+        "Linear refuses a state with an issue in it: {}",
+        held.stderr
+    );
+    assert!(held.error()["linear"]["message"].is_string());
+    let away = muster(&fake, &["issue", "update", "APP-1", "--state", "Todo"]);
+    assert_eq!(away.code, 0, "{}", away.stderr);
+    let archived = muster(&fake, &["state", "archive", "Waiting"]);
+    assert_eq!(archived.code, 0, "{}", archived.stderr);
+    assert_eq!(
+        archived.one()["name"],
+        "Waiting",
+        "Linear's entity, as it is"
+    );
+    assert_eq!(muster(&fake, &["state", "list"]).lines().len(), 7);
+    let gone = muster(&fake, &["state", "archive", "Waiting"]);
+    assert_eq!(gone.code, 4, "{}", gone.stderr);
+
+    for (op, args) in [
+        (
+            "WorkflowStateCreate",
+            vec![
+                "state", "create", "--name", "Dropped", "--type", "backlog", "--color", "#000000",
+            ],
+        ),
+        (
+            "WorkflowStateUpdate",
+            vec!["state", "update", "Todo", "--color", "#000000"],
+        ),
+        (
+            "WorkflowStateArchive",
+            vec!["state", "archive", "Duplicate"],
+        ),
+    ] {
+        fake.fail_next(op, Failure::Drop);
+        let run = muster(&fake, &args);
+        assert_eq!(run.code, 8, "{op}: {}", run.stderr);
+    }
+}
+
 // ---- labels (ADR 0014, group 6) ----------------------------------------------------------
 
 #[test]

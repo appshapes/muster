@@ -93,6 +93,18 @@ case "$code" in
   *) echo "smoke: project create exited $code" >&2; cat "$tmp/project.err" >&2; exit 1 ;;
 esac
 echo
+# In SMK, not in $MUSTER_TEAM: nothing unarchives a state, so each run leaves one
+# archived state in the team it ran in, for good; the smoke team is where that is kept.
+echo "smoke: muster --team SMK state create --name 'Smoke <stamp>' --type backlog, update, archive, in the smoke team, which keeps the archived state (ADR 0014)"
+"$bin" --team SMK state create --name "Smoke $stamp" --type backlog --color "#bec2c8" --description "Made by scripts/smoke.sh at $stamp and archived by the same run." | jq -c '{name, type, position, team: .team.key}' | tee "$tmp/state.json"
+jq -e --arg n "Smoke $stamp" '.name == $n and .type == "backlog" and .team == "SMK"' "$tmp/state.json" >/dev/null
+"$bin" --team SMK state update "Smoke $stamp" --name "Smoky $stamp" | jq -c '{name, type}' | tee "$tmp/state-update.json"
+jq -e --arg n "Smoky $stamp" '.name == $n' "$tmp/state-update.json" >/dev/null
+"$bin" --team SMK state archive "Smoky $stamp" | jq -c '{name, type}' | tee "$tmp/state-archive.json"
+jq -e --arg n "Smoky $stamp" '.name == $n' "$tmp/state-archive.json" >/dev/null
+"$bin" --team SMK state list | jq -c 'select(.name == "Smoky '"$stamp"'")' | tee "$tmp/state-gone.jsonl"
+[ ! -s "$tmp/state-gone.jsonl" ] || { echo "smoke: the archived state is still listed" >&2; exit 1; }
+echo
 echo "smoke: muster label create --name 'Smoke <stamp>', update, retire, restore, delete, in team $MUSTER_TEAM (ADR 0014)"
 "$bin" label create --name "Smoke $stamp" --color "#26b5ce" --description "Made by scripts/smoke.sh at $stamp and deleted by the same run." | jq -c '{name, color, team: .team.key, retiredAt}' | tee "$tmp/label.json"
 jq -e --arg n "Smoke $stamp" '.name == $n and .retiredAt == null' "$tmp/label.json" >/dev/null

@@ -600,7 +600,7 @@ impl Workspace {
         .enumerate()
         {
             let sid = self.id();
-            self.states.push(json!({ "id": sid, "name": state, "type": kind, "position": pos as f64, "color": "#bec2c8", "description": null, "team": { "id": id, "key": key } }));
+            self.states.push(json!({ "id": sid, "name": state, "type": kind, "position": pos as f64, "color": "#bec2c8", "description": null, "team": { "id": id, "key": key }, "archivedAt": null }));
         }
         let backlog = self
             .states
@@ -636,6 +636,15 @@ impl Workspace {
             }),
         );
         team
+    }
+
+    /// A state as `StateFields` answers it: without the archive flag the fake keeps.
+    fn state_view(state: &Value) -> Value {
+        let mut view = state.clone();
+        if let Some(map) = view.as_object_mut() {
+            map.remove("archivedAt");
+        }
+        view
     }
 
     /// A label as `LabelFields` answers it (ADR 0014, group 6), not yet pushed.
@@ -1222,8 +1231,8 @@ impl Workspace {
                 let mut states: Vec<Value> = self
                     .states
                     .iter()
-                    .filter(|s| passes(s, filter))
-                    .cloned()
+                    .filter(|s| s["archivedAt"].is_null() && passes(s, filter))
+                    .map(Workspace::state_view)
                     .collect();
                 states.sort_by(|a, b| {
                     a["position"]
@@ -1268,6 +1277,109 @@ impl Workspace {
                 (
                     200,
                     json!({ "data": { "users": Workspace::page(users, first) } }),
+                )
+            }
+            "WorkflowStateCreate" => {
+                let input = &vars["input"];
+                let Some(team) = self
+                    .teams
+                    .iter()
+                    .find(|t| t["id"] == input["teamId"])
+                    .cloned()
+                else {
+                    return not_found("Team");
+                };
+                let (Some(name), Some(kind), Some(color)) = (
+                    input["name"].as_str().filter(|n| !n.trim().is_empty()),
+                    input["type"].as_str(),
+                    input["color"].as_str(),
+                ) else {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "name, type and color are required" } } ], "data": null }),
+                    );
+                };
+                if !["backlog", "unstarted", "started", "completed", "canceled"].contains(&kind) {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "type must be one of backlog, unstarted, started, completed, canceled" } } ], "data": null }),
+                    );
+                }
+                let position = match input["position"].as_f64() {
+                    Some(p) => p,
+                    None => {
+                        self.states
+                            .iter()
+                            .filter(|s| s["team"]["id"] == team["id"])
+                            .filter_map(|s| s["position"].as_f64())
+                            .fold(0.0, f64::max)
+                            + 1.0
+                    }
+                };
+                let sid = self.id();
+                let state = json!({ "id": sid, "name": name, "type": kind, "position": position, "color": color, "description": input["description"], "team": { "id": team["id"], "key": team["key"] }, "archivedAt": null });
+                self.states.push(state.clone());
+                (
+                    200,
+                    json!({ "data": { "workflowStateCreate": { "success": true, "workflowState": Workspace::state_view(&state) } } }),
+                )
+            }
+            "WorkflowStateUpdate" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(input) = vars["input"].as_object().cloned() else {
+                    return missing_variable("input", "WorkflowStateUpdateInput!");
+                };
+                let Some(index) = self
+                    .states
+                    .iter()
+                    .position(|s| s["id"] == id && s["archivedAt"].is_null())
+                else {
+                    return not_found("WorkflowState");
+                };
+                for (field, value) in input {
+                    self.states[index][&field] = value;
+                }
+                // Issues carry the state's name, so a rename shows on them too.
+                let (sid, sname) = (
+                    self.states[index]["id"].clone(),
+                    self.states[index]["name"].clone(),
+                );
+                for issue in &mut self.issues {
+                    if issue["state"]["id"] == sid {
+                        issue["state"]["name"] = sname.clone();
+                    }
+                }
+                (
+                    200,
+                    json!({ "data": { "workflowStateUpdate": { "success": true, "workflowState": Workspace::state_view(&self.states[index]) } } }),
+                )
+            }
+            "WorkflowStateArchive" => {
+                let id = vars["id"].as_str().unwrap_or("");
+                let Some(index) = self
+                    .states
+                    .iter()
+                    .position(|s| s["id"] == id && s["archivedAt"].is_null())
+                else {
+                    return not_found("WorkflowState");
+                };
+                // Only a state whose issues are all archived can be archived (the
+                // mutation's own description).
+                if self
+                    .issues
+                    .iter()
+                    .any(|i| i["state"]["id"] == id && i["archivedAt"].is_null())
+                {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "Cannot archive a workflow state with active issues." } } ], "data": null }),
+                    );
+                }
+                let now = self.now();
+                self.states[index]["archivedAt"] = json!(now);
+                (
+                    200,
+                    json!({ "data": { "workflowStateArchive": { "success": true, "entity": Workspace::state_view(&self.states[index]) } } }),
                 )
             }
             "IssueLabelCreate" => {
