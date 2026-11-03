@@ -51,6 +51,14 @@ pub const ISSUE_FIELDS: &str = "fragment IssueFields on Issue {
   labels { nodes { id name } }
 }";
 
+/// The fields every project answer carries.
+pub const PROJECT_FIELDS: &str = "fragment ProjectFields on Project {
+  id name url description priority startDate targetDate
+  status { id name type }
+  lead { id name displayName }
+  teams(first: $teams) { nodes { id key } pageInfo { hasNextPage } }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -124,12 +132,15 @@ op!(
 }"
 );
 
-op!(PROJECTS, "Projects", Kind::Query, "query Projects($first: Int!, $filter: ProjectFilter) {
-  projects(first: $first, filter: $filter) {
-    nodes { id name url description priority startDate targetDate status { id name type } lead { id name displayName } teams { nodes { id key } } }
-    pageInfo { hasNextPage }
-  }
-}");
+op!(
+    PROJECTS,
+    "Projects",
+    Kind::Query,
+    "query Projects($first: Int!, $filter: ProjectFilter, $teams: Int!) {
+  projects(first: $first, filter: $filter) { nodes { ...ProjectFields } pageInfo { hasNextPage } }
+}",
+    &[PROJECT_FIELDS]
+);
 
 op!(
     USERS,
@@ -189,6 +200,16 @@ op!(
 );
 
 op!(
+    PROJECT_CREATE,
+    "ProjectCreate",
+    Kind::Mutation,
+    "mutation ProjectCreate($input: ProjectCreateInput!, $teams: Int!) {
+  projectCreate(input: $input) { success project { ...ProjectFields } }
+}",
+    &[PROJECT_FIELDS]
+);
+
+op!(
     ATTACHMENT_CREATE,
     "AttachmentCreate",
     Kind::Mutation,
@@ -215,6 +236,7 @@ pub static WRITES: &[&Operation] = &[
     &ISSUE_UPDATE,
     &COMMENT_CREATE,
     &ATTACHMENT_CREATE,
+    &PROJECT_CREATE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -255,7 +277,7 @@ mod tests {
     #[test]
     fn every_fragment_used_is_defined() {
         for op in READS.iter().chain(WRITES.iter()) {
-            for frag in ["IssueFields", "CommentFields"] {
+            for frag in ["IssueFields", "CommentFields", "ProjectFields"] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));
                 let defined = document.contains(&format!("fragment {frag} on"));

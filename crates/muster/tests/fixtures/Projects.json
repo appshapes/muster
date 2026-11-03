@@ -20,7 +20,10 @@
               "id": "<string>",
               "key": "<string>"
             }
-          ]
+          ],
+          "pageInfo": {
+            "hasNextPage": true
+          }
         },
         "url": "<string>"
       }

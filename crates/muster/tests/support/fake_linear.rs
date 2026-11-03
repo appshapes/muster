@@ -134,6 +134,24 @@ impl Fake {
             })
     }
 
+    /// Add a project that spans `n` new teams, for the bound test.
+    pub fn add_project_across_teams(&self, name: &str, n: usize) {
+        let mut st = self.state.lock().unwrap();
+        let mut teams = Vec::new();
+        for k in 1..=n {
+            let team = st.ws.new_team(&format!("T{k}"), &format!("Team {k}"));
+            teams.push(json!({ "id": team["id"], "key": team["key"] }));
+            st.ws.teams.push(team);
+        }
+        let (id, status_id) = (st.ws.id(), st.ws.id());
+        st.ws.projects.push(json!({
+            "id": id, "name": name, "url": format!("https://linear.app/fake/project/{}", name.to_ascii_lowercase()),
+            "description": "", "priority": 0, "startDate": null, "targetDate": null,
+            "status": { "id": status_id, "name": "Backlog", "type": "backlog" },
+            "lead": null, "teams": { "nodes": teams },
+        }));
+    }
+
     /// Add `n` links to an issue, for the bound tests.
     pub fn add_attachments(&self, issue: &str, n: usize) {
         let mut st = self.state.lock().unwrap();
@@ -288,6 +306,16 @@ fn respond(
         2500 - n as u64
     )?;
     stream.flush()
+}
+
+/// Linear's answer to a request that left a required variable out, as the `$teams: Int!`
+/// of `Projects` and `ProjectCreate`: a GraphQL validation error, which muster reports
+/// as exit 1 (it is muster's own mistake, not Linear's).
+fn missing_variable(name: &str, kind: &str) -> (u16, Value) {
+    (
+        400,
+        json!({ "errors": [ { "message": format!("Variable \"${name}\" of required type \"{kind}\" was not provided."), "extensions": { "code": "GRAPHQL_VALIDATION_FAILED", "type": "graphql error", "userError": true } } ] }),
+    )
 }
 
 fn not_found(what: &str) -> (u16, Value) {
@@ -699,6 +727,18 @@ impl Workspace {
         view
     }
 
+    /// A project as `Projects` and `ProjectCreate` answer it: its `teams` paged at
+    /// `first: $teams`, as Linear pages a nested connection.
+    fn project_view(project: &Value, teams: usize) -> Value {
+        let mut view = project.clone();
+        let all: Vec<Value> = view["teams"]["nodes"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        view["teams"] = Workspace::page(all, teams);
+        view
+    }
+
     fn page(items: Vec<Value>, first: usize) -> Value {
         let cut = items.len() > first;
         json!({ "nodes": items.into_iter().take(first).collect::<Vec<_>>(), "pageInfo": { "hasNextPage": cut } })
@@ -741,10 +781,21 @@ impl Workspace {
                 200,
                 json!({ "data": { "issueLabels": Workspace::page(self.labels.iter().filter(|l| passes(l, filter)).cloned().collect(), first) } }),
             ),
-            "Projects" => (
-                200,
-                json!({ "data": { "projects": Workspace::page(self.projects.iter().filter(|p| passes(p, filter)).cloned().collect(), first) } }),
-            ),
+            "Projects" => {
+                let Some(teams) = vars["teams"].as_u64().map(|n| n as usize) else {
+                    return missing_variable("teams", "Int!");
+                };
+                let projects: Vec<Value> = self
+                    .projects
+                    .iter()
+                    .filter(|p| passes(p, filter))
+                    .map(|p| Workspace::project_view(p, teams))
+                    .collect();
+                (
+                    200,
+                    json!({ "data": { "projects": Workspace::page(projects, first) } }),
+                )
+            }
             "Users" => {
                 let users: Vec<Value> = self.users.iter().filter(|u| passes(u, filter)).map(|u| json!({ "id": u["id"], "name": u["name"], "displayName": u["displayName"], "email": u["email"], "active": u["active"], "admin": u["admin"], "isMe": u["isMe"] })).collect();
                 (
@@ -974,6 +1025,50 @@ impl Workspace {
                 (
                     200,
                     json!({ "data": { "issueUpdate": { "success": true, "issue": issue } } }),
+                )
+            }
+            "ProjectCreate" => {
+                let input = &vars["input"];
+                let Some(name) = input["name"].as_str().filter(|n| !n.is_empty()) else {
+                    return (
+                        200,
+                        json!({ "errors": [ { "message": "Argument Validation Error", "extensions": { "type": "invalid input", "code": "INPUT_ERROR", "statusCode": 400, "userError": true, "userPresentableMessage": "name should not be empty" } } ], "data": null }),
+                    );
+                };
+                let team_ids: Vec<Value> = input["teamIds"].as_array().cloned().unwrap_or_default();
+                let teams: Vec<Value> = team_ids
+                    .iter()
+                    .map(|id| {
+                        self.teams
+                            .iter()
+                            .find(|t| &t["id"] == id)
+                            .map(|t| json!({ "id": t["id"], "key": t["key"] }))
+                    })
+                    .collect::<Option<Vec<Value>>>()
+                    .unwrap_or_default();
+                if teams.is_empty() || teams.len() != team_ids.len() {
+                    return not_found("Team");
+                }
+                let slug: String = name
+                    .to_ascii_lowercase()
+                    .chars()
+                    .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+                    .collect();
+                let (id, status_id) = (self.id(), self.id());
+                let project = json!({
+                    "id": id, "name": name, "url": format!("https://linear.app/fake/project/{slug}"),
+                    "description": input["description"].as_str().unwrap_or(""), "priority": 0,
+                    "startDate": null, "targetDate": null,
+                    "status": { "id": status_id, "name": "Backlog", "type": "backlog" },
+                    "lead": null, "teams": { "nodes": teams },
+                });
+                let Some(teams) = vars["teams"].as_u64().map(|n| n as usize) else {
+                    return missing_variable("teams", "Int!");
+                };
+                self.projects.push(project.clone());
+                (
+                    200,
+                    json!({ "data": { "projectCreate": { "success": true, "project": Workspace::project_view(&project, teams) } } }),
                 )
             }
             "AttachmentCreate" => {

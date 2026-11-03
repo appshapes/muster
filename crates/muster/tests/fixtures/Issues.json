@@ -11,7 +11,7 @@
         },
         "branchName": "<string>",
         "canceledAt": null,
-        "completedAt": null,
+        "completedAt": "<string>",
         "createdAt": "<string>",
         "creator": {
           "displayName": "<string>",
@@ -33,7 +33,10 @@
           ]
         },
         "number": 0,
-        "parent": null,
+        "parent": {
+          "id": "<string>",
+          "identifier": "<string>"
+        },
         "priority": 0,
         "priorityLabel": "<string>",
         "project": null,

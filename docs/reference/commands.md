@@ -52,6 +52,16 @@ List them, one JSON object per line.
 | --- | --- | --- | --- | --- |
 | `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
 
+### muster project create
+
+Create a project for the team; a name a project of the workspace already has is refused unless --allow-duplicate.
+
+| Argument or flag | Value | Required | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `--name` | `<TEXT>` | yes |  | The name |
+| `--description` | `<TEXT>` | no |  | The description, plain text |
+| `--allow-duplicate` |  | no |  | Create it even when a project of the workspace has the same name |
+
 ### muster user list
 
 List them, one JSON object per line.
@@ -81,6 +91,7 @@ Issues of the team: the open ones unless --state or --all; most recently updated
 | `--assignee` | `<WHO>` | no |  | Only issues assigned to this user: `me`, an email address, a name, or `none` |
 | `--search` | `<TEXT>` | no |  | Only issues whose title contains this text, case-insensitively; how a title is resolved |
 | `--parent` | `<ISSUE>` | no |  | Only the sub-issues of this issue: the identifier (APP-12), the number alone (12, in the team) or the id; or `none` for issues with no parent |
+| `--project` | `<NAME>` | no |  | Only issues in this project, by name, or `none` for issues in no project |
 | `--limit` | `<N>` | no | `50` | At most this many, up to PAGE_CAP; a cut list writes a `truncated` notice to stderr |
 
 ### muster issue create
@@ -204,8 +215,9 @@ Every limit muster has, from `crates/muster/src/bounds.rs` (CLAUDE.md, invariant
 | `COMMENTS_PER_ISSUE` | 100 | items | the comments `issue get` fetches with an issue, newest first, as Linear orders them; a longer thread writes a `truncated` notice to stderr and the oldest are the ones left out |
 | `ATTACHMENTS_PER_ISSUE` | 50 | items | the attachments `issue get` fetches with an issue, newest first, as Linear orders them; an issue with more writes a `truncated` notice to stderr and the oldest are the ones left out |
 | `CHILDREN_PER_ISSUE` | 50 | items | the sub-issues `issue get` fetches with an issue, newest first, as Linear orders them; a parent with more writes a `truncated` notice to stderr and the oldest are the ones left out |
+| `TEAMS_PER_PROJECT` | 10 | items | the teams `project list` and `project create` print with a project under `teams.nodes`; `project list` writes a `truncated` notice to stderr for a project in more, and a project `project create` makes has the one team, so it is never cut; bounded so that a page of PAGE_CAP projects stays inside Linear's query-complexity limit of 10,000 |
 | `REQUEST_TIMEOUT_SECS` | 30 | seconds | one request, connect to last byte; past it a query exits 7 and a mutation exits 8 |
-| `BODY_MAX_BYTES` | 262144 | bytes | the largest description, comment, title, link or subtitle sent; a larger one is refused, exit 6, before any request, and the message names which one it was; Linux refuses one argv string over 128 KiB before muster runs, so from a flag's value the bound is reached only where the OS allows the argument, from a file or stdin everywhere |
+| `BODY_MAX_BYTES` | 262144 | bytes | the largest description, comment, title, name, link or subtitle sent; a larger one is refused, exit 6, before any request, and the message names which one it was; Linux refuses one argv string over 128 KiB before muster runs, so from a flag's value the bound is reached only where the OS allows the argument, from a file or stdin everywhere |
 | `RESPONSE_MAX_BYTES` | 16777216 | bytes | the largest answer read; a larger one is muster's failure, exit 1 |
 | `RETRIES` | 0 | attempts | how many times a failed request is sent again: never; the exit code tells the caller what happened and the caller decides |
 
@@ -249,3 +261,4 @@ The named GraphQL operations muster sends, from `crates/muster/src/linear/operat
 | `IssueUpdate` | mutation |
 | `CommentCreate` | mutation |
 | `AttachmentCreate` | mutation |
+| `ProjectCreate` | mutation |

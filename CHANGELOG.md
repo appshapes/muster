@@ -37,12 +37,27 @@ user-visible change, added in the same commit as the change. The format follows
   rows stay by hand).
   Ten rows join the glossary: `user`, `title`, `description`, `body`, `parent`, `name`,
   `url`, `subtitle`, `search` and `limit`.
+- `project create --name <TEXT> [--description <TEXT>]` makes a project for the team
+  through Linear's `projectCreate` and prints it as `project list` prints one; a name an
+  existing project already has is refused, exit 6, unless `--allow-duplicate`, so that
+  `--project <NAME>` keeps resolving to one project. `issue list --project <NAME>` lists
+  the team's issues in a project and `--project none` those in no project; the guard is
+  workspace-wide, as `--project <NAME>` resolves, and `--name` and `--description` are
+  bounded by `BODY_MAX_BYTES` like every other text (ADR 0013, feature 3;
+  [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 - `muster fixtures` records `IssueById` on an issue that has comments, attachments and
   sub-issues when the workspace has one, and writes a `partial` notice saying what the
   recording lacks; `skipped` and `partial` join the notices table of the reference.
 
 ### Fixed
 
+- `project list --limit 250` was refused by Linear as "Query too complex": each
+  project's `teams` connection multiplied the query's cost. `project list` and
+  `project create` now print at most `TEAMS_PER_PROJECT` teams per project, and
+  `project list` writes a `truncated` notice for a project in more (a project
+  `project create` makes has the one team, so it is never cut), so that a page of
+  `PAGE_CAP` projects stays inside the limit; the project lookup behind
+  `--project <NAME>` asks for one project, not a page.
 - The reference, the tutorial and the `linear-read` skill said `issue get` prints
   comments oldest first. Linear orders a connection newest first, `orderBy: createdAt`
   included, and muster prints what Linear returns; the pages now say so, and a cut thread

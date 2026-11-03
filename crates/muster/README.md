@@ -12,9 +12,10 @@ name is `muster`, with `muster::Linear`, the client the binary is built on.
   stderr with an exit code per failure class (ADR 0008). The commands of the first slice
   are `whoami`, `team list`, `state list`, `label list`, `project list`, `user list`,
   `issue get`, `issue list`, `issue create`, `issue comment`, `issue close`,
-  `issue update` and `schema` (ADR 0007), and the second slice adds `--parent` on
-  three of them and `issue attach` (ADR 0013); `docs/reference/commands.md` is
-  generated from `muster schema` and is the reference.
+  `issue update` and `schema` (ADR 0007), and the second slice adds `--parent` and
+  `--project` on `issue list` and its kin, `issue attach` and `project create`
+  (ADR 0013); `docs/reference/commands.md` is generated from `muster schema` and is the
+  reference.
 - The library: `muster::Linear` holds the key and the endpoint and runs one named
   operation at a time; `muster::Config` resolves the key, the team and the endpoint from
   the environment and the key file; `muster::Error` is the error object with its

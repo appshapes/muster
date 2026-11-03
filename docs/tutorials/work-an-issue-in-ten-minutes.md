@@ -60,6 +60,13 @@ Run the same command again and you get exit 6 with `"code":"refused"`: an open i
 of the team already has that title, and the message names it. That guard is for an
 agent that retries after a timeout; `--allow-duplicate` turns it off.
 
+A project is `muster project create --name "Trying muster"`: one JSON line, the project
+with its `name`, `url`, `status` and `teams.nodes`; a name a project of the workspace
+already has is exit 6 unless `--allow-duplicate`, so that `--project "Trying muster"` on
+`issue create` and `issue update` keeps naming one project, and
+`muster issue list --project "Trying muster"` lists the team's open issues in it
+(`--project none` those in no project). `just quickstart` runs both against the fake.
+
 A sub-issue is the same command with `--parent APP-12`: the new issue prints
 `parent.identifier` as `APP-12`, and it is created in the parent's team unless `--team`
 or `MUSTER_TEAM` names one. `muster issue update APP-13 --parent none` takes it out

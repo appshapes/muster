@@ -1125,6 +1125,149 @@ fn an_issue_with_more_attachments_than_the_bound_writes_a_notice_and_exits_0() {
     );
 }
 
+// ---- projects (ADR 0013, feature 3) -------------------------------------------------------
+
+#[test]
+fn project_create_makes_a_project_for_the_team_and_refuses_a_duplicate_name() {
+    let fake = Fake::start().unwrap();
+    let run = muster(
+        &fake,
+        &[
+            "project",
+            "create",
+            "--name",
+            "Smoke tests",
+            "--description",
+            "Where the smoke issues go.",
+        ],
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let v = run.one();
+    assert_eq!(v["name"], "Smoke tests");
+    assert_eq!(v["description"], "Where the smoke issues go.");
+    assert_eq!(v["teams"]["nodes"][0]["key"], "APP");
+    assert!(v["id"].is_string() && v["url"].is_string() && v["status"]["name"].is_string());
+    let projects = muster(&fake, &["project", "list"]);
+    assert_eq!(projects.lines().len(), 2, "the seeded one and the new one");
+
+    let again = muster(&fake, &["project", "create", "--name", "smoke TESTS"]);
+    assert_eq!(again.code, 6, "{}", again.stderr);
+    let e = again.error();
+    assert_eq!(e["code"], "refused");
+    assert!(
+        e["message"].as_str().unwrap().contains("Smoke tests"),
+        "{e}"
+    );
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "ProjectCreate")
+            .count(),
+        1,
+        "refused before any mutation"
+    );
+    let allowed = muster(
+        &fake,
+        &[
+            "project",
+            "create",
+            "--name",
+            "Smoke tests",
+            "--allow-duplicate",
+        ],
+    );
+    assert_eq!(allowed.code, 0, "{}", allowed.stderr);
+
+    fake.add_team("OPS", "Operations");
+    let nowhere = muster(&fake, &["project", "create", "--name", "Lost"]);
+    assert_eq!(
+        nowhere.code, 2,
+        "two teams and none named: {}",
+        nowhere.stderr
+    );
+    let ops = muster(
+        &fake,
+        &["--team", "OPS", "project", "create", "--name", "Ops work"],
+    );
+    assert_eq!(ops.code, 0, "{}", ops.stderr);
+    assert_eq!(ops.one()["teams"]["nodes"][0]["key"], "OPS");
+}
+
+#[test]
+fn issue_list_filters_by_project_and_by_no_project() {
+    let fake = Fake::start().unwrap();
+    let run = muster(
+        &fake,
+        &[
+            "issue",
+            "create",
+            "--title",
+            "In the project",
+            "--project",
+            "Muster",
+        ],
+    );
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let in_project = muster(&fake, &["issue", "list", "--project", "muster"]);
+    assert_eq!(in_project.code, 0, "{}", in_project.stderr);
+    assert_eq!(in_project.lines().len(), 1);
+    assert_eq!(in_project.lines()[0]["title"], "In the project");
+    let none = muster(&fake, &["issue", "list", "--project", "none", "--all"]);
+    assert_eq!(none.code, 0, "{}", none.stderr);
+    assert!(none.lines().iter().all(|i| i["project"].is_null()));
+    assert_eq!(none.lines().len(), 4, "the four seeded issues");
+    let nope = muster(&fake, &["issue", "list", "--project", "Nope"]);
+    assert_eq!(
+        nope.code, 0,
+        "an unknown project is an empty list, as Linear filters it"
+    );
+    assert_eq!(nope.lines().len(), 0);
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "Projects")
+            .count(),
+        1,
+        "only the create resolved a project name; the lists filter by name in the one request"
+    );
+}
+
+#[test]
+fn a_project_in_more_teams_than_the_bound_prints_the_bound_and_a_notice() {
+    let fake = Fake::start().unwrap();
+    fake.add_project_across_teams("Everywhere", 11);
+    let run = muster(&fake, &["project", "list"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    let everywhere = run
+        .lines()
+        .into_iter()
+        .find(|p| p["name"] == "Everywhere")
+        .unwrap();
+    assert_eq!(everywhere["teams"]["nodes"].as_array().unwrap().len(), 10);
+    assert_eq!(everywhere["teams"]["pageInfo"]["hasNextPage"], true);
+    let notices = run.notices();
+    assert_eq!(notices.len(), 1, "{}", run.stderr);
+    assert_eq!(notices[0]["code"], "truncated");
+    assert!(
+        notices[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Everywhere")
+            && notices[0]["hint"]
+                .as_str()
+                .unwrap()
+                .contains("TEAMS_PER_PROJECT"),
+        "{}",
+        run.stderr
+    );
+
+    let exact = Fake::start().unwrap();
+    exact.add_project_across_teams("Ten", 10);
+    let run = muster(&exact, &["project", "list"]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert!(run.notices().is_empty(), "at the bound is not over it");
+}
+
 // ---- failures: network, unknown, rate limit, server -------------------------------------
 
 #[test]
@@ -1140,6 +1283,11 @@ fn a_mutation_whose_answer_never_came_exits_8_and_a_query_exits_7() {
         "{e}"
     );
     assert!(e["hint"].as_str().unwrap().contains("issue get"), "{e}");
+
+    fake.fail_next("ProjectCreate", Failure::Drop);
+    let run = muster(&fake, &["project", "create", "--name", "Dropped"]);
+    assert_eq!(run.code, 8, "{}", run.stderr);
+    assert_eq!(run.error()["code"], "unknown");
 
     fake.fail_next("AttachmentCreate", Failure::Drop);
     let run = muster(

@@ -29,13 +29,22 @@ pub const ATTACHMENTS_PER_ISSUE: usize = 50;
 /// How many sub-issues `issue get` fetches with an issue, newest first, as Linear orders
 /// a connection. A parent with more is reported cut with a notice on stderr.
 pub const CHILDREN_PER_ISSUE: usize = 50;
+/// How many teams `project list` and `project create` print with a project, under
+/// `teams.nodes`. `project list` reports a project in more as cut with a notice on
+/// stderr; a project `project create` makes has the one team, so its page is never cut
+/// and the command writes no notice. Bounded so that a page of `PAGE_CAP` projects stays
+/// inside Linear's query-complexity limit of 10,000: on 2026-11-03 Linear refused
+/// `project list --limit 250` at 20 teams per project as "Query too complex" (complexity
+/// 13,525), and accepts it at 10.
+pub const TEAMS_PER_PROJECT: usize = 10;
 /// How long one request may take, connect to last byte. Past it a query exits 7 and a
 /// mutation exits 8.
 pub const REQUEST_TIMEOUT_SECS: u64 = 30;
-/// The largest description, comment, title, link or subtitle muster sends. A larger
-/// one is refused, exit 6, before any request, and the message names which one it was.
+/// The largest description, comment, title, name, link or subtitle muster sends. A
+/// larger one is refused, exit 6, before any request, and the message names which one it
+/// was.
 /// A flag's value is bounded by the OS first: Linux refuses one argv string over
-/// 128 KiB (`MAX_ARG_STRLEN`) before muster runs, so from `--title`, `--url`,
+/// 128 KiB (`MAX_ARG_STRLEN`) before muster runs, so from `--title`, `--name`, `--url`,
 /// `--subtitle` or `--description` this bound is reached only where the OS allows the
 /// argument, as macOS does; from a file or stdin it is reached everywhere.
 pub const BODY_MAX_BYTES: usize = 256 * 1024;
@@ -78,6 +87,12 @@ pub const ALL: &[Bound] = &[
         meaning: "the sub-issues `issue get` fetches with an issue, newest first, as Linear orders them; a parent with more writes a `truncated` notice to stderr and the oldest are the ones left out",
     },
     Bound {
+        name: "TEAMS_PER_PROJECT",
+        value: TEAMS_PER_PROJECT as u64,
+        unit: "items",
+        meaning: "the teams `project list` and `project create` print with a project under `teams.nodes`; `project list` writes a `truncated` notice to stderr for a project in more, and a project `project create` makes has the one team, so it is never cut; bounded so that a page of PAGE_CAP projects stays inside Linear's query-complexity limit of 10,000",
+    },
+    Bound {
         name: "REQUEST_TIMEOUT_SECS",
         value: REQUEST_TIMEOUT_SECS,
         unit: "seconds",
@@ -87,7 +102,7 @@ pub const ALL: &[Bound] = &[
         name: "BODY_MAX_BYTES",
         value: BODY_MAX_BYTES as u64,
         unit: "bytes",
-        meaning: "the largest description, comment, title, link or subtitle sent; a larger one is refused, exit 6, before any request, and the message names which one it was; Linux refuses one argv string over 128 KiB before muster runs, so from a flag's value the bound is reached only where the OS allows the argument, from a file or stdin everywhere",
+        meaning: "the largest description, comment, title, name, link or subtitle sent; a larger one is refused, exit 6, before any request, and the message names which one it was; Linux refuses one argv string over 128 KiB before muster runs, so from a flag's value the bound is reached only where the OS allows the argument, from a file or stdin everywhere",
     },
     Bound {
         name: "RESPONSE_MAX_BYTES",
