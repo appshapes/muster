@@ -46,6 +46,10 @@ pub const MEMBERS_PER_PROJECT: usize = 50;
 /// `projectMilestones.nodes`. A project with more is reported cut with a notice on
 /// stderr.
 pub const MILESTONES_PER_PROJECT: usize = 50;
+/// How many projects `initiative get` prints with an initiative, under
+/// `projects.nodes`. An initiative with more is reported cut with a notice on stderr
+/// (ADR 0014, group 12).
+pub const PROJECTS_PER_INITIATIVE: usize = 50;
 /// How long one request may take, connect to last byte. Past it a query exits 7 and a
 /// mutation exits 8.
 pub const REQUEST_TIMEOUT_SECS: u64 = 30;
@@ -112,6 +116,12 @@ pub const ALL: &[Bound] = &[
         value: MILESTONES_PER_PROJECT as u64,
         unit: "items",
         meaning: "the milestones `project get` prints with a project under `projectMilestones.nodes`; a project with more writes a `truncated` notice to stderr",
+    },
+    Bound {
+        name: "PROJECTS_PER_INITIATIVE",
+        value: PROJECTS_PER_INITIATIVE as u64,
+        unit: "items",
+        meaning: "the projects `initiative get` prints with an initiative under `projects.nodes`; an initiative with more writes a `truncated` notice to stderr",
     },
     Bound {
         name: "REQUEST_TIMEOUT_SECS",

@@ -6,18 +6,19 @@ use serde_json::{Map, Value, json};
 
 use crate::bounds::{
     ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE, MEMBERS_PER_PROJECT,
-    MILESTONES_PER_PROJECT, PAGE_CAP, TEAMS_PER_PROJECT,
+    MILESTONES_PER_PROJECT, PAGE_CAP, PROJECTS_PER_INITIATIVE, TEAMS_PER_PROJECT,
 };
 use crate::cli::{
-    AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
-    IssueListArgs, LabelCommand, LabelCreateArgs, LabelRefArgs, LabelUpdateArgs, ListArgs,
-    MemberArgs, MemberCommand, MilestoneCommand, MilestoneCreateArgs, MilestoneListArgs,
-    MilestoneRefArgs, MilestoneUpdateArgs, ProjectCommand, ProjectCreateArgs, ProjectRefArgs,
-    ProjectStatusCommand, ProjectStatusCreateArgs, ProjectStatusRefArgs, ProjectStatusUpdateArgs,
-    ProjectUpdateArgs, ProjectUpdateCommand, ProjectUpdateCreateArgs, ProjectUpdateListArgs,
-    StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs,
-    TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs, UserRefArgs, UserRoleArgs,
-    UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
+    AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, InitiativeCommand,
+    InitiativeCreateArgs, InitiativeListArgs, InitiativeProjectArgs, InitiativeRefArgs,
+    InitiativeUpdateArgs, IssueCommand, IssueListArgs, LabelCommand, LabelCreateArgs, LabelRefArgs,
+    LabelUpdateArgs, ListArgs, MemberArgs, MemberCommand, MilestoneCommand, MilestoneCreateArgs,
+    MilestoneListArgs, MilestoneRefArgs, MilestoneUpdateArgs, ProjectCommand, ProjectCreateArgs,
+    ProjectRefArgs, ProjectStatusCommand, ProjectStatusCreateArgs, ProjectStatusRefArgs,
+    ProjectStatusUpdateArgs, ProjectUpdateArgs, ProjectUpdateCommand, ProjectUpdateCreateArgs,
+    ProjectUpdateListArgs, StateCommand, StateCreateArgs, StateRefArgs, StateUpdateArgs,
+    TeamCommand, TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand,
+    UserListArgs, UserRefArgs, UserRoleArgs, UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -103,6 +104,35 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 ProjectCommand::Update(args) => project_update(&session, args, out),
                 ProjectCommand::Delete(args) => project_delete(&session, args, out),
                 ProjectCommand::Unarchive(args) => project_unarchive(&session, args, out),
+            }
+        }
+        Command::Initiative { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                InitiativeCommand::List(args) => initiative_list(&session, args, out),
+                InitiativeCommand::Get(args) => initiative_get(&session, args, out),
+                InitiativeCommand::Create(args) => initiative_create(&session, args, out),
+                InitiativeCommand::Update(args) => initiative_update(&session, args, out),
+                InitiativeCommand::Archive(args) => initiative_lifecycle(
+                    &session,
+                    args,
+                    &ops::INITIATIVE_ARCHIVE,
+                    "initiativeArchive",
+                    false,
+                    out,
+                ),
+                InitiativeCommand::Unarchive(args) => initiative_lifecycle(
+                    &session,
+                    args,
+                    &ops::INITIATIVE_UNARCHIVE,
+                    "initiativeUnarchive",
+                    true,
+                    out,
+                ),
+                InitiativeCommand::AddProject(args) => initiative_add_project(&session, args, out),
+                InitiativeCommand::RemoveProject(args) => {
+                    initiative_remove_project(&session, args, out)
+                }
             }
         }
         Command::Milestone { command } => {
@@ -472,6 +502,23 @@ impl Session {
                     names(&stones, "name")
                 ),
                 "name one from `muster milestone list --project <NAME>`",
+            )),
+        }
+    }
+
+    /// One initiative with its content and its projects, by name, in one request;
+    /// an archived one only when asked (ADR 0014, group 12).
+    fn initiative_full(&self, name: &str, include_archived: bool) -> Result<Value, Error> {
+        let data = self.linear.run(
+            &ops::INITIATIVE_BY_NAME,
+            json!({ "name": name, "includeArchived": include_archived, "projects": PROJECTS_PER_INITIATIVE }),
+        )?;
+        match nodes(&data, "initiatives").into_iter().next() {
+            Some(initiative) => Ok(initiative),
+            None => Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!("no initiative named {name:?}"),
+                "name one from `muster initiative list`; an archived one is reached by `initiative unarchive <NAME>`",
             )),
         }
     }
@@ -1745,6 +1792,282 @@ fn project_create(session: &Session, args: &ProjectCreateArgs, out: &Output) -> 
     // A project muster makes has the one team, so its `teams` page is never cut; the
     // `truncated` notice is `project list`'s, where a project may span many.
     out.emit(&payload(&data, "projectCreate", "project")?);
+    Ok(())
+}
+
+fn initiative_list(
+    session: &Session,
+    args: &InitiativeListArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let n = limit(args.limit)?;
+    let filter = match args.status {
+        Some(status) => json!({ "status": { "eq": status.linear() } }),
+        None => Value::Null,
+    };
+    let data = session
+        .linear
+        .run(&ops::INITIATIVES, json!({ "first": n, "filter": filter }))?;
+    emit_list(
+        out,
+        nodes(&data, "initiatives"),
+        has_next_page(&data, "initiatives"),
+        "initiatives",
+        n,
+    );
+    Ok(())
+}
+
+fn initiative_get(session: &Session, args: &InitiativeRefArgs, out: &Output) -> Result<(), Error> {
+    let initiative = session.initiative_full(&args.name, false)?;
+    out.emit(&initiative);
+    if has_next_page(&initiative, "projects") {
+        out.notice(
+            "truncated",
+            &format!(
+                "projects: {} has more than the {PROJECTS_PER_INITIATIVE} printed",
+                str_at(&initiative, "name").unwrap_or(&args.name)
+            ),
+            "PROJECTS_PER_INITIATIVE is the bound (docs/reference/commands.md#bounds)",
+        );
+    }
+    Ok(())
+}
+
+/// The scalar part of an initiative input from the create or update flags: only what
+/// was passed, the texts bounded, the content inline or from its file, `none`
+/// clearing the target date.
+fn initiative_input(
+    name: Option<&str>,
+    description: &Option<String>,
+    status: Option<crate::cli::InitiativeStatus>,
+    target_date: &Option<String>,
+    priority: Option<u8>,
+    content: &Option<String>,
+    content_file: &Option<String>,
+) -> Result<Map<String, Value>, Error> {
+    let mut input = Map::new();
+    if let Some(name) = name {
+        check_body(Text::Name, name)?;
+        input.insert("name".into(), json!(name));
+    }
+    if let Some(description) = description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if let Some(status) = status {
+        input.insert("status".into(), json!(status.linear()));
+    }
+    if let Some(date) = target_date {
+        input.insert("targetDate".into(), date_or_none(date));
+    }
+    if let Some(priority) = priority {
+        input.insert("priority".into(), json!(priority));
+    }
+    if let Some(content) = body_from(content, content_file)? {
+        input.insert("content".into(), json!(content));
+    }
+    Ok(input)
+}
+
+fn initiative_create(
+    session: &Session,
+    args: &InitiativeCreateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let mut input = initiative_input(
+        Some(&args.name),
+        &args.description,
+        args.status,
+        &args.target_date,
+        args.priority,
+        &args.content,
+        &args.content_file,
+    )?;
+    // The guard: `initiative get <NAME>` and `--project`'s kin resolve a name to one.
+    // Only a missing initiative lets the create go on; any other failure of the read
+    // (a timeout, the rate limit, a dropped connection) is reported as itself.
+    if !args.allow_duplicate {
+        match session.initiative_full(&args.name, false) {
+            Ok(existing) => {
+                return Err(Error::with_hint(
+                    ErrorCode::Refused,
+                    format!(
+                        "an initiative named {:?} exists: {}",
+                        str_at(&existing, "name").unwrap_or(&args.name),
+                        str_at(&existing, "url").unwrap_or("?")
+                    ),
+                    "use that initiative, or pass --allow-duplicate if a second one is wanted",
+                )
+                .at("muster-initiative-create"));
+            }
+            Err(error) if error.code == ErrorCode::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    if let Some(owner) = &args.owner {
+        input.insert("ownerId".into(), json!(session.user_id(owner)?));
+    }
+    if let Some(key) = &args.lead_team {
+        input.insert(
+            "leadTeamId".into(),
+            json!(need_str(
+                &session.team_full(key, false)?,
+                "id",
+                "TeamByKey"
+            )?),
+        );
+    }
+    let data = session.linear.run(
+        &ops::INITIATIVE_CREATE,
+        json!({ "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "initiativeCreate", "initiative")?);
+    Ok(())
+}
+
+fn initiative_update(
+    session: &Session,
+    args: &InitiativeUpdateArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let mut input = initiative_input(
+        args.name.as_deref(),
+        &args.description,
+        args.status,
+        &args.target_date,
+        args.priority,
+        &args.content,
+        &args.content_file,
+    )?;
+    let initiative = session.initiative_full(&args.initiative, false)?;
+    let id = need_str(&initiative, "id", "InitiativeByName")?;
+    if let Some(owner) = &args.owner {
+        let value = if is_none(owner) {
+            Value::Null
+        } else {
+            json!(session.user_id(owner)?)
+        };
+        input.insert("ownerId".into(), value);
+    }
+    if let Some(key) = &args.lead_team {
+        let value = if is_none(key) {
+            Value::Null
+        } else {
+            json!(need_str(
+                &session.team_full(key, false)?,
+                "id",
+                "TeamByKey"
+            )?)
+        };
+        input.insert("leadTeamId".into(), value);
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --name, --description, --owner, --lead-team, --status, --target-date, --priority, --content, --content-file",
+        ));
+    }
+    let data = session.linear.run(
+        &ops::INITIATIVE_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "initiativeUpdate", "initiative")?);
+    Ok(())
+}
+
+/// `initiative archive` and `unarchive`: one mutation with the initiative's id, and
+/// Linear's entity.
+fn initiative_lifecycle(
+    session: &Session,
+    args: &InitiativeRefArgs,
+    op: &ops::Operation,
+    field: &str,
+    include_archived: bool,
+    out: &Output,
+) -> Result<(), Error> {
+    let initiative = session.initiative_full(&args.name, include_archived)?;
+    let id = need_str(&initiative, "id", "InitiativeByName")?;
+    let data = session.linear.run(op, json!({ "id": id }))?;
+    out.emit(&payload(&data, field, "entity")?);
+    Ok(())
+}
+
+fn initiative_add_project(
+    session: &Session,
+    args: &InitiativeProjectArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let initiative_id = need_str(
+        &session.initiative_full(&args.name, false)?,
+        "id",
+        "InitiativeByName",
+    )?;
+    let project_id = session.project_id(&args.project)?;
+    let data = session.linear.run(
+        &ops::INITIATIVE_LINK_CREATE,
+        json!({ "input": { "initiativeId": initiative_id, "projectId": project_id } }),
+    )?;
+    out.emit(&payload(
+        &data,
+        "initiativeToProjectCreate",
+        "initiativeToProject",
+    )?);
+    Ok(())
+}
+
+/// `initiative remove-project`: the link is found among the workspace's up to
+/// `PAGE_CAP` initiative-to-project links, since Linear's list takes no filter; exit
+/// 4 when the project is not in the initiative, exit 6 when the list was cut.
+fn initiative_remove_project(
+    session: &Session,
+    args: &InitiativeProjectArgs,
+    out: &Output,
+) -> Result<(), Error> {
+    let initiative_id = need_str(
+        &session.initiative_full(&args.name, false)?,
+        "id",
+        "InitiativeByName",
+    )?;
+    let project_id = session.project_id(&args.project)?;
+    let data = session
+        .linear
+        .run(&ops::INITIATIVE_LINKS, json!({ "first": PAGE_CAP }))?;
+    let links = nodes(&data, "initiativeToProjects");
+    let found = links.iter().find(|l| {
+        str_at(l, "initiative.id") == Some(initiative_id.as_str())
+            && str_at(l, "project.id") == Some(project_id.as_str())
+    });
+    let link = match found {
+        Some(link) => link.clone(),
+        None if has_next_page(&data, "initiativeToProjects") => {
+            return Err(Error::with_hint(
+                ErrorCode::Refused,
+                format!(
+                    "the link between {:?} and {:?} is not among the PAGE_CAP ({PAGE_CAP}) newest, and the workspace has more",
+                    args.name, args.project
+                ),
+                "Linear's list of initiative-to-project links takes no filter; the rest are reached in the browser; PAGE_CAP is the bound",
+            )
+            .at("bounds"));
+        }
+        None => {
+            return Err(Error::with_hint(
+                ErrorCode::NotFound,
+                format!(
+                    "project {:?} is not in initiative {:?}",
+                    args.project, args.name
+                ),
+                "`muster initiative get <NAME>` lists an initiative's projects",
+            ));
+        }
+    };
+    let id = need_str(&link, "id", "InitiativeLinks")?;
+    let data = session
+        .linear
+        .run(&ops::INITIATIVE_LINK_DELETE, json!({ "id": id }))?;
+    out.emit(&delete_payload(&data, "initiativeToProjectDelete")?);
     Ok(())
 }
 
@@ -3315,6 +3638,53 @@ mod tests {
                 "a name or a content over BODY_MAX_BYTES is refused before any request"
             );
         }
+    }
+
+    #[test]
+    fn an_initiative_input_holds_only_what_was_passed() {
+        use crate::cli::InitiativeStatus;
+        let input = initiative_input(
+            Some("Growth"),
+            &None,
+            Some(InitiativeStatus::Active),
+            &Some("none".into()),
+            None,
+            &Some("# The plan".into()),
+            &None,
+        )
+        .unwrap_or_default();
+        assert_eq!(input.get("name"), Some(&json!("Growth")));
+        assert_eq!(input.get("status"), Some(&json!("Active")));
+        assert_eq!(
+            input.get("targetDate"),
+            Some(&Value::Null),
+            "`none` clears the date"
+        );
+        assert_eq!(
+            input.get("content"),
+            Some(&json!("# The plan")),
+            "--content inline, as it is"
+        );
+        assert_eq!(
+            input.get("description"),
+            None,
+            "a flag left out is not sent"
+        );
+        assert_eq!(input.get("priority"), None);
+        assert!(
+            initiative_input(
+                None,
+                &None,
+                None,
+                &None,
+                None,
+                &Some("c".repeat(BODY_MAX_BYTES + 1)),
+                &None,
+            )
+            .err()
+            .is_some_and(|e| e.code == ErrorCode::Refused),
+            "a content over BODY_MAX_BYTES is refused before any request"
+        );
     }
 
     #[test]

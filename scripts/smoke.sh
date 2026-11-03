@@ -133,6 +133,54 @@ jq -e --arg n "Smoky $short" '.name == $n' "$tmp/status-archive.json" >/dev/null
 jq -e --arg n "Smoky $short" '.name == $n' "$tmp/status-unarchive.json" >/dev/null
 "$bin" project-status archive "Smoky $short" | jq -c '{name}' >/dev/null
 echo
+echo "smoke: muster initiative create --name 'Smoke initiative' (exit 6 after the first run; it stays, for the fixture), add-project, get, remove-project, then a throwaway initiative updated, archived and unarchived (ADR 0014)"
+if [ "$("$bin" workspace get | jq -r '.roadmapEnabled')" != "true" ]; then
+  echo "smoke: initiatives are off in this workspace; muster workspace update --roadmap true switches them on, and they stay on"
+  "$bin" workspace update --roadmap true | jq -c '{name, roadmapEnabled}'
+fi
+set +e
+"$bin" initiative create --name "Smoke initiative" --description "The initiative the smoke project goes in; it stays so that the fixture has a node (ADR 0014)." --owner me --status Active > "$tmp/initiative.json" 2> "$tmp/initiative.err"
+code=$?
+set -e
+case "$code" in
+  0) jq -c '{name, status, owner: .owner.displayName}' "$tmp/initiative.json" ;;
+  6) cat "$tmp/initiative.err"; jq -e '.error.code == "refused"' "$tmp/initiative.err" >/dev/null ;;
+  *) echo "smoke: initiative create exited $code" >&2; cat "$tmp/initiative.err" >&2; exit 1 ;;
+esac
+if jq -e '.error.linear.code == "FORBIDDEN" or .error.linear.code == "FEATURE_NOT_ACCESSIBLE"' "$tmp/initiative.err" >/dev/null 2>&1; then
+  echo "smoke: the plan does not allow initiatives through the API; the initiative steps are skipped"
+else
+  "$bin" initiative add-project "Smoke initiative" --project "Smoke tests" > "$tmp/initiative-link.json" 2> "$tmp/initiative-link.err" || { cat "$tmp/initiative-link.err"; jq -e '.error.code == "refused"' "$tmp/initiative-link.err" >/dev/null; }
+  "$bin" initiative get "Smoke initiative" | jq -c '{name, status, projects: [.projects.nodes[].name]}' | tee "$tmp/initiative-get.json"
+  jq -e '.projects | index("Smoke tests") != null' "$tmp/initiative-get.json" >/dev/null
+  "$bin" initiative remove-project "Smoke initiative" --project "Smoke tests" | jq -c '{success}' | tee "$tmp/initiative-unlink.json"
+  jq -e '.success == true' "$tmp/initiative-unlink.json" >/dev/null
+  "$bin" initiative get "Smoke initiative" | jq -e '.projects.nodes | length == 0' >/dev/null
+  "$bin" initiative add-project "Smoke initiative" --project "Smoke tests" | jq -c '{project: .project.name, initiative: .initiative.name}' | tee "$tmp/initiative-relink.json"
+  jq -e '.project == "Smoke tests"' "$tmp/initiative-relink.json" >/dev/null
+  "$bin" initiative list --status Active | jq -c '{name, status}' | tee "$tmp/initiatives.jsonl"
+  jq -s -e 'map(.name) | index("Smoke initiative") != null' "$tmp/initiatives.jsonl" >/dev/null
+  "$bin" initiative create --name "Smoke $stamp" --status Planned --priority 4 | jq -c '{name, status, priority}' | tee "$tmp/initiative-throwaway.json"
+  jq -e --arg n "Smoke $stamp" '.name == $n' "$tmp/initiative-throwaway.json" >/dev/null
+  "$bin" initiative update "Smoke $stamp" --name "Smoky $stamp" --status Canceled --target-date none | jq -c '{name, status}' | tee "$tmp/initiative-update.json"
+  jq -e --arg n "Smoky $stamp" '.name == $n and .status == "Canceled"' "$tmp/initiative-update.json" >/dev/null
+  "$bin" initiative archive "Smoky $stamp" | jq -c '{name, archivedAt}' | tee "$tmp/initiative-archive.json"
+  jq -e '.archivedAt != null' "$tmp/initiative-archive.json" >/dev/null
+  "$bin" initiative unarchive "Smoky $stamp" | jq -c '{name, archivedAt}' | tee "$tmp/initiative-unarchive.json"
+  jq -e '.archivedAt == null' "$tmp/initiative-unarchive.json" >/dev/null
+  "$bin" initiative archive "Smoky $stamp" | jq -c '{name}' >/dev/null
+  echo "smoke: muster initiative update --lead-team SMK (a team initiative; exit 6 with FEATURE_NOT_ACCESSIBLE below the Business plan)"
+  set +e
+  "$bin" initiative update "Smoke initiative" --lead-team SMK > "$tmp/initiative-lead.json" 2> "$tmp/initiative-lead.err"
+  code=$?
+  set -e
+  case "$code" in
+    0) jq -c '{name, leadTeam: .leadTeam.key}' "$tmp/initiative-lead.json" ;;
+    6) cat "$tmp/initiative-lead.err"; jq -e '.error.linear.code == "FEATURE_NOT_ACCESSIBLE"' "$tmp/initiative-lead.err" >/dev/null; echo "smoke: the plan does not sell team initiatives; --lead-team is refused as documented" ;;
+    *) echo "smoke: initiative update --lead-team exited $code" >&2; cat "$tmp/initiative-lead.err" >&2; exit 1 ;;
+  esac
+fi
+echo
 echo "smoke: muster project get 'Smoke tests', then a throwaway project updated, deleted, unarchived and deleted again (ADR 0014)"
 "$bin" project get "Smoke tests" | jq -c '{name, status: .status.name, members: (.members.nodes | length), milestones: (.projectMilestones.nodes | length), trashed}' | tee "$tmp/project-get.json"
 jq -e '.name == "Smoke tests"' "$tmp/project-get.json" >/dev/null
