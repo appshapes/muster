@@ -10,9 +10,10 @@ use crate::bounds::{
 use crate::cli::{
     AttachArgs, Cli, CloseArgs, Command, CommentArgs, CreateArgs, GetArgs, IssueCommand,
     IssueListArgs, LabelCommand, LabelCreateArgs, LabelRefArgs, LabelUpdateArgs, ListArgs,
-    ListCommand, MemberArgs, MemberCommand, ProjectCommand, ProjectCreateArgs, TeamCommand,
-    TeamCreateArgs, TeamRefArgs, TeamUpdateArgs, UpdateArgs, UserCommand, UserListArgs,
-    UserRefArgs, UserRoleArgs, UserUpdateArgs, WorkspaceCommand, WorkspaceUpdateArgs,
+    MemberArgs, MemberCommand, ProjectCommand, ProjectCreateArgs, StateCommand, StateCreateArgs,
+    StateRefArgs, StateUpdateArgs, TeamCommand, TeamCreateArgs, TeamRefArgs, TeamUpdateArgs,
+    UpdateArgs, UserCommand, UserListArgs, UserRefArgs, UserRoleArgs, UserUpdateArgs,
+    WorkspaceCommand, WorkspaceUpdateArgs,
 };
 use crate::config::{Config, KeySource, TeamSource};
 use crate::error::{Error, ErrorCode};
@@ -61,9 +62,15 @@ pub fn run(cli: &Cli, out: &Output) -> Result<(), Error> {
                 MemberCommand::Remove(args) => member_remove(&session, args, out),
             }
         }
-        Command::State {
-            command: ListCommand::List(args),
-        } => list_states(&Session::open(&config)?, args, out),
+        Command::State { command } => {
+            let session = Session::open(&config)?;
+            match command {
+                StateCommand::List(args) => list_states(&session, args, out),
+                StateCommand::Create(args) => state_create(&session, args, out),
+                StateCommand::Update(args) => state_update(&session, args, out),
+                StateCommand::Archive(args) => state_archive(&session, args, out),
+            }
+        }
         Command::Label { command } => {
             let session = Session::open(&config)?;
             match command {
@@ -685,6 +692,94 @@ fn workspace_update(
         json!({ "input": Value::Object(input) }),
     )?;
     out.emit(&payload(&data, "organizationUpdate", "organization")?);
+    Ok(())
+}
+
+/// The input of `workflowStateCreate` but its `teamId`: the flags, checked before any
+/// request.
+fn state_input(args: &StateCreateArgs) -> Result<Map<String, Value>, Error> {
+    check_body(Text::Name, &args.name)?;
+    let mut input = Map::new();
+    input.insert("name".into(), json!(args.name));
+    input.insert("type".into(), json!(args.r#type.linear()));
+    input.insert("color".into(), json!(args.color));
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if let Some(position) = args.position {
+        input.insert("position".into(), json!(position));
+    }
+    Ok(input)
+}
+
+fn state_create(session: &Session, args: &StateCreateArgs, out: &Output) -> Result<(), Error> {
+    let mut input = state_input(args)?;
+    let (team, _) = session.team()?;
+    let team_key = need_str(&team, "key", "Teams")?;
+    // The guard: `--state <NAME>` resolves a name to one state of the team.
+    if !args.allow_duplicate
+        && let Some(existing) = find_by(&session.states(&team_key)?, "name", &args.name)
+    {
+        return Err(Error::with_hint(
+            ErrorCode::Refused,
+            format!(
+                "team {team_key} has a state named {:?} already, of type {}",
+                str_at(existing, "name").unwrap_or(&args.name),
+                str_at(existing, "type").unwrap_or("?")
+            ),
+            "use that state, or pass --allow-duplicate if a second one is wanted",
+        )
+        .at("muster-state-create"));
+    }
+    input.insert("teamId".into(), json!(need_str(&team, "id", "Teams")?));
+    let data = session
+        .linear
+        .run(&ops::STATE_CREATE, json!({ "input": Value::Object(input) }))?;
+    out.emit(&payload(&data, "workflowStateCreate", "workflowState")?);
+    Ok(())
+}
+
+fn state_update(session: &Session, args: &StateUpdateArgs, out: &Output) -> Result<(), Error> {
+    let mut input = Map::new();
+    if let Some(name) = &args.name {
+        check_body(Text::Name, name)?;
+        input.insert("name".into(), json!(name));
+    }
+    if let Some(color) = &args.color {
+        input.insert("color".into(), json!(color));
+    }
+    if let Some(description) = &args.description {
+        check_body(Text::Body, description)?;
+        input.insert("description".into(), json!(description));
+    }
+    if let Some(position) = args.position {
+        input.insert("position".into(), json!(position));
+    }
+    if input.is_empty() {
+        return Err(Error::with_hint(
+            ErrorCode::Usage,
+            "nothing to change",
+            "pass at least one of --name, --color, --description, --position; a state's type cannot change",
+        ));
+    }
+    let team_key = session.team_key()?;
+    let id = session.state_id(&team_key, &args.state)?;
+    let data = session.linear.run(
+        &ops::STATE_UPDATE,
+        json!({ "id": id, "input": Value::Object(input) }),
+    )?;
+    out.emit(&payload(&data, "workflowStateUpdate", "workflowState")?);
+    Ok(())
+}
+
+fn state_archive(session: &Session, args: &StateRefArgs, out: &Output) -> Result<(), Error> {
+    let team_key = session.team_key()?;
+    let id = session.state_id(&team_key, &args.name)?;
+    let data = session
+        .linear
+        .run(&ops::STATE_ARCHIVE, json!({ "id": id }))?;
+    out.emit(&payload(&data, "workflowStateArchive", "entity")?);
     Ok(())
 }
 

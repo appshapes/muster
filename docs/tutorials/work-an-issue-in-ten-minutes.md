@@ -113,6 +113,11 @@ takes it out of use (it stays on its issues and goes on no new one, and
 `muster label restore Smoky` brings it back), and `muster label delete Smoky` removes
 it from every issue, which Linear cannot undo
 ([ADR 0014](../decisions/0014-build-the-third-slice-administrative-commands.md)).
+The team's workflow is `muster state list`, by position; `muster state create --name
+"Blocked" --type started --color "#eb5757"` adds a state (one JSON line with its
+`name`, `type`, `position` and `team`; the type never changes afterwards),
+`muster state update Blocked --name "Waiting"` renames it, and `muster state archive
+Waiting` takes it out once no issue is in it, with nothing to bring it back.
 
 A sub-issue is the same command with `--parent APP-12`: the new issue prints
 `parent.identifier` as `APP-12`, and it is created in the parent's team unless `--team`

@@ -116,6 +116,11 @@ pub const LABEL_FIELDS: &str = "fragment LabelFields on IssueLabel {
   team { id key } parent { id name }
 }";
 
+/// The fields every workflow state answer carries (ADR 0014, group 7).
+pub const STATE_FIELDS: &str = "fragment StateFields on WorkflowState {
+  id name type position color description team { id key }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -170,11 +175,9 @@ op!(
     "WorkflowStates",
     Kind::Query,
     "query WorkflowStates($first: Int!, $filter: WorkflowStateFilter) {
-  workflowStates(first: $first, filter: $filter) {
-    nodes { id name type position color description team { id key } }
-    pageInfo { hasNextPage }
-  }
-}"
+  workflowStates(first: $first, filter: $filter) { nodes { ...StateFields } pageInfo { hasNextPage } }
+}",
+    &[STATE_FIELDS]
 );
 
 op!(
@@ -478,6 +481,36 @@ op!(
 }"
 );
 
+op!(
+    STATE_CREATE,
+    "WorkflowStateCreate",
+    Kind::Mutation,
+    "mutation WorkflowStateCreate($input: WorkflowStateCreateInput!) {
+  workflowStateCreate(input: $input) { success workflowState { ...StateFields } }
+}",
+    &[STATE_FIELDS]
+);
+
+op!(
+    STATE_UPDATE,
+    "WorkflowStateUpdate",
+    Kind::Mutation,
+    "mutation WorkflowStateUpdate($id: String!, $input: WorkflowStateUpdateInput!) {
+  workflowStateUpdate(id: $id, input: $input) { success workflowState { ...StateFields } }
+}",
+    &[STATE_FIELDS]
+);
+
+op!(
+    STATE_ARCHIVE,
+    "WorkflowStateArchive",
+    Kind::Mutation,
+    "mutation WorkflowStateArchive($id: String!) {
+  workflowStateArchive(id: $id) { success entity { ...StateFields } }
+}",
+    &[STATE_FIELDS]
+);
+
 /// Every read operation, in the order `just record-fixtures` records them.
 pub static READS: &[&Operation] = &[
     &VIEWER,
@@ -518,6 +551,9 @@ pub static WRITES: &[&Operation] = &[
     &LABEL_RETIRE,
     &LABEL_RESTORE,
     &LABEL_DELETE,
+    &STATE_CREATE,
+    &STATE_UPDATE,
+    &STATE_ARCHIVE,
 ];
 
 /// An operation by its name, for the fixture test and the fake.
@@ -567,6 +603,7 @@ mod tests {
                 "MembershipFields",
                 "UserFields",
                 "LabelFields",
+                "StateFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));

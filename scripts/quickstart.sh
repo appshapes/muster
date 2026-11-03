@@ -63,6 +63,10 @@ step "muster issue get $id"
 "$bin" issue get "$id" | jq '{title, state: .state.name, comments: [.comments.nodes[].body]}' | tee "$tmp/get.json"
 jq -e '.title == "Try muster" and .state == "Backlog" and .comments == ["Read it back with issue get."]' "$tmp/get.json" >/dev/null
 
+step "muster state create"
+"$bin" state create --name "Trying muster" --type started --color "#4ea7fc" | tee "$tmp/state.json"
+jq -e '.name == "Trying muster" and .type == "started" and .team.key == "APP"' "$tmp/state.json" >/dev/null
+
 step "muster label create"
 "$bin" label create --name "Trying muster" --color "#26b5ce" | tee "$tmp/label.json"
 jq -e '.name == "Trying muster" and .team.key == "APP" and .retiredAt == null' "$tmp/label.json" >/dev/null
