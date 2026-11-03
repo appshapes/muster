@@ -1,0 +1,45 @@
+{
+  "cycles": {
+    "nodes": [
+      {
+        "archivedAt": null,
+        "completedAt": "<string>",
+        "createdAt": "<string>",
+        "description": "<string>",
+        "endsAt": "<string>",
+        "id": "<string>",
+        "isActive": true,
+        "isFuture": true,
+        "isNext": true,
+        "isPast": true,
+        "isPrevious": true,
+        "issues": {
+          "nodes": [
+            {
+              "id": "<string>",
+              "identifier": "<string>",
+              "state": {
+                "id": "<string>",
+                "name": "<string>",
+                "type": "<string>"
+              },
+              "title": "<string>"
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": true
+          }
+        },
+        "name": "<string>",
+        "number": 0,
+        "progress": 0,
+        "startsAt": "<string>",
+        "team": {
+          "id": "<string>",
+          "key": "<string>"
+        },
+        "updatedAt": "<string>"
+      }
+    ]
+  }
+}

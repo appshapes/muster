@@ -168,6 +168,50 @@ pub const INITIATIVE_LINK_FIELDS: &str = "fragment InitiativeLinkFields on Initi
   initiative { id name }
 }";
 
+/// The fields every cycle answer carries (ADR 0014, group 13).
+pub const CYCLE_FIELDS: &str = "fragment CycleFields on Cycle {
+  id number name description startsAt endsAt completedAt
+  isActive isNext isPrevious isFuture isPast progress
+  createdAt updatedAt archivedAt
+  team { id key }
+}";
+
+/// The fields every document answer carries (ADR 0014, group 14); `content` comes
+/// with `document get` only.
+pub const DOCUMENT_FIELDS: &str = "fragment DocumentFields on Document {
+  id title icon color url slugId createdAt updatedAt archivedAt trashed
+  creator { id name displayName }
+  owner { id name displayName }
+  updatedBy { id name displayName }
+  project { id name }
+  issue { id identifier }
+}";
+
+/// The fields every template answer carries (ADR 0014, group 15); `templateData` is
+/// Linear's JSON as it returns it.
+pub const TEMPLATE_FIELDS: &str = "fragment TemplateFields on Template {
+  id type name description icon color templateData sortOrder lastAppliedAt
+  createdAt updatedAt archivedAt
+  team { id key }
+  creator { id name displayName }
+}";
+
+/// The fields every webhook answer carries (ADR 0014, group 16); the `secret` is
+/// never asked for.
+pub const WEBHOOK_FIELDS: &str = "fragment WebhookFields on Webhook {
+  id label url enabled resourceTypes allPublicTeams
+  createdAt updatedAt archivedAt
+  team { id key }
+  creator { id name displayName }
+}";
+
+/// The fields every audit entry answer carries (ADR 0014, group 17); `metadata` is
+/// Linear's own object, printed as it comes.
+pub const AUDIT_ENTRY_FIELDS: &str = "fragment AuditEntryFields on AuditEntry {
+  id type createdAt ip countryCode metadata
+  actor { id name displayName }
+}";
+
 /// The fields every comment answer carries.
 pub const COMMENT_FIELDS: &str = "fragment CommentFields on Comment {
   id body url createdAt updatedAt editedAt
@@ -268,8 +312,8 @@ op!(ISSUE_BY_ID, "IssueById", Kind::Query, "query IssueById($id: String!, $comme
   }
 }", &[ISSUE_FIELDS, COMMENT_FIELDS]);
 
-op!(ISSUES, "Issues", Kind::Query, "query Issues($first: Int!, $filter: IssueFilter, $orderBy: PaginationOrderBy) {
-  issues(first: $first, filter: $filter, orderBy: $orderBy) { nodes { ...IssueFields } pageInfo { hasNextPage } }
+op!(ISSUES, "Issues", Kind::Query, "query Issues($first: Int!, $filter: IssueFilter, $orderBy: PaginationOrderBy, $includeArchived: Boolean) {
+  issues(first: $first, filter: $filter, orderBy: $orderBy, includeArchived: $includeArchived) { nodes { ...IssueFields } pageInfo { hasNextPage } }
 }", &[ISSUE_FIELDS]);
 
 op!(
@@ -384,6 +428,93 @@ op!(
   initiativeToProjects(first: $first) { nodes { ...InitiativeLinkFields } pageInfo { hasNextPage } }
 }",
     &[INITIATIVE_LINK_FIELDS]
+);
+
+op!(
+    CYCLES,
+    "Cycles",
+    Kind::Query,
+    "query Cycles($first: Int!, $filter: CycleFilter) {
+  cycles(first: $first, filter: $filter) { nodes { ...CycleFields } pageInfo { hasNextPage } }
+}",
+    &[CYCLE_FIELDS]
+);
+
+op!(
+    CYCLE_BY_NUMBER,
+    "CycleByNumber",
+    Kind::Query,
+    "query CycleByNumber($key: String!, $number: Float!, $issues: Int!) {
+  cycles(first: 1, filter: { team: { key: { eq: $key } }, number: { eq: $number } }) {
+    nodes {
+      ...CycleFields
+      issues(first: $issues) { nodes { id identifier title state { id name type } } pageInfo { hasNextPage } }
+    }
+  }
+}",
+    &[CYCLE_FIELDS]
+);
+
+op!(
+    DOCUMENTS,
+    "Documents",
+    Kind::Query,
+    "query Documents($first: Int!, $filter: DocumentFilter) {
+  documents(first: $first, filter: $filter) { nodes { ...DocumentFields } pageInfo { hasNextPage } }
+}",
+    &[DOCUMENT_FIELDS]
+);
+
+op!(
+    DOCUMENT_BY_TITLE,
+    "DocumentByTitle",
+    Kind::Query,
+    "query DocumentByTitle($title: String!, $includeArchived: Boolean) {
+  documents(first: 1, filter: { title: { eqIgnoreCase: $title } }, includeArchived: $includeArchived) {
+    nodes { ...DocumentFields content }
+  }
+}",
+    &[DOCUMENT_FIELDS]
+);
+
+op!(
+    TEMPLATES,
+    "Templates",
+    Kind::Query,
+    "query Templates($first: Int!, $filter: TemplateFilter) {
+  templateSearch(first: $first, filter: $filter) { ...TemplateFields }
+}",
+    &[TEMPLATE_FIELDS]
+);
+
+op!(
+    TEMPLATE_BY_NAME,
+    "TemplateByName",
+    Kind::Query,
+    "query TemplateByName($key: String!, $name: String!, $includeArchived: Boolean) {
+  templateSearch(first: 2, filter: { name: { eqIgnoreCase: $name }, or: [ { team: { key: { eq: $key } } }, { team: { null: true } } ] }, includeArchived: $includeArchived) { ...TemplateFields }
+}",
+    &[TEMPLATE_FIELDS]
+);
+
+op!(
+    WEBHOOKS,
+    "Webhooks",
+    Kind::Query,
+    "query Webhooks($first: Int!) {
+  webhooks(first: $first) { nodes { ...WebhookFields } pageInfo { hasNextPage } }
+}",
+    &[WEBHOOK_FIELDS]
+);
+
+op!(
+    AUDIT_ENTRIES,
+    "AuditEntries",
+    Kind::Query,
+    "query AuditEntries($first: Int!, $filter: AuditEntryFilter) {
+  auditEntries(first: $first, filter: $filter) { nodes { ...AuditEntryFields } pageInfo { hasNextPage } }
+}",
+    &[AUDIT_ENTRY_FIELDS]
 );
 
 op!(
@@ -809,6 +940,173 @@ op!(
 );
 
 op!(
+    CYCLE_UPDATE,
+    "CycleUpdate",
+    Kind::Mutation,
+    "mutation CycleUpdate($id: String!, $input: CycleUpdateInput!) {
+  cycleUpdate(id: $id, input: $input) { success cycle { ...CycleFields } }
+}",
+    &[CYCLE_FIELDS]
+);
+
+op!(
+    DOCUMENT_CREATE,
+    "DocumentCreate",
+    Kind::Mutation,
+    "mutation DocumentCreate($input: DocumentCreateInput!) {
+  documentCreate(input: $input) { success document { ...DocumentFields content } }
+}",
+    &[DOCUMENT_FIELDS]
+);
+
+op!(
+    DOCUMENT_UPDATE,
+    "DocumentUpdate",
+    Kind::Mutation,
+    "mutation DocumentUpdate($id: String!, $input: DocumentUpdateInput!) {
+  documentUpdate(id: $id, input: $input) { success document { ...DocumentFields content } }
+}",
+    &[DOCUMENT_FIELDS]
+);
+
+op!(
+    DOCUMENT_DELETE,
+    "DocumentDelete",
+    Kind::Mutation,
+    "mutation DocumentDelete($id: String!) {
+  documentDelete(id: $id) { success entity { ...DocumentFields } }
+}",
+    &[DOCUMENT_FIELDS]
+);
+
+op!(
+    DOCUMENT_UNARCHIVE,
+    "DocumentUnarchive",
+    Kind::Mutation,
+    "mutation DocumentUnarchive($id: String!) {
+  documentUnarchive(id: $id) { success entity { ...DocumentFields } }
+}",
+    &[DOCUMENT_FIELDS]
+);
+
+op!(
+    TEMPLATE_CREATE,
+    "TemplateCreate",
+    Kind::Mutation,
+    "mutation TemplateCreate($input: TemplateCreateInput!) {
+  templateCreate(input: $input) { success template { ...TemplateFields } }
+}",
+    &[TEMPLATE_FIELDS]
+);
+
+op!(
+    TEMPLATE_UPDATE,
+    "TemplateUpdate",
+    Kind::Mutation,
+    "mutation TemplateUpdate($id: String!, $input: TemplateUpdateInput!) {
+  templateUpdate(id: $id, input: $input) { success template { ...TemplateFields } }
+}",
+    &[TEMPLATE_FIELDS]
+);
+
+op!(
+    TEMPLATE_DELETE,
+    "TemplateDelete",
+    Kind::Mutation,
+    "mutation TemplateDelete($id: String!) {
+  templateDelete(id: $id) { success entityId }
+}"
+);
+
+op!(
+    WEBHOOK_CREATE,
+    "WebhookCreate",
+    Kind::Mutation,
+    "mutation WebhookCreate($input: WebhookCreateInput!) {
+  webhookCreate(input: $input) { success webhook { ...WebhookFields } }
+}",
+    &[WEBHOOK_FIELDS]
+);
+
+op!(
+    WEBHOOK_UPDATE,
+    "WebhookUpdate",
+    Kind::Mutation,
+    "mutation WebhookUpdate($id: String!, $input: WebhookUpdateInput!) {
+  webhookUpdate(id: $id, input: $input) { success webhook { ...WebhookFields } }
+}",
+    &[WEBHOOK_FIELDS]
+);
+
+op!(
+    WEBHOOK_DELETE,
+    "WebhookDelete",
+    Kind::Mutation,
+    "mutation WebhookDelete($id: String!) {
+  webhookDelete(id: $id) { success entityId }
+}"
+);
+
+op!(
+    ISSUE_ARCHIVE,
+    "IssueArchive",
+    Kind::Mutation,
+    "mutation IssueArchive($id: String!) {
+  issueArchive(id: $id) { success entity { ...IssueFields } }
+}",
+    &[ISSUE_FIELDS]
+);
+
+op!(
+    ISSUE_UNARCHIVE,
+    "IssueUnarchive",
+    Kind::Mutation,
+    "mutation IssueUnarchive($id: String!) {
+  issueUnarchive(id: $id) { success entity { ...IssueFields } }
+}",
+    &[ISSUE_FIELDS]
+);
+
+op!(
+    ISSUE_DELETE,
+    "IssueDelete",
+    Kind::Mutation,
+    "mutation IssueDelete($id: String!) {
+  issueDelete(id: $id) { success entity { ...IssueFields } }
+}",
+    &[ISSUE_FIELDS]
+);
+
+op!(
+    ISSUE_BATCH_UPDATE,
+    "IssueBatchUpdate",
+    Kind::Mutation,
+    "mutation IssueBatchUpdate($ids: [UUID!]!, $input: IssueUpdateInput!) {
+  issueBatchUpdate(ids: $ids, input: $input) { success issues { ...IssueFields } }
+}",
+    &[ISSUE_FIELDS]
+);
+
+op!(
+    COMMENT_UPDATE,
+    "CommentUpdate",
+    Kind::Mutation,
+    "mutation CommentUpdate($id: String!, $input: CommentUpdateInput!) {
+  commentUpdate(id: $id, input: $input) { success comment { ...CommentFields issue { id identifier } } }
+}",
+    &[COMMENT_FIELDS]
+);
+
+op!(
+    COMMENT_DELETE,
+    "CommentDelete",
+    Kind::Mutation,
+    "mutation CommentDelete($id: String!) {
+  commentDelete(id: $id) { success entityId }
+}"
+);
+
+op!(
     ATTACHMENT_UPDATE,
     "AttachmentUpdate",
     Kind::Mutation,
@@ -847,6 +1145,14 @@ pub static READS: &[&Operation] = &[
     &INITIATIVES,
     &INITIATIVE_BY_NAME,
     &INITIATIVE_LINKS,
+    &CYCLES,
+    &CYCLE_BY_NUMBER,
+    &DOCUMENTS,
+    &DOCUMENT_BY_TITLE,
+    &TEMPLATES,
+    &TEMPLATE_BY_NAME,
+    &WEBHOOKS,
+    &AUDIT_ENTRIES,
 ];
 
 /// Every write operation.
@@ -893,6 +1199,23 @@ pub static WRITES: &[&Operation] = &[
     &INITIATIVE_UNARCHIVE,
     &INITIATIVE_LINK_CREATE,
     &INITIATIVE_LINK_DELETE,
+    &CYCLE_UPDATE,
+    &DOCUMENT_CREATE,
+    &DOCUMENT_UPDATE,
+    &DOCUMENT_DELETE,
+    &DOCUMENT_UNARCHIVE,
+    &TEMPLATE_CREATE,
+    &TEMPLATE_UPDATE,
+    &TEMPLATE_DELETE,
+    &WEBHOOK_CREATE,
+    &WEBHOOK_UPDATE,
+    &WEBHOOK_DELETE,
+    &ISSUE_ARCHIVE,
+    &ISSUE_UNARCHIVE,
+    &ISSUE_DELETE,
+    &ISSUE_BATCH_UPDATE,
+    &COMMENT_UPDATE,
+    &COMMENT_DELETE,
     &ATTACHMENT_UPDATE,
     &ATTACHMENT_DELETE,
 ];
@@ -951,6 +1274,11 @@ mod tests {
                 "ProjectUpdateFields",
                 "InitiativeFields",
                 "InitiativeLinkFields",
+                "CycleFields",
+                "DocumentFields",
+                "TemplateFields",
+                "WebhookFields",
+                "AuditEntryFields",
             ] {
                 let document = op.document();
                 let used = document.contains(&format!("...{frag}"));

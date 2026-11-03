@@ -60,7 +60,9 @@ impl Linear {
         if self.trace {
             Output::trace(&format!(
                 "> POST {} {} {}",
-                self.endpoint, op.name, variables
+                self.endpoint,
+                op.name,
+                traced(&variables)
             ));
         }
         let body = request.to_string();
@@ -165,6 +167,19 @@ impl Linear {
             )),
         }
     }
+}
+
+/// The variables as `--trace` prints them: the same JSON, with a string `input.secret`
+/// replaced by `"<redacted>"` and nothing else changed. The key travels in a header,
+/// which the trace never prints (ADR 0008); a webhook's signing secret (ADR 0014,
+/// group 16) is the one value that travels in a request body and must go nowhere
+/// either, since an agent's tool log and a CI log keep stderr.
+fn traced(variables: &Value) -> Value {
+    let mut shown = variables.clone();
+    if let Some(secret) = shown.pointer_mut("/input/secret").filter(|v| v.is_string()) {
+        *secret = Value::String("<redacted>".to_string());
+    }
+    shown
 }
 
 fn classify_linear(
@@ -492,6 +507,22 @@ mod tests {
             e.linear.as_deref(),
             Some(&refused),
             "both of Linear's messages verbatim (ADR 0015)"
+        );
+    }
+
+    #[test]
+    fn a_traced_secret_is_redacted_and_nothing_else_changes() {
+        let vars =
+            json!({ "id": "w1", "input": { "url": "https://example.com/h", "secret": "s3cr3t" } });
+        assert_eq!(
+            traced(&vars),
+            json!({ "id": "w1", "input": { "url": "https://example.com/h", "secret": "<redacted>" } })
+        );
+        let plain = json!({ "first": 50, "input": { "title": "No secret here" } });
+        assert_eq!(traced(&plain), plain, "nothing else changes");
+        assert!(
+            !traced(&vars).to_string().contains("s3cr3t"),
+            "the secret is not in the traced line"
         );
     }
 
