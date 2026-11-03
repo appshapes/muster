@@ -50,6 +50,13 @@ pub const MILESTONES_PER_PROJECT: usize = 50;
 /// `projects.nodes`. An initiative with more is reported cut with a notice on stderr
 /// (ADR 0014, group 12).
 pub const PROJECTS_PER_INITIATIVE: usize = 50;
+/// How many issues `cycle get` prints with a cycle, under `issues.nodes`. A cycle with
+/// more is reported cut with a notice on stderr (ADR 0014, group 13).
+pub const ISSUES_PER_CYCLE: usize = 50;
+/// How many issues `issue batch-update` changes in one request: Linear's own cap on
+/// `issueBatchUpdate`. More is a usage error, exit 2, before any request (ADR 0014,
+/// group 18).
+pub const ISSUES_PER_BATCH: usize = 50;
 /// How long one request may take, connect to last byte. Past it a query exits 7 and a
 /// mutation exits 8.
 pub const REQUEST_TIMEOUT_SECS: u64 = 30;
@@ -122,6 +129,18 @@ pub const ALL: &[Bound] = &[
         value: PROJECTS_PER_INITIATIVE as u64,
         unit: "items",
         meaning: "the projects `initiative get` prints with an initiative under `projects.nodes`; an initiative with more writes a `truncated` notice to stderr",
+    },
+    Bound {
+        name: "ISSUES_PER_CYCLE",
+        value: ISSUES_PER_CYCLE as u64,
+        unit: "items",
+        meaning: "the issues `cycle get` prints with a cycle under `issues.nodes`; a cycle with more writes a `truncated` notice to stderr",
+    },
+    Bound {
+        name: "ISSUES_PER_BATCH",
+        value: ISSUES_PER_BATCH as u64,
+        unit: "items",
+        meaning: "the issues `issue batch-update` changes in one request, Linear's own cap on `issueBatchUpdate`; more is a usage error, exit 2, before any request",
     },
     Bound {
         name: "REQUEST_TIMEOUT_SECS",

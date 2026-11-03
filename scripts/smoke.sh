@@ -56,9 +56,35 @@ echo "smoke: muster team get SMK"
 "$bin" team get SMK | jq -c '{key, name, cyclesEnabled, retiredAt, archivedAt, issueCount}' | tee "$tmp/team-get.json"
 jq -e '.key == "SMK" and .archivedAt == null' "$tmp/team-get.json" >/dev/null
 echo
-echo "smoke: muster team update SMK --cycles-enabled true --cycle-enabled-start-date $stamp (the smoke team's cycles; ADR 0014)"
-"$bin" team update SMK --cycles-enabled true --cycle-enabled-start-date "$stamp" --cycle-duration 1 --upcoming-cycle-count 2 --description "The smoke test's own team (ADR 0014): its cycles, members and lifecycle are tested here, so that the house's team is never touched." | jq -c '{key, cyclesEnabled, cycleDuration, upcomingCycleCount, activeCycle}' | tee "$tmp/team-update.json"
+# The start date is set once: setting it again on a team whose cycles run would shift
+# its cycles on every run (seen on 2026-11-03, one new cycle per run).
+if [ "$(jq -r '.cyclesEnabled' "$tmp/team-get.json")" = "true" ]; then cycle_start=""; else cycle_start="--cycle-enabled-start-date $stamp"; fi
+echo "smoke: muster team update SMK --cycles-enabled true ${cycle_start:-(the start date was set by an earlier run)} (the smoke team's cycles; ADR 0014)"
+"$bin" team update SMK --cycles-enabled true $cycle_start --cycle-duration 1 --upcoming-cycle-count 2 --description "The smoke test's own team (ADR 0014): its cycles, members and lifecycle are tested here, so that the house's team is never touched." | jq -c '{key, cyclesEnabled, cycleDuration, upcomingCycleCount, activeCycle}' | tee "$tmp/team-update.json"
 jq -e '.key == "SMK" and .cyclesEnabled == true and .cycleDuration == 1' "$tmp/team-update.json" >/dev/null
+echo
+echo "smoke: muster cycle list --team SMK, --active, get, update --name, then an SMK issue through --cycle active, next and none (ADR 0014)"
+"$bin" cycle list --team SMK | jq -c '{number, name, isActive, isNext, isPast}' | tee "$tmp/cycles.jsonl"
+jq -s -e 'length >= 1' "$tmp/cycles.jsonl" >/dev/null
+"$bin" cycle list --team SMK --active | jq -c '{number, isActive}' | tee "$tmp/cycle-active.json"
+jq -e '.isActive == true' "$tmp/cycle-active.json" >/dev/null
+active_cycle=$(jq -r '.number' "$tmp/cycle-active.json")
+"$bin" cycle get "$active_cycle" --team SMK | jq -c '{number, issues: (.issues.nodes | length)}' | tee "$tmp/cycle-get.json"
+jq -e --argjson n "$active_cycle" '.number == $n' "$tmp/cycle-get.json" >/dev/null
+"$bin" cycle update "$active_cycle" --team SMK --name "Smoke cycle" --description "Named by scripts/smoke.sh at $stamp." | jq -c '{number, name}' | tee "$tmp/cycle-update.json"
+jq -e '.name == "Smoke cycle"' "$tmp/cycle-update.json" >/dev/null
+"$bin" issue create --team SMK --title "Smoke cycle issue $stamp" --cycle active --description "Created by scripts/smoke.sh at $stamp in the smoke team's active cycle; canceled by the same run." | jq -c '{identifier, cycle: .cycle.number}' | tee "$tmp/cycle-issue.json"
+jq -e --argjson n "$active_cycle" '.cycle == $n' "$tmp/cycle-issue.json" >/dev/null
+cycle_issue=$(jq -r '.identifier' "$tmp/cycle-issue.json")
+"$bin" issue list --team SMK --cycle active | jq -c '{identifier, cycle: .cycle.number}' | tee "$tmp/cycle-issues.jsonl"
+jq -s -e --arg id "$cycle_issue" 'map(.identifier) | index($id) != null' "$tmp/cycle-issues.jsonl" >/dev/null
+"$bin" issue update "$cycle_issue" --cycle next | jq -c '{identifier, cycle: .cycle.number}' | tee "$tmp/cycle-next.json"
+jq -e --argjson n "$active_cycle" '.cycle > $n' "$tmp/cycle-next.json" >/dev/null
+"$bin" issue update "$cycle_issue" --cycle none | jq -c '{identifier, cycle}' | tee "$tmp/cycle-none.json"
+jq -e '.cycle == null' "$tmp/cycle-none.json" >/dev/null
+# Back into the active cycle, then canceled, so that the cycle fixture records an issue node.
+"$bin" issue update "$cycle_issue" --cycle active | jq -e --argjson n "$active_cycle" '.cycle.number == $n' >/dev/null
+"$bin" issue close "$cycle_issue" --cancel --comment "Smoke cycle issue done at $stamp; canceled so that it never counts as work." | jq -c 'select(.identifier != null) | {identifier, state: .state.name}'
 echo
 echo "smoke: muster member list --team SMK, then remove me and add me back (ADR 0014)"
 "$bin" --team SMK member list | jq -c '{user: .user.displayName, owner}' | tee "$tmp/members.jsonl"
@@ -180,6 +206,118 @@ else
     *) echo "smoke: initiative update --lead-team exited $code" >&2; cat "$tmp/initiative-lead.err" >&2; exit 1 ;;
   esac
 fi
+echo
+echo "smoke: muster document create --title 'Smoke document' --project 'Smoke tests' (exit 6 after the first run; it stays, for the fixture), get, list, then a throwaway document updated, deleted, unarchived and deleted again (ADR 0014)"
+set +e
+"$bin" document create --title "Smoke document" --project "Smoke tests" --content "The smoke project's document; it stays so that the fixture has a node (ADR 0014)." > "$tmp/document.json" 2> "$tmp/document.err"
+code=$?
+set -e
+case "$code" in
+  0) jq -c '{title, project: .project.name}' "$tmp/document.json" ;;
+  6) cat "$tmp/document.err"; jq -e '.error.code == "refused"' "$tmp/document.err" >/dev/null ;;
+  *) echo "smoke: document create exited $code" >&2; cat "$tmp/document.err" >&2; exit 1 ;;
+esac
+"$bin" document get "Smoke document" | jq -c '{title, project: .project.name, content: (.content | length)}' | tee "$tmp/document-get.json"
+jq -e '.title == "Smoke document" and .project == "Smoke tests"' "$tmp/document-get.json" >/dev/null
+"$bin" document list --project "Smoke tests" | jq -c '{title}' | tee "$tmp/documents.jsonl"
+jq -s -e 'map(.title) | index("Smoke document") != null' "$tmp/documents.jsonl" >/dev/null
+# A document lives with a project or an issue: Linear refuses one with neither.
+"$bin" document create --title "Smoke doc $stamp" --project "Smoke tests" --content "Throwaway, made by scripts/smoke.sh at $stamp." | jq -c '{title, project: .project.name}' | tee "$tmp/document-throwaway.json"
+jq -e --arg t "Smoke doc $stamp" '.title == $t and .project == "Smoke tests"' "$tmp/document-throwaway.json" >/dev/null
+"$bin" document update "Smoke doc $stamp" --title "Smoky doc $stamp" --content "Rewritten at $stamp." | jq -c '{title, project: .project.name}' | tee "$tmp/document-update.json"
+jq -e --arg t "Smoky doc $stamp" '.title == $t and .project == "Smoke tests"' "$tmp/document-update.json" >/dev/null
+"$bin" document delete "Smoky doc $stamp" | jq -c '{title, trashed, archivedAt}' | tee "$tmp/document-delete.json"
+jq -e '.archivedAt != null' "$tmp/document-delete.json" >/dev/null
+"$bin" document unarchive "Smoky doc $stamp" | jq -c '{title, trashed, archivedAt}' | tee "$tmp/document-unarchive.json"
+jq -e '.archivedAt == null' "$tmp/document-unarchive.json" >/dev/null
+"$bin" document delete "Smoky doc $stamp" | jq -c '{title}' >/dev/null
+
+echo "smoke: muster template create --name 'Smoke template' --type issue --workspace (exit 6 after the first run; it stays, for the fixture), get, list --type issue, then a throwaway team template updated and deleted (ADR 0014)"
+printf '{"title": "From the smoke template", "description": "Made by scripts/smoke.sh; the template stays so that the fixture has a node (ADR 0014)."}\n' > "$tmp/template-data.json"
+set +e
+"$bin" template create --name "Smoke template" --type issue --workspace --data-file "$tmp/template-data.json" --description "The smoke test's own issue template (ADR 0014)." > "$tmp/template.json" 2> "$tmp/template.err"
+code=$?
+set -e
+case "$code" in
+  0) jq -c '{name, type, team}' "$tmp/template.json" ;;
+  6) cat "$tmp/template.err"; jq -e '.error.code == "refused"' "$tmp/template.err" >/dev/null ;;
+  *) echo "smoke: template create exited $code" >&2; cat "$tmp/template.err" >&2; exit 1 ;;
+esac
+"$bin" template get "Smoke template" | jq -c '{name, type, team, title: (.templateData | fromjson).title}' | tee "$tmp/template-get.json"
+jq -e '.name == "Smoke template" and .type == "issue" and .team == null' "$tmp/template-get.json" >/dev/null
+"$bin" template list --type issue | jq -c '{name, type, team: .team.key}' | tee "$tmp/templates.jsonl"
+jq -s -e 'map(.name) | index("Smoke template") != null' "$tmp/templates.jsonl" >/dev/null
+"$bin" template create --name "Smoke template $stamp" --type issue --team SMK --data-file "$tmp/template-data.json" | jq -c '{name, team: .team.key}' | tee "$tmp/template-throwaway.json"
+jq -e --arg n "Smoke template $stamp" '.name == $n and .team == "SMK"' "$tmp/template-throwaway.json" >/dev/null
+printf '{"title": "Renamed at %s"}\n' "$stamp" > "$tmp/template-data-2.json"
+"$bin" template update "Smoke template $stamp" --team SMK --name "Smoky template $stamp" --data-file "$tmp/template-data-2.json" | jq -c '{name, title: (.templateData | fromjson).title}' | tee "$tmp/template-update.json"
+jq -e --arg n "Smoky template $stamp" '.name == $n' "$tmp/template-update.json" >/dev/null
+"$bin" template delete "Smoky template $stamp" --team SMK | jq -c '{success}' | tee "$tmp/template-delete.json"
+jq -e '.success == true' "$tmp/template-delete.json" >/dev/null
+
+echo "smoke: muster webhook create --label 'Smoke webhook' --team SMK (exit 6 after the first run; it stays, disabled, for the fixture), update --enabled false, list, then a throwaway webhook updated and deleted (ADR 0014)"
+printf 'smoke-signing-secret-%s\n' "$stamp" > "$tmp/webhook-secret"
+set +e
+"$bin" webhook create --url "https://appshapes.com/muster/smoke-webhook" --resource-type Issue --label "Smoke webhook" --team SMK --secret-file "$tmp/webhook-secret" > "$tmp/webhook.json" 2> "$tmp/webhook.err"
+code=$?
+set -e
+case "$code" in
+  0) jq -c '{label, url, enabled, team: .team.key, resourceTypes}' "$tmp/webhook.json" ;;
+  6) cat "$tmp/webhook.err"; jq -e '.error.code == "refused"' "$tmp/webhook.err" >/dev/null ;;
+  *) echo "smoke: webhook create exited $code" >&2; cat "$tmp/webhook.err" >&2; exit 1 ;;
+esac
+"$bin" webhook update "Smoke webhook" --enabled false | jq -c '{label, enabled}' | tee "$tmp/webhook-off.json"
+jq -e '.label == "Smoke webhook" and .enabled == false' "$tmp/webhook-off.json" >/dev/null
+"$bin" webhook list | jq -c '{label, url, enabled, team: .team.key}' | tee "$tmp/webhooks.jsonl"
+jq -s -e 'map(.label) | index("Smoke webhook") != null' "$tmp/webhooks.jsonl" >/dev/null
+jq -s -e 'all(has("secret") | not)' "$tmp/webhooks.jsonl" >/dev/null
+"$bin" webhook create --url "https://appshapes.com/muster/smoke-webhook-$(printf '%s' "$stamp" | tr -c 'A-Za-z0-9' '-')" --resource-type Issue --resource-type Comment --label "Smoke webhook $stamp" --team SMK | jq -c '{label, enabled, resourceTypes}' | tee "$tmp/webhook-throwaway.json"
+jq -e --arg l "Smoke webhook $stamp" '.label == $l and .enabled == true' "$tmp/webhook-throwaway.json" >/dev/null
+"$bin" webhook update "Smoke webhook $stamp" --label "Smoky webhook $stamp" --enabled false --resource-type Project | jq -c '{label, enabled, resourceTypes}' | tee "$tmp/webhook-update.json"
+jq -e --arg l "Smoky webhook $stamp" '.label == $l and .enabled == false and .resourceTypes == ["Project"]' "$tmp/webhook-update.json" >/dev/null
+"$bin" webhook delete "Smoky webhook $stamp" | jq -c '{success}' | tee "$tmp/webhook-delete.json"
+jq -e '.success == true' "$tmp/webhook-delete.json" >/dev/null
+
+echo "smoke: muster audit list --limit 3, --type projectDeleted, --actor me --since today (ADR 0014; exit 6 where the plan reserves the log)"
+set +e
+"$bin" audit list --limit 3 > "$tmp/audit.jsonl" 2> "$tmp/audit.err"
+code=$?
+set -e
+case "$code" in
+  0)
+    jq -c '{type, createdAt, countryCode, actor: .actor.displayName}' "$tmp/audit.jsonl"
+    jq -s -e 'length >= 1' "$tmp/audit.jsonl" >/dev/null
+    "$bin" audit list --type projectDeleted --limit 2 | jq -c '{type, createdAt, entity: .metadata.entityType}' | tee "$tmp/audit-type.jsonl"
+    jq -s -e 'all(.type == "projectDeleted")' "$tmp/audit-type.jsonl" >/dev/null
+    "$bin" audit list --actor me --since "${stamp:0:10}T00:00:00Z" --limit 3 | jq -c '{type, createdAt}' | tee "$tmp/audit-mine.jsonl"
+    jq -s -e 'length >= 1' "$tmp/audit-mine.jsonl" >/dev/null
+    ;;
+  6) cat "$tmp/audit.err"; jq -e '.error.code == "refused"' "$tmp/audit.err" >/dev/null; echo "smoke: the plan reserves the audit log; the audit steps are skipped" ;;
+  *) echo "smoke: audit list exited $code" >&2; cat "$tmp/audit.err" >&2; exit 1 ;;
+esac
+echo
+echo "smoke: muster issue batch-update on two throwaway issues, then archive, unarchive, delete and unarchive (ADR 0014; the Revisit asks whether unarchive restores a trashed issue)"
+"$bin" issue create --title "Smoke batch A $stamp" --description "Made by scripts/smoke.sh at $stamp for issue batch-update; canceled by the same run." | jq -r .identifier > "$tmp/batch-a.id"
+"$bin" issue create --title "Smoke batch B $stamp" --description "Made by scripts/smoke.sh at $stamp for issue batch-update; canceled by the same run." | jq -r .identifier > "$tmp/batch-b.id"
+batch_a=$(cat "$tmp/batch-a.id"); batch_b=$(cat "$tmp/batch-b.id")
+"$bin" issue close "$batch_a" --cancel | jq -c 'select(.identifier != null) | {identifier, state: .state.name}'
+"$bin" issue close "$batch_b" --cancel | jq -c 'select(.identifier != null) | {identifier, state: .state.name}'
+"$bin" issue batch-update --issue "$batch_a" --issue "$batch_b" --priority 4 --assignee me | jq -c '{identifier, priority, assignee: .assignee.displayName}' | tee "$tmp/batch.jsonl"
+jq -s -e 'length == 2 and all(.priority == 4)' "$tmp/batch.jsonl" >/dev/null
+"$bin" issue archive "$batch_a" | jq -c '{identifier, archivedAt}' | tee "$tmp/archive.json"
+jq -e '.archivedAt != null' "$tmp/archive.json" >/dev/null
+"$bin" issue unarchive "$batch_a" | jq -c '{identifier, archivedAt}' | tee "$tmp/unarchive.json"
+jq -e '.archivedAt == null' "$tmp/unarchive.json" >/dev/null
+"$bin" issue delete "$batch_b" | jq -c '{identifier, archivedAt}' | tee "$tmp/delete.json"
+jq -e '.archivedAt != null' "$tmp/delete.json" >/dev/null
+set +e
+"$bin" issue unarchive "$batch_b" > "$tmp/undelete.json" 2> "$tmp/undelete.err"
+code=$?
+set -e
+case "$code" in
+  0) jq -c '{identifier, archivedAt}' "$tmp/undelete.json"; echo "smoke: issue unarchive restores a trashed issue (ADR 0014, Revisit)"; "$bin" issue delete "$batch_b" | jq -c '{identifier, archivedAt}' ;;
+  *) cat "$tmp/undelete.err"; echo "smoke: issue unarchive does not restore a trashed issue, exit $code (ADR 0014, Revisit)" ;;
+esac
 echo
 echo "smoke: muster project get 'Smoke tests', then a throwaway project updated, deleted, unarchived and deleted again (ADR 0014)"
 "$bin" project get "Smoke tests" | jq -c '{name, status: .status.name, members: (.members.nodes | length), milestones: (.projectMilestones.nodes | length), trashed}' | tee "$tmp/project-get.json"

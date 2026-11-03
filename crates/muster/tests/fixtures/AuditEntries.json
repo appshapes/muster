@@ -1,0 +1,32 @@
+{
+  "auditEntries": {
+    "nodes": [
+      {
+        "actor": {
+          "displayName": "<string>",
+          "id": "<string>",
+          "name": "<string>"
+        },
+        "countryCode": "<string>",
+        "createdAt": "<string>",
+        "id": "<string>",
+        "ip": "<string>",
+        "metadata": {
+          "entityId": "<string>",
+          "entityIdentifier": "<string>",
+          "entityType": "<string>",
+          "id": "<string>",
+          "name": "<string>",
+          "slugId": "<string>",
+          "teamIds": [
+            "<string>"
+          ]
+        },
+        "type": "<string>"
+      }
+    ],
+    "pageInfo": {
+      "hasNextPage": true
+    }
+  }
+}

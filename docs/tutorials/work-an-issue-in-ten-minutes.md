@@ -139,6 +139,52 @@ its Business plan and refuses below it), `muster initiative add-project Growth
 --project "Trying muster"` puts the project in it, `muster initiative get Growth`
 prints it with its `projects` (bounded by `PROJECTS_PER_INITIATIVE`), and `muster
 initiative archive Growth` puts it away (`unarchive` brings it back).
+Several issues change at once with `muster issue batch-update --issue APP-5 --issue
+APP-6 --state Todo --priority 3` (one JSON line per issue, as Linear returns them;
+up to `ISSUES_PER_BATCH` issues of one team per run). `muster issue archive APP-5`
+takes an issue out of the lists and `muster issue unarchive APP-5` brings it back;
+`muster issue delete APP-5` puts it in Linear's trash, with its sub-issues, for
+thirty days, and `unarchive` brings that back too; muster never deletes an issue for
+good. An archived or trashed issue is reached by its identifier, its number alone
+(`muster issue unarchive 5`) or its id, though `issue list` leaves it out.
+A team that uses cycles (`team update --cycles-enabled true`) has
+them made by Linear: `muster cycle list` prints them newest first with their `number`
+and the `isActive` flag, `muster cycle list --active` the one running now, `muster
+cycle get 2` one with its `issues` (bounded by `ISSUES_PER_CYCLE`), and `muster cycle
+update 2 --name "Sprint 2"` names it; `--cycle active` on `issue create` or `issue
+update` puts an issue in the running cycle (`next` the one after it, a number any
+of them, and `none` on `issue update` takes it out; `issue create` does not take
+`none`, since a new issue starts in no cycle), and `muster issue list --cycle
+active` lists the cycle's issues (`--cycle none` the issues in no cycle).
+A document is a page of markdown kept with a project or an issue:
+`muster document create --title "Kickoff" --project "Trying muster" --content "#
+Kickoff"` makes one (one JSON line with its `title`, `url`, `project` and `content`;
+a document with neither a project nor an issue is Linear's refusal, exit 6), `muster
+document list --project "Trying muster"` lists the project's without their content,
+`muster document get Kickoff` prints one with it, `muster document update Kickoff
+--content-file kickoff.md` replaces the text from a file, and `muster document delete
+Kickoff` puts it in the trash (`unarchive` brings it back).
+A template is a saved shape for a new issue, project or document:
+`muster template list` prints the team's and the workspace's, `muster template get
+"Bug report"` one with its `templateData` (a string of JSON, as Linear returns it;
+`jq '.templateData | fromjson'` reads it), and `muster template create
+--name "Feature" --type issue --data-file feature.json` makes one from a file holding
+that JSON (`--workspace` for one every team shares); `muster template update Feature
+--data-file feature.json` replaces the data, and `muster template delete Feature`
+deletes it, with no undo.
+A webhook is a URL Linear posts changes to: `muster webhook create --url
+https://example.com/hooks/issues --resource-type Issue --resource-type Comment --label
+"Issues" --secret-file secret.txt` makes one for the team (one JSON line with its
+`url`, `enabled`, `resourceTypes` and `team`, never its secret), `muster webhook
+list` prints them, `muster webhook update Issues --enabled false` stops it without
+deleting it, and `muster webhook delete Issues` deletes it, with no undo; a webhook
+is named by its label, else its URL, else its id.
+The audit log says what was done, by whom and from where: `muster audit list --limit
+5` prints the five newest entries (one JSON line each, with `type`, `createdAt`,
+`actor`, `ip`, `countryCode` and Linear's `metadata`), `muster audit list --type
+projectDeleted` the deletions, `muster audit list --actor me --since
+2026-11-01T00:00:00Z` your own since a time. Linear reserves the log for owners on
+its Enterprise plan; where it refuses, the exit code is 6 and the message is Linear's.
 A comment is changed or removed by the id `issue get` prints under `comments` (and
 `issue comment` prints for a new one): `muster comment update <ID> --body "Second
 thoughts."` replaces its body (one JSON line, with `editedAt` set), `--body-file
