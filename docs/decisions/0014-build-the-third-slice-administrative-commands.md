@@ -86,8 +86,8 @@ project is made of, 0.5.0 for the rest.
    `--project-update-reminder-weeks <N>`, `--project-update-reminders-day <Day>`,
    `--project-update-reminders-hour <0-23>`, `--fiscal-year-start-month <0-11>`,
    `--feed`, `--pull-request-tour`, `--pull-request-issue-mode <off|suggest|autoOnMerge>`,
-   `--ai-thread-summaries`, `--ai-discussion-summaries`, `--oauth-app-review`,
-   `--reduced-personal-information`, `--allowed-file-upload-content-types <TYPE,...>`,
+   `--ai-thread-summaries`, `--ai-discussion-summaries`,
+   `--allowed-file-upload-content-types <TYPE,...>`,
    the ten `securitySettings` roles as `--invitations-role`, `--team-creation-role`,
    `--label-management-role`, `--personal-api-keys-role`, `--admin-management-role`,
    `--template-management-role`, `--integration-creation-role`, `--import-role`,
@@ -96,7 +96,10 @@ project is made of, 0.5.0 for the rest.
    `--allowed-auth-services <SERVICE,...|all>` and `--hide-non-primary-organizations`.
    Not exposed: IP restrictions and HIPAA (a wrong value locks the owner out or changes
    a compliance posture), the home view, theme settings (Alpha), Slack, customers, code
-   intelligence, agents and loops (Internal), and every deprecated field.
+   intelligence, agents and loops (Internal), `oauthAppReview` and
+   `reducedPersonalInformation` (which `organizationUpdate` takes but `organization`
+   does not return, so a reader could not see what was set), and every deprecated
+   field.
 2. `team get [<KEY>]` (`team`): every setting `team update` changes, with `issueCount`,
    `visibility`, `retiredAt`, `parent`, `defaultIssueState` and `triageIssueState` by id
    and name. `team create` (`teamCreate`): `--name`, `--key`, `--description`,
