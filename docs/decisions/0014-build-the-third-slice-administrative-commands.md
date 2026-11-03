@@ -255,9 +255,9 @@ project is made of, 0.5.0 for the rest.
     [--project <NAME>] [--issue <ISSUE>]` (`documentCreate`, the duplicate guard on
     the title; the initiative and team links are Internal and stay out).
     `document update <TITLE> [--title] [--content|--content-file]
-    [--project <NAME|none>] [--issue <ISSUE|none>]` (`documentUpdate`). `document delete <TITLE>`
-    (`documentDelete`: the trash) and `document unarchive <TITLE>`
-    (`documentUnarchive`).
+    [--project <NAME|none>] [--issue <ISSUE|none>]` (`documentUpdate`).
+    `document delete <TITLE>` (`documentDelete`: the trash) and
+    `document unarchive <TITLE>` (`documentUnarchive`).
 15. `template list [--type <issue|project|document>]` and `template get <NAME>`
     (`templateSearch` with `first` and the team-or-workspace filter, asked for one
     more than the limit so that a cut list is known; `template`): `name`, `type`,
@@ -319,9 +319,9 @@ description comes inline, as every `--description` does today, with a `-file` fo
 where the listing names one. Each is checked against `BODY_MAX_BYTES`, a file through
 `read_body`. A secret and a template's data come from a file or stdin only,
 `--secret-file` and `--data-file`, never argv. A value Linear marks Internal, Alpha or
-deprecated is not a flag and not a field. An operation that needs a role the key lacks is Linear's refusal, printed as
-exit 6 with Linear's message; muster checks no role itself, since the schema documents
-none and `whoami` already prints `admin`.
+deprecated is not a flag and not a field. An operation that needs a role the key lacks
+is Linear's refusal, printed as exit 6 with Linear's message; muster checks no role
+itself, since the schema documents none and `whoami` already prints `admin`.
 
 **Where the fixtures come from.** `just smoke` creates, once, a team `Smoke tests`
 with key `SMK`, enables its cycles with `team update --cycles-enabled true
