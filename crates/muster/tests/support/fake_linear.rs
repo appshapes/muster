@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
+use muster::bounds::{ATTACHMENTS_PER_ISSUE, CHILDREN_PER_ISSUE, COMMENTS_PER_ISSUE};
 use serde_json::{Value, json};
 
 /// The key the fake accepts.
@@ -122,7 +123,14 @@ impl Fake {
             .issues
             .iter()
             .find(|i| i["identifier"] == identifier)
-            .map(|i| st.ws.full_issue(i, 100, 50, 50))
+            .map(|i| {
+                st.ws.full_issue(
+                    i,
+                    COMMENTS_PER_ISSUE,
+                    ATTACHMENTS_PER_ISSUE,
+                    CHILDREN_PER_ISSUE,
+                )
+            })
     }
 
     /// Add `n` sub-issues under an issue, in its team, for the bound tests.
@@ -298,6 +306,15 @@ fn compare(value: &Value, comparator: &Value) -> bool {
             (Some(v), Some(w)) => v.contains(w),
             _ => false,
         },
+        "gt" | "gte" | "lt" | "lte" => match (value.as_f64(), want.as_f64()) {
+            (Some(v), Some(w)) => match op.as_str() {
+                "gt" => v > w,
+                "gte" => v >= w,
+                "lt" => v < w,
+                _ => v <= w,
+            },
+            _ => false,
+        },
         "null" => want.as_bool().is_some_and(|n| n == value.is_null()),
         _ => true,
     })
@@ -320,6 +337,21 @@ fn passes(object: &Value, filter: &Value) -> bool {
         "null" => clause.as_bool().is_some_and(|n| n == object.is_null()),
         field => {
             let value = &object[field];
+            if let Some(map) = clause.as_object()
+                && ["length", "some", "every"]
+                    .iter()
+                    .any(|k| map.contains_key(*k))
+            {
+                // A collection filter, as Linear's: `length` against the node count,
+                // `some` and `every` against the nodes.
+                let items = value["nodes"].as_array().cloned().unwrap_or_default();
+                return map.iter().all(|(k, c)| match k.as_str() {
+                    "length" => compare(&json!(items.len()), c),
+                    "some" => items.iter().any(|n| passes(n, c)),
+                    "every" => items.iter().all(|n| passes(n, c)),
+                    _ => true,
+                });
+            }
             let is_comparator = clause.as_object().is_some_and(|m| {
                 m.keys().all(|k| {
                     matches!(
@@ -330,6 +362,10 @@ fn passes(object: &Value, filter: &Value) -> bool {
                             | "nin"
                             | "containsIgnoreCase"
                             | "contains"
+                            | "gt"
+                            | "gte"
+                            | "lt"
+                            | "lte"
                             | "null"
                     )
                 })
@@ -592,6 +628,20 @@ impl Workspace {
         full
     }
 
+    /// An issue as a filter sees it: with every comment, attachment and sub-issue
+    /// attached, and its `parent` as the whole parent issue, so that a clause such as
+    /// `parent: { number: { eq: 12 }, team: { key: { eq: "APP" } } }` resolves as it
+    /// does in Linear, where `parent` is an `Issue`.
+    fn filter_view(&self, issue: &Value) -> Value {
+        let mut view = self.full_issue(issue, usize::MAX, usize::MAX, usize::MAX);
+        if let Some(pid) = view["parent"]["id"].as_str()
+            && let Some(parent) = self.issues.iter().find(|i| i["id"] == pid)
+        {
+            view["parent"] = parent.clone();
+        }
+        view
+    }
+
     fn page(items: Vec<Value>, first: usize) -> Value {
         let cut = items.len() > first;
         json!({ "nodes": items.into_iter().take(first).collect::<Vec<_>>(), "pageInfo": { "hasNextPage": cut } })
@@ -664,10 +714,13 @@ impl Workspace {
                 }
             }
             "Issues" => {
+                // Filtered with their comments, attachments and children attached, so
+                // that a collection filter (`children: { length: { gt: 0 } }`) sees
+                // them; answered as Linear answers `issues`, without them.
                 let mut issues: Vec<Value> = self
                     .issues
                     .iter()
-                    .filter(|i| passes(i, filter))
+                    .filter(|i| passes(&self.filter_view(i), filter))
                     .cloned()
                     .collect();
                 match vars["orderBy"].as_str() {

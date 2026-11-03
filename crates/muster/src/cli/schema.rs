@@ -333,40 +333,29 @@ pub fn record_fixtures(session: &Session, dir: &Path, out: &Output) -> Result<()
         )
     })?;
     let (sample, lack) = sample_issue(session)?;
+    match (&sample, lack) {
+        (Some(id), Some(lack)) => out.notice(
+            "partial",
+            &format!("IssueById: recorded on {id}, which {lack}"),
+            "add what is missing to an issue and run `just record-fixtures` again; the fixture test cannot hold the fake to a shape that was not recorded",
+        ),
+        (None, _) => out.notice(
+            "skipped",
+            "IssueById: the workspace has no issue to record",
+            "create one and run `just record-fixtures` again",
+        ),
+        _ => {}
+    }
     for op in ops::READS {
-        let variables = match op.name {
-            "Viewer" => json!({}),
-            "Teams" => json!({ "first": 5 }),
-            "WorkflowStates" | "IssueLabels" | "Projects" | "Users" => {
-                json!({ "first": 5, "filter": Value::Null })
+        // The same variables the fixture test replays against the fake, from one place.
+        let Some(variables) = fixture_variables(op.name, sample.as_deref()) else {
+            if op.name == "IssueById" {
+                continue;
             }
-            "Issues" => json!({ "first": 2, "filter": Value::Null, "orderBy": "createdAt" }),
-            "IssueById" => match &sample {
-                Some(id) => {
-                    if let Some(lack) = &lack {
-                        out.notice(
-                            "partial",
-                            &format!("IssueById: recorded on {id}, which {lack}"),
-                            "add what is missing to an issue and run `just record-fixtures` again; the fixture test cannot hold the fake to a shape that was not recorded",
-                        );
-                    }
-                    json!({ "id": id, "comments": 5, "attachments": 5, "children": 5 })
-                }
-                None => {
-                    out.notice(
-                        "skipped",
-                        "IssueById: the workspace has no issue to record",
-                        "create one and run `just record-fixtures` again",
-                    );
-                    continue;
-                }
-            },
-            other => {
-                return Err(Error::new(
-                    ErrorCode::Failed,
-                    format!("no variables known for {other}"),
-                ));
-            }
+            return Err(Error::new(
+                ErrorCode::Failed,
+                format!("no variables known for {}", op.name),
+            ));
         };
         let data = session.linear.run(op, variables)?;
         let shape = shape_of(&data);

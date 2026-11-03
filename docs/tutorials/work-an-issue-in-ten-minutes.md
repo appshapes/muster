@@ -96,8 +96,8 @@ Without `jq` you get the whole issue: every field of step 4, plus `comments.node
 `attachments.nodes`, and `children.nodes`, its sub-issues (each with its `identifier`,
 `title` and `state`). Linear orders each of them newest first; past `COMMENTS_PER_ISSUE`
 comments or `CHILDREN_PER_ISSUE` sub-issues a `truncated` notice goes to stderr, the
-oldest are the ones left out, and `muster issue list --parent APP-12` lists every
-sub-issue. The number alone works inside the team: `muster issue get 12`. An issue that
+oldest are the ones left out, and `muster issue list --parent APP-12 --all` lists the
+team's sub-issues of it, open and closed, up to `PAGE_CAP`. The number alone works inside the team: `muster issue get 12`. An issue that
 does not exist is exit 4, `"code":"not_found"`.
 
 ## 7. Close it (one minute)

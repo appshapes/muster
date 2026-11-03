@@ -801,6 +801,60 @@ fn issue_update_moves_an_issue_under_a_parent_and_out_again() {
     assert!(out.one()["parent"].is_null());
     let unknown = muster(&fake, &["issue", "update", "APP-2", "--parent", "APP-999"]);
     assert_eq!(unknown.code, 4, "{}", unknown.stderr);
+
+    let updates = fake
+        .operations()
+        .iter()
+        .filter(|o| *o == "IssueUpdate")
+        .count();
+    let itself = muster(&fake, &["issue", "update", "APP-2", "--parent", "2"]);
+    assert_eq!(itself.code, 2, "{}", itself.stderr);
+    let e = itself.error();
+    assert_eq!(e["code"], "usage");
+    assert!(
+        e["message"]
+            .as_str()
+            .unwrap()
+            .contains("APP-2 cannot be its own parent"),
+        "{e}"
+    );
+    assert_eq!(
+        fake.operations()
+            .iter()
+            .filter(|o| *o == "IssueUpdate")
+            .count(),
+        updates,
+        "refused before any mutation"
+    );
+}
+
+#[test]
+fn fixtures_records_the_newest_issue_with_a_sub_issue_and_says_what_it_lacks() {
+    let fake = Fake::start().unwrap();
+    let dir = temp_dir();
+    let run = muster(&fake, &["fixtures", dir.to_str().unwrap()]);
+    assert_eq!(run.code, 0, "{}", run.stderr);
+    assert_eq!(run.lines().len(), 8, "one line per read operation");
+    let notices = run.notices();
+    assert_eq!(notices.len(), 1, "{}", run.stderr);
+    assert_eq!(notices[0]["code"], "partial");
+    assert!(
+        notices[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("recorded on APP-1, which has a sub-issue but lacks"),
+        "APP-1 has a sub-issue and comments and no attachment: {}",
+        run.stderr
+    );
+    let fixture: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("IssueById.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        fixture["issue"]["children"]["nodes"][0]["identifier"],
+        "<string>"
+    );
+    assert_eq!(fixture["issue"]["comments"]["nodes"][0]["body"], "<string>");
+    assert_eq!(fixture["issue"]["attachments"]["nodes"], json!([]));
 }
 
 #[test]
