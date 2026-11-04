@@ -178,8 +178,8 @@ jobs:
       # Bash allow rule says, and the writer prints its draft into its own log instead
       # (Cavalry's first preview, run 38973732554 on 2026-10-16: two writer sessions, no file,
       # the gate refused). scripts/release-notes-test.py checks every agent step carries it.
-      # Opus 5.5 on all four agent steps (owner, 2026-10-17, in Cavalry), while claude.yml and
-      # review-pull-request.yml run Fable 5.1 at xhigh effort: the account's Fable usage limit
+      # Opus 5.5 on all four agent steps (owner, 2026-10-17, in Cavalry), as claude.yml and
+      # review-pull-request.yml also run since 2026-11-04: the account's Fable usage limit
       # was reached inside Cavalry's second Fable preview (run 38991604611, after seven Fable
       # agent runs in 55 minutes), the fixer stopped with "You've reached your Fable limit" and
       # nothing was sent. Opus sent Cavalry's first preview end to end (run 38976056292); a
