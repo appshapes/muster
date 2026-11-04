@@ -26,7 +26,9 @@ key, a dash and the number. Resolve in this order:
 Exit 4 means no such issue; exit 3 means no key, and `muster whoami` says which source
 was read (the key lives in `CLAUDE.user.md` under `# Linear` and belongs in
 `~/.config/muster/key`, written with a heredoc, never on a command line); exit 2 with a
-message naming the teams means `--team` is needed.
+message naming the teams means `--team` or `MUSTER_TEAM` is needed (the appshapes
+workspace has two teams, and its sessions set `MUSTER_TEAM=APP` in
+`.claude/settings.local.json`).
 
 ## What to read
 

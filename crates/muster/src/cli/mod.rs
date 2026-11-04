@@ -1517,7 +1517,7 @@ pub struct WebhookUpdateArgs {
 
 /// The audit commands (ADR 0014, group 17). Linear's pages reserve the audit log for
 /// owners on the Enterprise plan; the command prints Linear's answer, or its refusal
-/// as exit 6. On 2026-11-03 a Free workspace answered its owner's key.
+/// as exit 6. On 2026-11-03 a Free workspace answered an admin's key, not an owner's.
 #[derive(Subcommand, Debug)]
 pub enum AuditCommand {
     /// List the workspace's audit entries, newest first, one JSON object per line

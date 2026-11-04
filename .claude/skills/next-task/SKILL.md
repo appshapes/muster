@@ -39,9 +39,13 @@ to `master` while this one runs.
   `muster issue list --state Backlog`, `muster issue list --state Todo` and
   `muster issue list --state "In Progress"`. Each prints one JSON object per line with
   `identifier`, `title`, `state.name`, `url` and `description`; `description` is the
-  brief, with its "Done when" section. On exit 3, say the key is missing (CLAUDE.md,
-  "The key") and continue; on exit 7, say Linear was not reached and continue: the
-  slice ADR still gives the order.
+  brief, with its "Done when" section. They list the team `MUSTER_TEAM` names, which a
+  workspace with several teams needs: the appshapes workspace has two, `APP` and the
+  smoke test's `SMK`, and its sessions set `MUSTER_TEAM=APP` in
+  `.claude/settings.local.json`. On exit 2 naming the teams, run them again with
+  `--team APP`; on exit 3, say the key is missing (CLAUDE.md, "The key") and continue;
+  on exit 7, say Linear was not reached and continue: the slice ADR still gives the
+  order.
 - `brigade sessions`, when `brigade` is installed: the line under an active session is
   what it says it is doing, in its owner's words, unverified and possibly stale.
 - `grep -n 'not built yet' justfile`: the gates that do not exist.

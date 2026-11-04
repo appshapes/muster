@@ -12,8 +12,10 @@ The arguments are: $ARGUMENTS
 ## Defaults and conventions
 
 - The team is inferred when the workspace has one; otherwise `--team <key>` or
-  `MUSTER_TEAM` names it (`muster team list` shows the keys). Today the appshapes
-  workspace has one team, `APP`.
+  `MUSTER_TEAM` names it (`muster team list` shows the keys). The appshapes workspace
+  has two teams, `APP` for the house's work and `SMK`, the smoke test's own (ADR 0014),
+  so its sessions set `MUSTER_TEAM=APP` in `.claude/settings.local.json`; without it a
+  create exits 2 and names the teams.
 - Titles are plain, without an identifier. Linear assigns the number; the identifier it
   prints (`APP-12`) is what a commit subject cites.
 - Labels are by name, `--label` repeatable; `muster label list` shows them. A state is by

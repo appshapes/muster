@@ -83,7 +83,7 @@ delete prints Linear's own answer, and nothing is ever deleted for good. The cra
   `auditEntries` and its filter; the actor is resolved as `--assignee` is, before any
   request. Linear's pages reserve the log for owners on the Enterprise plan, and the
   command prints Linear's answer, or its refusal as exit 6; on 2026-11-03 a Free
-  workspace answered its owner's key (ADR 0014, group 17;
+  workspace answered an admin's key, not an owner's (ADR 0014, group 17;
   [the tutorial](docs/tutorials/work-an-issue-in-ten-minutes.md)).
 - `issue archive <ISSUE>` and `issue unarchive <ISSUE>` take an issue out of the lists
   and bring it back; `issue delete <ISSUE>` puts one in Linear's trash, with its
