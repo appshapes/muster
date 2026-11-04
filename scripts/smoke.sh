@@ -297,8 +297,8 @@ case "$code" in
 esac
 echo
 echo "smoke: muster issue batch-update on two throwaway issues, then archive, unarchive, delete and unarchive (ADR 0014; the Revisit asks whether unarchive restores a trashed issue)"
-"$bin" issue create --title "Smoke batch A $stamp" --description "Made by scripts/smoke.sh at $stamp for issue batch-update; canceled by the same run." | jq -r .identifier > "$tmp/batch-a.id"
-"$bin" issue create --title "Smoke batch B $stamp" --description "Made by scripts/smoke.sh at $stamp for issue batch-update; canceled by the same run." | jq -r .identifier > "$tmp/batch-b.id"
+"$bin" issue create --title "Smoke batch A $stamp" --project "Smoke tests" --description "Made by scripts/smoke.sh at $stamp for issue batch-update; canceled by the same run." | jq -r .identifier > "$tmp/batch-a.id"
+"$bin" issue create --title "Smoke batch B $stamp" --project "Smoke tests" --description "Made by scripts/smoke.sh at $stamp for issue batch-update; canceled by the same run." | jq -r .identifier > "$tmp/batch-b.id"
 batch_a=$(cat "$tmp/batch-a.id"); batch_b=$(cat "$tmp/batch-b.id")
 "$bin" issue close "$batch_a" --cancel | jq -c 'select(.identifier != null) | {identifier, state: .state.name}'
 "$bin" issue close "$batch_b" --cancel | jq -c 'select(.identifier != null) | {identifier, state: .state.name}'
@@ -383,7 +383,7 @@ echo "smoke: muster issue get $id"
 "$bin" issue get "$id" | jq '{identifier, title, state: .state.name, comments: [.comments.nodes[].body]}'
 echo
 echo "smoke: muster issue create --parent $id"
-"$bin" issue create --title "Smoke test sub-issue $stamp" --parent "$id" --description "A sub-issue of $id, canceled by the same run." | tee "$tmp/child.json"
+"$bin" issue create --title "Smoke test sub-issue $stamp" --parent "$id" --project "Smoke tests" --description "A sub-issue of $id, canceled by the same run." | tee "$tmp/child.json"
 child=$(jq -r .identifier "$tmp/child.json")
 jq -e '.parent.identifier == "'"$id"'"' "$tmp/child.json" >/dev/null
 echo

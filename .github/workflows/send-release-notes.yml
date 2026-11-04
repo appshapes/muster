@@ -1,3 +1,8 @@
+# DISABLED on GitHub since 2026-11-04 (owner, APP-6): neither the Monday schedule nor a manual
+# run starts until `gh workflow enable send-release-notes.yml`. It waits on the mail server's
+# configuration and on ADR 0009's Revisit; docs/how-to/send-the-release-notes.md says how to
+# turn it back on.
+#
 # The weekly release-notes email (ADR 0009): once a week, email the people on the list what
 # changed on master since the last email. The shape is Brigade's
 # `.github/workflows/send-release-notes.yml`, the house's: a weekly cron, a writer agent that

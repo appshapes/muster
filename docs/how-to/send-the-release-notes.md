@@ -7,6 +7,9 @@ this way is [ADR 0009](../decisions/0009-email-the-weeks-changes.md). The workfl
 
 ## Prerequisites
 
+- The workflow enabled on GitHub. The owner disabled it on 2026-11-04, until the mail
+  server is configured (Linear issue APP-6). `gh workflow list --all` shows its state, and
+  `gh workflow enable send-release-notes.yml` turns it back on.
 - Admin access to the repository, to set its Actions variables and secrets once.
   `gh auth status` says who you are.
 - An SMTP account. The house sends through Resend, from a verified domain.

@@ -16,6 +16,9 @@ The arguments are: $ARGUMENTS
   has two teams, `APP` for the house's work and `SMK`, the smoke test's own (ADR 0014),
   so its sessions set `MUSTER_TEAM=APP` in `.claude/settings.local.json`; without it a
   create exits 2 and names the teams.
+- One team with a project per product (APP-6, 2026-11-04): muster's issues go in the
+  `Muster` project, so pass `--project Muster`; the smoke test files its own issues in
+  `Smoke tests`.
 - Titles are plain, without an identifier. Linear assigns the number; the identifier it
   prints (`APP-12`) is what a commit subject cites.
 - Labels are by name, `--label` repeatable; `muster label list` shows them. A state is by
