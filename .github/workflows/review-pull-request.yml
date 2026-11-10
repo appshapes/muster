@@ -145,7 +145,7 @@ jobs:
         # does, not how a step behaves. Re-resolve the current `v1` when bumping:
         #   gh api repos/anthropics/claude-code-action/git/ref/tags/v1 --jq '.object.sha'
         #   (an annotated tag needs one more hop: gh api .../git/tags/<sha> --jq '.object.sha')
-        uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d # v1.0.266
+        uses: anthropics/claude-code-action@61a9c274fa7110a66dfafc1bbbced03833eb25fe # v1.0.269
         with:
           # A dispatched run's actor is the identity that asked for it: github-actions[bot]
           # when dispatch-review.yml did, with the job token, or a person who ran it by
