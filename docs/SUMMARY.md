@@ -14,7 +14,7 @@ under `docs/` is listed here; `just lint-docs` fails on one that is not.
 # How-to
 
 - [Ask the agent to make a change](how-to/ask-the-agent.md)
-- [Implement a feature, from issue to commit](how-to/implement-a-feature.md)
+- [Implement a feature, from work item to commit](how-to/implement-a-feature.md)
 - [Send the weekly release-notes email](how-to/send-the-release-notes.md)
 - [Cut a release](how-to/cut-a-release.md)
 
@@ -41,3 +41,4 @@ under `docs/` is listed here; `just lint-docs` fails on one that is not.
 - [0013. Build the second slice: sub-issues, attachments and projects, in three features](decisions/0013-build-the-second-slice-sub-issues-attachments-and-projects.md)
 - [0014. Build the third slice: administrative commands, in twenty groups](decisions/0014-build-the-third-slice-administrative-commands.md)
 - [0015. Carry Linear's `userPresentableMessage` on the error object, beside its message](decisions/0015-carry-linears-user-presentable-message-on-the-error-object.md)
+- [0016. Track muster's own work on the Brigade Board, not in Linear](decisions/0016-track-musters-own-work-on-the-brigade-board.md)

@@ -1,23 +1,24 @@
 ---
 name: pr
-description: Open this branch's pull request and see it through the review loop from the author's side: the four gates one command at a time, the review record as the body, master merged in, the auto-merge label, then the wait each stage needs and the one manual step each stall needs, the issue commented and closed, and just tidy after the merge
-argument-hint: "[issue identifier, such as APP-12] | watch <pull request number>"
+description: Open this branch's pull request and see it through the review loop from the author's side: the four gates one command at a time, the review record as the body, master merged in, the auto-merge label, then the wait each stage needs and the one manual step each stall needs, the work item commented and moved to Done, and just tidy after the merge
+argument-hint: "[work item number, such as 272] | watch <pull request number>"
 ---
 
 Land a branch on `master` through a pull request. `/commit` is a person's path, straight
-to `master`; this is the path for a Claude Code session working a Linear issue on a
-branch, which CLAUDE.md gives to bots and agents (Working rules for agents; ADR 0004). The
-pull request is reviewed by the loop in `docs/how-to/ask-the-agent.md`, and that page
-describes the loop from the issue's side. This skill is the author's side: what to run,
-what to wait for, and the one thing to do at each stall. Everything the loop does by
-itself is left to it; a hand on the controls at the wrong moment is what this skill
-exists to prevent.
+to `master`; this is the path for a Claude Code session working a work item of the Brigade
+Board on a branch, which CLAUDE.md gives to bots and agents (Working rules for agents; ADR
+0004; ADR 0016). The pull request is reviewed by the loop in
+`docs/how-to/ask-the-agent.md`, and that page describes the loop from the GitHub issue's
+side. This skill is the author's side: what to run, what to wait for, and the one thing to
+do at each stall. Everything the loop does by itself is left to it; a hand on the controls
+at the wrong moment is what this skill exists to prevent.
 
-The arguments are: $ARGUMENTS. An issue identifier (`APP-12`) opens the pull request
+The arguments are: $ARGUMENTS. A work item's number (`272`) opens the pull request
 (section 1) and then watches it (section 2). `watch <number>` watches an open pull
 request. Empty: on a branch with commits ahead of `origin/master` and no pull request,
-open; with an open pull request, watch; on `master`, stop and say that `/commit` is the
-path from `master`.
+open, with the number the branch's name starts with; with an open pull request, watch;
+on `master`, stop and say that `/commit` is the path from `master`. When watching, the
+work item's number is the one the pull request's title starts with.
 
 Merges only. Never `rebase`, never `--force`. On a conflict outside the append files
 named below, stop and hand it back.
@@ -26,8 +27,9 @@ named below, stop and hand it back.
 
 1. **Read the state.** `git fetch --quiet origin`, then `git status` (never `-uall`),
    `git log --oneline origin/master..HEAD`, `git diff` and `git diff --cached`. The branch
-   is `<identifier>-<slug>` (`APP-12-add-the-comment-command`); a change sitting on
-   `master` moves to one first with `git switch -c <identifier>-<slug>`. Check the diff
+   is `<number>-<slug>` (`272-move-brigade-cavalry-muster-and`, as the `work-item-start`
+   skill names it); a change sitting on `master` moves to one first with
+   `git switch -c <number>-<slug>`. Check the diff
    against CLAUDE.md as `/commit` does (docs in the same commit, `just gen-commands` run
    for a changed command, the CHANGELOG line, a dependency's allowlist entry and
    justification, an ADR for an output field, an exit code, a key source or a flag's
@@ -51,7 +53,7 @@ named below, stop and hand it back.
    non-zero exit stops the sequence; fix, then start this step again.
 
 3. **Commit.** The message is the review record, as `/commit` writes it: subject
-   `<identifier>: <Imperative subject>` under 72 characters; body with what changed,
+   `<number>: <Imperative subject>` under 72 characters; body with what changed,
    which invariant by number, and the evidence (the gate results, the ADR number, the
    `just smoke` output when the change claims to work against Linear, the test that
    fails without the change). Several commits on the branch are fine; the squash merge
@@ -85,7 +87,7 @@ named below, stop and hand it back.
    Linear). End it with `Closes #<issue>` when a GitHub issue exists. Then:
 
    ```
-   gh pr create --title "<identifier>: <Imperative subject>" --body-file <file> --label auto-merge
+   gh pr create --title "<number>: <Imperative subject>" --body-file <file> --label auto-merge
    ```
 
    `auto-merge` goes on at creation: the reviewer's approval of the current head then
@@ -164,25 +166,17 @@ gh pr checks <number>
 - **Merged.** `git fetch --quiet origin` and `git log --oneline -1 origin/master` show
   the squash commit with the pull request's title; `gh run list --branch master
   --workflow ci --limit 1` is its CI run, and the pull request is not done until that
-  run is green. Then land it on the Linear issue: write the landing comment to a file
-  (the squash commit's hash and subject, the pull request number, what changed, how
-  each "Done when" item was checked, what is still open and who owns it, and the
-  session stamp as its last line, `Session stamp: <team>/<session name>, <YYYY-MM-DD>`,
-  as the `linear-done` skill describes), then
-  `muster issue attach <identifier> --url <pull request URL> --title "Pull request <n>: <subject>"`
-  unless `muster issue get <identifier>` already lists that URL under `attachments.nodes`
-  (Linear's GitHub integration links a pull request whose branch, title or body names
-  the identifier, and `issue attach` on the same URL would rename its link), so that
-  Linear shows the pull request where it keeps links,
-  `muster issue comment <identifier> --body-file <file>` and
-  `muster issue close <identifier>`; each prints one JSON line and exits 0. Then run
-  `just tidy`: it retires the branch locally, with its worktree, and GitHub has already
-  deleted it on origin.
+  run is green. Then land it on the work item, once, exactly as step 5 of the
+  `work-item-start` skill says: what the landing comment holds, the move to Done, never
+  a close, and `just tidy`. A session working the work item under that skill is at that
+  step now. A pull request with no work item (its title has no number) has nothing to
+  land on the board; run `just tidy`: it retires the branch locally, with its worktree,
+  and GitHub has already deleted it on origin.
 
 ## 3. Report
 
 Give the pull request number and URL; each review's verdict, who answered it and with
-which push; the squash commit on `master` and its CI run; the issue's state after the
-comment and the close; and that `just tidy` ran. If a rule above was applied, say which
+which push; the squash commit on `master` and its CI run; the work item's list after
+the comment and the move; and that `just tidy` ran. If a rule above was applied, say which
 and why. If the pull request waits on a fix run or a review, say so and what the next
 check is; do not add a label to hurry it.

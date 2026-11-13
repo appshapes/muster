@@ -1,7 +1,7 @@
 ---
 name: commit
 description: Commit, pull and push the working tree to master after just lint, just test, just docs and just lint-docs, with a commit message that is the review record
-argument-hint: "[issue identifier, such as APP-12]"
+argument-hint: "[work item number, such as 272]"
 ---
 
 Commit the current working tree to `master` with this repository's commit sequence.
@@ -27,7 +27,7 @@ git push
 Merges only. Never `rebase`, never `--force`. On a merge conflict, stop and hand it
 back: no `git merge --abort`, no rebase, no force-push.
 
-The optional Linear issue identifier is: $ARGUMENTS
+The optional work item number is: $ARGUMENTS
 
 ## 1. Analyze changes
 
@@ -95,8 +95,9 @@ the change about to be committed; on a clean tree it checks the last commit.
 ## 5. Write the commit message
 
 - Subject: imperative mood, capitalized, under 72 characters, the intent rather than a
-  list of files. When an issue identifier was given, prefix it: `APP-12: <Subject>`. The
-  identifier is the Linear issue the work belongs to (see `/linear-read`).
+  list of files. When a work item number was given, prefix it: `272: <Subject>`. The
+  number is the work item on the team's Brigade Board that the work belongs to
+  (`brigade work-item show 272`; ADR 0016). A commit with no work item has no prefix.
 - Body: the review record. What changed. Which invariant it serves, by number. The
   evidence: the gate results, the ADR number, the `just smoke` output when the change
   claims to work against Linear, and the name of the test that fails without the change.

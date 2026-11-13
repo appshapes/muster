@@ -139,7 +139,8 @@ can map vocabulary in one place, and pages elsewhere mention Trello at most once
 | search | Text an issue's title must contain, case-insensitively; `--search` on `issue list`. | `title.containsIgnoreCase` | search | `docs/reference/commands.md#muster-issue-list` |
 | limit | The most items a list prints, `--limit`, at most `PAGE_CAP`; past it a `truncated` notice. | `first` | none | `docs/reference/commands.md#bounds` |
 | priority | An integer from 0 (none) to 4 (low); 1 is urgent; an issue's, a project's or an initiative's. | `priority`, `priorityLabel` | none | `docs/reference/commands.md#muster-issue-create` |
-| session stamp | The last line of a comment an agent writes: `Session stamp: <team>/<session>, <date>`. | none | the same line | `.claude/skills/linear-done/SKILL.md` |
+| Brigade Board | The board of work items shared by the house's Brigade team, where muster's own work is tracked; read and changed with `brigade work-item`, from a checkout joined to the team. Not part of Linear or of muster. | none | board | `docs/decisions/0016-track-musters-own-work-on-the-brigade-board.md` |
+| work item | An entry on the Brigade Board, tagged `muster` when it is muster's; its number prefixes the commits that do it, `272: <subject>`. Not a Linear object: muster's commands work on issues. | none | card | `docs/decisions/0016-track-musters-own-work-on-the-brigade-board.md` |
 | exit code | What muster returns to the shell; each failure class has its own. | none | none | `docs/reference/commands.md#exit-codes` |
 | error object | The one JSON object muster writes to stderr on failure. | none | none | `docs/reference/commands.md#exit-codes` |
 | bound | A named limit: page size, page cap, timeout, body size, retries. | none | none | `docs/reference/commands.md#bounds` |

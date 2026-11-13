@@ -8,16 +8,18 @@ first one. Why the loop is built this way is in ADR 0004
 
 - Write access to the repository. The agent runs only for a person with write access;
   a comment from anyone else is ignored by design.
-- A Linear issue for the work, when there is one. Its identifier becomes the prefix of
-  the pull request title and so of the commit on `master`.
+- A [work item](../glossary.md) for the work, when there is one: muster's own work is
+  tracked on the team's [Brigade Board](../glossary.md) (ADR 0016). Its number becomes
+  the prefix of the pull request title and so of the commit on `master`.
 
 ## Steps
 
 1. Open a GitHub issue. The title is the pull request title the agent will use, so write
-   it as a commit subject: `APP-12: Add a timeout to every CI job`, or without the
-   identifier prefix when there is no Linear issue. The body is the agent's whole brief:
-   what to change, where, what done looks like, and which invariant in `CLAUDE.md` it
-   serves. The agent reads nothing else from you.
+   it as a commit subject: `272: Add a timeout to every CI job`, or without the number
+   prefix when there is no work item. The body is the agent's whole brief: what to
+   change, where, what done looks like, and which invariant in `CLAUDE.md` it serves.
+   The agent reads nothing else from you, and it cannot read the board: copy the work
+   item's brief into the body.
 2. Add the `claude` label. Add `auto-merge` as well if the pull request should merge
    without you once the reviewer approves it and CI is green. Leave `auto-merge` off
    when you want to read the pull request yourself first.
@@ -44,6 +46,20 @@ first one. Why the loop is built this way is in ADR 0004
    carries what CI does not check: the `just smoke` output for a change that claims to
    work against a real workspace, which the agent cannot run because it holds no key, so
    its body says so and a person runs it.
+4. Land the work item, when the issue named one. The agent has no board, so this step is
+   yours. Once `gh run list --commit <full sha>` shows the `ci` run of the squash commit
+   green, comment its hash on the work item, then move it to Done:
+
+   ```sh
+   brigade work-item comment 272 <<'EOF'
+   Landed as <short sha> "272: Add a timeout to every CI job", pull request <n>.
+   EOF
+   brigade work-item move 272 done
+   ```
+
+   Each prints one line that names the work item, such as
+   `commented: 272 "<title>"`. Do not close the work item: closing is the owner's word
+   (ADR 0016).
 
 ## How to verify it worked
 
@@ -51,7 +67,8 @@ first one. Why the loop is built this way is in ADR 0004
 is your issue title and whose body is the pull request body. The issue is closed with
 a link to the pull request. Without `auto-merge`, the pull request is open and
 approved, waiting for you to merge it. After the merge, `just tidy` retires the
-branch locally; GitHub has already deleted it on origin.
+branch locally; GitHub has already deleted it on origin. After step 4,
+`brigade work-item show 272` prints `list: Done (done)`.
 
 ## Other ways in
 

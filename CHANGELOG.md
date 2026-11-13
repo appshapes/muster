@@ -6,7 +6,13 @@ user-visible change, added in the same commit as the change. The format follows
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- Muster's own work is tracked as work items on the house's Brigade Board, no longer
+  in Linear ([ADR 0016](docs/decisions/0016-track-musters-own-work-on-the-brigade-board.md)).
+  The repository's `/work-item-start` skill replaces `/linear-start`; `/linear-read`,
+  `/linear-create` and `/linear-done` are removed; `/pr` and `/next-task` work on the
+  board. Nothing in the `muster` binary changes.
 
 ## 0.5.0 - 2026-11-03
 

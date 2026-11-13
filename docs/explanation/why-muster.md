@@ -1,7 +1,9 @@
 # Why Muster, and why a CLI for agents
 
-Muster exists because the house's coding agents work Linear issues from a checkout, and
-nothing Linear ships lets a program do that with an exit code it can branch on. Muster
+Muster exists because coding agents work Linear issues from a checkout, as the house's
+own did when muster was built, and nothing Linear ships lets a program do that with an
+exit code it can branch on. (Muster's own work has since moved to the house's Brigade
+Board: [ADR 0016](../decisions/0016-track-musters-own-work-on-the-brigade-board.md).) Muster
 is one binary that prints one JSON object per line, exits with a documented code per
 failure class, never prompts, and never takes the key on the command line. A person can
 use it too, with `--human`, but the agent is the first user and every default is set

@@ -106,8 +106,8 @@ the card, the terminal cards, the callout, is the renderer's. You write the word
   goes nowhere from an inbox, and a link outside this repository is refused.
 - Use Linear's vocabulary, as the glossary does (issue, team, state, label, project), and say
   "In Trello, this is …" at most once in the whole email.
-- Never write: a commit hash, an issue, card or pull request number as a reference to the
-  work (`issue 12`, `#12`), a path into the crate's `src/`, the name or the address of a
+- Never write: a commit hash, an issue, card, work item or pull request number as a
+  reference to the work (`issue 12`, `#12`, `272`), a path into the crate's `src/`, the name or the address of a
   person, the word "Unreleased", a placeholder. An identifier inside an example command,
   `muster issue get APP-12`, is the product's own text and is allowed.
 - Never invent a change. If the sources do not say what a change means for a reader, leave

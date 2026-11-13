@@ -280,5 +280,5 @@ skills did ([glossary](../glossary.md)).
 - [Commands, exit codes, bounds and environment](../reference/commands.md): every
   command and flag, generated from the binary.
 - [Why Muster, and why a CLI for agents](../explanation/why-muster.md).
-- [Implement a feature, from issue to commit](../how-to/implement-a-feature.md), to
+- [Implement a feature, from work item to commit](../how-to/implement-a-feature.md), to
   change muster itself.

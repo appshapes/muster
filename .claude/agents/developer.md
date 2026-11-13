@@ -82,9 +82,11 @@ why, and never invent its output.
 - `git add <named paths>`, **never** `git add :/ .`, then `git commit`, then `git push` to
   your branch. **Never run the `/commit` skill**: it is the developer's sequence for
   `master`, it stages every untracked file and it merges `origin` mid-run.
-- The commit message is the review record: an imperative subject, then what changed, which
-  invariant it serves, and the evidence (the gate output, the ADR number, the `just smoke`
-  output or the words that it was not run). The workflow builds the pull request body from
+- The commit message is the review record: an imperative subject, prefixed with the work
+  item's number and a colon when the issue's title starts with one (`272: `; ADR 0016)
+  and never with a number the issue did not name, then what changed, which invariant it
+  serves, and the evidence (the gate output, the ADR number, the `just smoke` output or
+  the words that it was not run). The workflow builds the pull request body from
   these messages, and the squash merge takes the pull request title and body as the commit
   on `master` (ADR 0004). After a fix that pushed, bring the body up to date with
   `gh pr edit <n> --body-file`; without a push, edit the body only for a blocker that is in

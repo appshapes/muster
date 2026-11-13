@@ -94,9 +94,10 @@ checked out under `pr-head/`, so read the changed files and their surroundings t
   `crates/muster/Cargo.toml`, a justification in the pull request body and an ADR
   (ADR 0002, ADR 0003). `#[allow]` of a workspace lint, or an edit to `clippy.toml` or the
   `Cargo.toml` lint tables, is a blocker.
-- **Commits and merges.** Pull request title `<identifier>: <Imperative subject>` when the
-  issue names a Linear issue (`APP-12: Add the comment command`), otherwise an imperative
-  subject; body as above. Merges only, never rebase, no force push, no rewritten history.
+- **Commits and merges.** Pull request title `<number>: <Imperative subject>` when the
+  issue names a work item of the team's Brigade Board (`272: Add the comment command`;
+  ADR 0016), otherwise an imperative subject; body as above. Merges only, never rebase,
+  no force push, no rewritten history.
 - **Paths an agent may not touch.** On a branch the writer made (`claude/...`), a change
   under `.github/workflows/`, `.claude/` or `crates/muster/tests/fixtures/` is a blocker.
   A Dependabot branch (`dependabot/...`) moves pins and nothing else. For an actions bump

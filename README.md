@@ -38,7 +38,7 @@ wait on a paid plan), attachments as uploads.
 | Know why something was decided | [`docs/decisions/`](docs/decisions/) |
 | Write documentation | [`.claude/rules/docs.md`](.claude/rules/docs.md) |
 | Ask the agent to make a change | [`docs/how-to/ask-the-agent.md`](docs/how-to/ask-the-agent.md) |
-| Implement a feature, from issue to commit | [`docs/how-to/implement-a-feature.md`](docs/how-to/implement-a-feature.md) |
+| Implement a feature, from work item to commit | [`docs/how-to/implement-a-feature.md`](docs/how-to/implement-a-feature.md) |
 | Work an issue, in ten minutes | [`docs/tutorials/work-an-issue-in-ten-minutes.md`](docs/tutorials/work-an-issue-in-ten-minutes.md) |
 | Get the week's changes by email, or send them | [`docs/how-to/send-the-release-notes.md`](docs/how-to/send-the-release-notes.md) |
 | Cut a release | [`docs/how-to/cut-a-release.md`](docs/how-to/cut-a-release.md) |
