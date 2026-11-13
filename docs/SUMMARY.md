@@ -42,3 +42,4 @@ under `docs/` is listed here; `just lint-docs` fails on one that is not.
 - [0014. Build the third slice: administrative commands, in twenty groups](decisions/0014-build-the-third-slice-administrative-commands.md)
 - [0015. Carry Linear's `userPresentableMessage` on the error object, beside its message](decisions/0015-carry-linears-user-presentable-message-on-the-error-object.md)
 - [0016. Track muster's own work on the Brigade Board, not in Linear](decisions/0016-track-musters-own-work-on-the-brigade-board.md)
+- [0017. Keep writing the GraphQL operations by hand, held to Linear's recorded answers](decisions/0017-keep-writing-the-graphql-operations-by-hand.md)
