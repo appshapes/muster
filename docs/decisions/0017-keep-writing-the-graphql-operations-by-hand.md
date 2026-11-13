@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-11-13
-- **Invariants affected:** 1, 3, 6
+- **Invariants affected:** 1, 6
 - **Supersedes:** none. It answers the Revisit clause of ADR 0002, which stands.
 
 ## Context
@@ -20,7 +20,8 @@ On 2026-11-13, `crates/muster/src/linear/operations.rs` holds 88 operations: 27 
 and 61 mutations, which share 20 fragments, in 1,304 lines. That is after the first two
 slices (ADRs 0007 and 0013) and nineteen of the third slice's twenty groups (ADR 0014).
 The twentieth, the invite group, waits on its branch with five more. The first trigger
-fired long ago, and no ADR has answered it.
+fired on 2026-11-03, when commit `f3b7cc9` (the label commands) took the count from 29
+to 34, and no ADR has answered it.
 
 Muster does not need Rust types to print an answer. The client sends an operation's text
 and gets the answer back as a `serde_json::Value`. A command prints Linear's answer as
