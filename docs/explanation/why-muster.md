@@ -66,6 +66,9 @@ as well; Rust won because the house's gates, lints and agent workflows are alrea
 Rust-shaped in Cavalry, the sibling repository, and port by copying.
 [ADR 0002](../decisions/0002-write-muster-in-rust-on-a-blocking-client.md) is the
 decision, with Go, the TypeScript SDK and Python as the alternatives.
+[ADR 0017](../decisions/0017-keep-writing-the-graphql-operations-by-hand.md) looks at
+code generation again at 88 operations and keeps them written by hand: Linear serves a
+field that its own schema does not list, and code generated from that schema refuses it.
 
 ## Why a fake Linear in the tests
 
