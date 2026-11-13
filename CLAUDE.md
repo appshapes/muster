@@ -121,3 +121,4 @@ scripts/              the Python gates: lint-docs, lint-workspace, tidy, release
 
 # Overrides
 - @./.brigade/CLAUDE.brigade.md
+- @./CLAUDE.user.md (optional, local-only, gitignored — absent in fresh clones)
