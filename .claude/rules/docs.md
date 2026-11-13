@@ -64,8 +64,14 @@ command, a flag, an output field or an error message has a row.
 
 - One decision per file, numbered, `NNNN-short-title.md`, copied from
   `0000-template.md`.
-- Status is one of Proposed, Accepted, Superseded by NNNN, Rejected. Accepted ADRs
-  are not edited except to change Status.
+- Status is one of Proposed, Accepted, Accepted; superseded in part by NNNN (when a
+  later ADR replaces only part of it), Superseded by NNNN, Rejected. Accepted ADRs
+  are not edited except to change Status, or to correct a statement of fact that was
+  wrong when written: the correction adds a line
+  `- **Corrected:** YYYY-MM-DD: <what was wrong, and what it says now>` after the
+  Supersedes line, names every fact it changes, keeps the earlier ones, and never
+  touches the title, the other header fields or the Decision section (ADR 0018). A
+  change of mind is a new ADR.
 - Required for any change to an output field, an exit code, a key source, a flag's
   meaning, a dependency, or an invariant in `CLAUDE.md`. Encouraged for anything a new
   team member would ask "why" about.

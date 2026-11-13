@@ -5,6 +5,13 @@
 - **Invariants affected:** 6
 - **Supersedes:** feature 5 of ADR 0007, in part: muster's own work is no longer tracked
   in Linear through the `linear-*` skills. The rest of ADR 0007 stands.
+- **Corrected:** 2026-11-13: the Context named work item 265 as where the owner ruled
+  that a finished work item is moved to Done and not closed, and called a commit's
+  number being its work item's a default of brigade's port. The owner ruled the first by
+  closing work item 264 after its session moved it to Done (2026-11-11) and by agreeing
+  that work item 257 goes to Done unclosed (2026-11-13), and ruled the second on
+  2026-11-11 (Trello card 263). The Context now names the source of all three rules
+  (ADR 0018).
 
 ## Context
 
@@ -24,13 +31,16 @@ with `brigade work-item`. The same day the owner ruled, recorded as decision 7 o
 Brigade work item 272, that the old tracker skills all go in every repository, the
 reading ones too, because "Linear was simply an experiment, supplanted by Brigade
 Board". brigade had already ported its own Trello skills (Brigade work item 265, brigade
-commit `e17a9eb`). There the owner ruled that a finished work item is moved to Done and
-not closed: closing is the owner's word. That port also took two defaults, left for the owner to
-overrule, which the session leading work item 272 passed to muster as binding: a work
-item's comment carries no `Session stamp:` line, because the board records the member
-and the session of every comment; and a commit's number is its work item's. The owner
-confirmed this port of muster's process to the session that wrote this ADR, on
-2026-11-13.
+commit `e17a9eb`). Three rules bind the port. Two are the owner's own. A finished work
+item is moved to Done and not closed, because closing is the owner's word: the owner
+closed work item 264 after its session moved it to Done, on 2026-11-11, and agreed on
+2026-11-13 that work item 257 goes to Done and is not closed. And a commit's number is
+its work item's, the owner's ruling of 2026-11-11 (Trello card 263). The third is a
+default of brigade's port (work item 265, 2026-11-12), written for the owner to confirm
+or overrule, and not overruled: a work item's comment carries no `Session stamp:` line,
+because the board records the member and the session of every comment. The comment of
+2026-11-13 on work item 272 records the source of each. The owner confirmed this port of
+muster's process to the session that wrote this ADR, on 2026-11-13.
 
 None of this changes the product. Muster is a command-line client for Linear, and its
 commands, its fixtures, the fake Linear, `just smoke`, the smoke team `SMK` and the

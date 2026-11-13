@@ -1,9 +1,12 @@
 # NNNN. Short title in the imperative ("Read the key from a file, never argv")
 
-- **Status:** Proposed | Accepted | Superseded by NNNN | Rejected
+- **Status:** Proposed | Accepted | Accepted; superseded in part by NNNN | Superseded by NNNN | Rejected
 - **Date:** YYYY-MM-DD
 - **Invariants affected:** list the `CLAUDE.md` invariant numbers this touches
 - **Supersedes:** NNNN, or none
+<!-- After acceptance, each correction of fact adds a line here, and the Decision section
+     never changes (ADR 0018):
+- **Corrected:** YYYY-MM-DD: what was wrong, and what the ADR says now -->
 
 ## Context
 

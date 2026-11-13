@@ -125,8 +125,11 @@ and the administrative ones [ADR 0014](../decisions/0014-build-the-third-slice-a
 - `just lint-docs` says a public item or a command `changed with no change under docs/
   or to a README`: a public item needs its documentation in the same commit, and a
   command needs `just gen-commands` run (step 3.5).
-- `just lint-docs` says an ADR `was Accepted at ... and changed beyond its Status line`:
-  accepted ADRs are immutable. Write a new one that supersedes it.
+- `just lint-docs` says an ADR `was Accepted at ... and changed beyond its Status line
+  without a correction of fact`: an accepted ADR changes only to correct a fact, with a
+  dated `- **Corrected:**` line in its header and its Decision section untouched
+  ([ADR 0018](../decisions/0018-correct-a-fact-in-an-accepted-adr-by-editing-it.md)). A
+  change of mind is a new ADR that supersedes it.
 - `just lint-docs` or `just docs` says ``glossary: `x` (from `muster ...`) has no row``:
   every term a command or a flag introduces has a row in `docs/glossary.md` (step
   3.5): the command group's noun and the flag's noun. Add the row with its definition,

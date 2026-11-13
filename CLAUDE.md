@@ -96,7 +96,7 @@ scripts/              the Python gates: lint-docs, lint-workspace, tidy, release
 - `docs/` has four kinds of page and they do not mix: tutorial, how-to, reference (generated), explanation. Detail in `.claude/rules/docs.md`.
 - Write for the reader in invariant 6. Define a term on first use or link it to `docs/glossary.md`.
 - The crate README answers four questions: what this does, what it must never do, a twenty-line example that is also a doctest, and what to read next.
-- Decisions live in `docs/decisions/` as numbered ADRs, immutable once accepted and superseded by a new one. A decision made in chat, a call or a commit message does not exist until it is an ADR.
+- Decisions live in `docs/decisions/` as numbered ADRs, immutable once accepted except for a dated correction of fact outside the Decision section (ADR 0018), and superseded by a new one. A decision made in chat, a call or a commit message does not exist until it is an ADR.
 - Every error message names the docs anchor that explains it.
 
 ## Working rules for agents

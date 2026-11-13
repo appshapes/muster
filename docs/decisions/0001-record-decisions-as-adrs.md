@@ -1,6 +1,6 @@
 # 0001. Record decisions as ADRs in the repository
 
-- **Status:** Accepted
+- **Status:** Accepted; superseded in part by 0018
 - **Date:** 2026-11-02
 - **Invariants affected:** 6
 - **Supersedes:** none

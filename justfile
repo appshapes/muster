@@ -21,6 +21,7 @@ test *ARGS: test-scripts
 
 # The tests of the Python scripts that have them, standard library only, no network.
 test-scripts:
+    python3 scripts/lint-docs-test.py
     python3 scripts/release-notes-email-test.py
     python3 scripts/release-notes-test.py
 

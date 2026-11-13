@@ -1,6 +1,6 @@
 # 0007. Build the Trello command set first, in five features
 
-- **Status:** Accepted
+- **Status:** Accepted; superseded in part by 0016
 - **Date:** 2026-11-02
 - **Invariants affected:** 1, 2, 5, 6
 - **Supersedes:** none

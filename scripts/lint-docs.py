@@ -13,8 +13,10 @@ Checks:
   links   every relative link in docs/, README.md and crates/*/README.md resolves to a
           file or directory, and every anchor names a heading in its target
   adrs    every file in docs/decisions/ is NNNN-title.md with a matching "# NNNN." title
-          and a Status of Proposed, Accepted, Superseded by NNNN or Rejected; numbers
-          are unique
+          and a Status of Proposed, Accepted (optionally "; superseded in part by NNNN"),
+          Superseded by NNNN or Rejected; numbers are unique; a Corrected line is in
+          the header, as "- **Corrected:** YYYY-MM-DD: <what>" with a real date
+          (ADR 0018)
   glossary every term the command tree introduces has a row in docs/glossary.md: the
           noun of every command group (`issue` of `muster issue get`) and of every flag
           (`label` of `--add-label`, `description` of `--description-file`, `git branch
@@ -27,7 +29,10 @@ Checks:
   change  over the range: a change to a public item (a line with `pub ` in a crate's
           src/), or any change to the command tree (crates/muster/src/main.rs or
           crates/muster/src/cli/), needs a change under docs/ or to a README; an ADR
-          that was already Accepted may change only its Status line
+          that was already Accepted may change only its Status line, or take a
+          correction of fact: one or more dated Corrected entries appended to its
+          header, every earlier entry kept whole, and its title, its other header
+          fields and its Decision section as they were (ADR 0018)
 
 The range: $LINT_DOCS_RANGE if set; in CI, origin/<base>...HEAD for a pull request and
 <before>..<after> for a push (HEAD~1..HEAD when <before> is the null commit); on a
@@ -41,6 +46,7 @@ muster has no sources for.
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import re
@@ -57,7 +63,13 @@ DECISIONS = DOCS / "decisions"
 COMMAND_TREE_FILES = ("crates/muster/src/main.rs",)
 COMMAND_TREE_DIRS = ("crates/muster/src/cli/",)
 
-STATUSES = re.compile(r"^- \*\*Status:\*\* (Proposed|Accepted|Superseded by \d{4}|Rejected)\s*$")
+STATUSES = re.compile(r"^- \*\*Status:\*\* (?:(Proposed|Superseded by \d{4}|Rejected)"
+                      r"|(Accepted)(?:; superseded in part by \d{4}(?:, \d{4})*)?)\s*$")
+# A header field, `- **Name:** value`, whose continuation lines are indented two spaces.
+HEADER_FIELD = re.compile(r"^- \*\*([A-Z][A-Za-z ]*):\*\*")
+# Anything that looks like a Corrected line, so that a misspelt one is named, not missed.
+LOOSE_CORRECTED = re.compile(r"^\s*[-*]\s*\**\s*corrected\b", re.IGNORECASE)
+CORRECTED_LINE = re.compile(r"^- \*\*Corrected:\*\* (\d{4}-\d{2}-\d{2}): \S")
 ADR_NAME = re.compile(r"^(\d{4})-[a-z0-9-]+\.md$")
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 REFERENCE = DOCS / "reference" / "commands.md"
@@ -187,8 +199,31 @@ def adr_status(text: str) -> str | None:
     for line in text.splitlines():
         m = STATUSES.match(line)
         if m:
-            return m.group(1)
+            return m.group(1) or m.group(2)
     return None
+
+
+def header_lines(text: str) -> list[str]:
+    """An ADR's lines after its title, up to its first `## ` heading."""
+    out: list[str] = []
+    for line in text.splitlines()[1:]:
+        if line.startswith("## "):
+            break
+        out.append(line)
+    return out
+
+
+def header_entries(text: str) -> list[tuple[str, str]]:
+    """The header's fields in order, as (name, the entry's whole text with its
+    continuation lines)."""
+    entries: list[list[str]] = []
+    for line in header_lines(text):
+        m = HEADER_FIELD.match(line)
+        if m:
+            entries.append([m.group(1), line])
+        elif entries and line.startswith("  "):
+            entries[-1][1] += "\n" + line
+    return [(name, body) for name, body in entries]
 
 
 def check_adrs() -> int:
@@ -209,7 +244,81 @@ def check_adrs() -> int:
             find(f"adrs: {rel(p)} first line must start with '# {num}. '")
         if adr_status(text) is None:
             find(f"adrs: {rel(p)} has no '- **Status:**' line with a valid status")
+        for problem in corrected_problems(text):
+            find(f"adrs: {rel(p)} {problem} (ADR 0018)")
     return len(files)
+
+
+def corrected_problems(text: str) -> list[str]:
+    """What is wrong with an ADR's Corrected lines: one outside the header, one not in
+    the form `- **Corrected:** YYYY-MM-DD: <what>`, or one whose date is not a date."""
+    problems: list[str] = []
+    header = set(header_lines(text))
+    for line in text.splitlines():
+        if not LOOSE_CORRECTED.match(line):
+            continue
+        m = CORRECTED_LINE.match(line)
+        if not m:
+            problems.append(f"has a Corrected line not in the form "
+                            f"'- **Corrected:** YYYY-MM-DD: <what>': {line.strip()[:60]}")
+            continue
+        if line not in header:
+            problems.append("has a Corrected line outside its header, which ends at the "
+                            "first '## ' heading")
+        try:
+            datetime.date.fromisoformat(m.group(1))
+        except ValueError:
+            problems.append(f"has a Corrected line whose date {m.group(1)} is not a date")
+    return problems
+
+
+def decision_section(text: str) -> list[str]:
+    """The lines of an ADR's `## Decision` section, up to the next `## ` heading outside
+    a fenced code block."""
+    out: list[str] = []
+    inside = fenced = False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        elif line.startswith("## ") and not fenced:
+            inside = line.strip() == "## Decision"
+            continue
+        if inside:
+            out.append(line)
+    return out
+
+
+def without_status(text: str) -> list[str]:
+    """An ADR's lines without its Status line, which may always change (ADR 0001)."""
+    return [line for line in text.splitlines() if not STATUSES.match(line)]
+
+
+def fixed_header(text: str) -> list[tuple[str, str]]:
+    """The header fields a correction never changes: all but Status and Corrected."""
+    return [entry for entry in header_entries(text) if entry[0] not in ("Status", "Corrected")]
+
+
+def adr_change_problem(before: str, after: str) -> str | None:
+    """Why an Accepted ADR may not change from `before` to `after`, or None when it may
+    (ADR 0001, ADR 0018). Its Status line may change. Any other change is a correction of
+    fact: it appends one or more Corrected entries to the header, keeps every earlier
+    entry whole and first, and leaves the title, the other header fields and the
+    Decision section as they were."""
+    if without_status(before) == without_status(after):
+        return None
+    if before.splitlines()[:1] != after.splitlines()[:1]:
+        return "its title changed"
+    if fixed_header(before) != fixed_header(after):
+        return "a header field other than Status and Corrected changed"
+    old = [body for name, body in header_entries(before) if name == "Corrected"]
+    new = [body for name, body in header_entries(after) if name == "Corrected"]
+    if new[:len(old)] != old:
+        return "an earlier Corrected entry changed or moved"
+    if len(new) == len(old):
+        return "it changed beyond its Status line without a new Corrected entry"
+    if decision_section(before) != decision_section(after):
+        return "its Decision section changed, which a correction never does"
+    return None
 
 
 # ---- glossary ---------------------------------------------------------------------
@@ -390,10 +499,13 @@ def check_change() -> tuple[str, int]:
         after = content_at(head, f)
         if before is None or after is None or adr_status(before) != "Accepted":
             continue
-        strip = lambda t: [l for l in t.splitlines() if not STATUSES.match(l)]
-        if strip(before) != strip(after):
-            find(f"change: {f} was Accepted at {base} and changed beyond its Status line; "
-                 "accepted ADRs are immutable, write a new one (.claude/rules/docs.md)")
+        problem = adr_change_problem(before, after)
+        if problem:
+            find(f"change: {f} was Accepted at {base} and changed beyond its Status line, "
+                 f"but not as a correction of fact: {problem}. A correction appends a dated "
+                 "Corrected entry to the header and changes no title, header field or "
+                 "Decision section; a change of mind is a new ADR (ADR 0018, "
+                 ".claude/rules/docs.md)")
     return label, len(files)
 
 
