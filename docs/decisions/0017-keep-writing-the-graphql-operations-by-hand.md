@@ -59,8 +59,8 @@ operations, and a check against it would fail the same 5. Muster adds no schema 
   against ADR 0002's small tree.
 - **Keep writing by hand, and check every operation against a copy of Linear's schema
   kept in the repository, in `just test`.** It is the one alternative that would run in
-  CI, and it would catch a misspelt field in any operation when the tests run, the four
-  writes `just smoke` does not run included. It lost on three counts. First, it had
+  CI, and it would catch a misspelt field in any operation when the tests run, the
+  writes `just smoke` does not send to Linear included (see the Evidence). It lost on three counts. First, it had
   nothing to catch: on 2026-11-13 every field muster selects is either in Linear's
   schema or served by Linear without being in it. Second, it needs a list of fields
   Linear serves but does not publish, kept by hand, and a copy of the schema that lags
@@ -98,8 +98,15 @@ The key used was an admin's key of the `appshapes` workspace, on Linear's Free p
 - **What runs against Linear by hand.** All 27 reads, through `just record-fixtures`.
   Of the 61 writes, `scripts/smoke.sh` does not run `user change-role`, `user suspend`,
   `user unsuspend` or `user revoke-sessions`: the workspace's two users, its owner and an
-  app, leave no safe target for them (commit `7e7af76`). Their selection sets were valid
-  in the check above.
+  app, leave no safe target for them (commit `7e7af76`). It runs
+  `team create --name "Smoke tests" --key SMK` on every run, but only a workspace's
+  first run sends `TeamCreate` to Linear. From the second run on, the smoke team exists,
+  and `team create` refuses a name a team already has (exit 6) before it sends the
+  mutation. `TeamCreate` last reached Linear on 2026-11-03, in the first smoke run
+  against `appshapes` (commit `89f28fd`), and its text has not changed since.
+  `TeamUpdate` and `TeamUnarchive` send its `TeamFields` fragment on every run, but not
+  its `teamCreate(input:, copySettingsFromTeamId:)` call. The four `user` writes and
+  `TeamCreate` were valid in the check above.
 - **The costs.** Muster today: a 12.8-second clean release build, 54 crates in its
   normal and build tree, and a 4.9 MB binary. `graphql_client` 0.16.0 adds 8 crates
   (`graphql_client`, `graphql_client_codegen`, `graphql_query_derive`, `graphql-parser`,
@@ -114,10 +121,11 @@ The key used was an admin's key of the `appshapes` workspace, on Linear's Free p
   fixtures name it. Muster keeps printing every field Linear returns, including the ones
   its schema does not list, and keeps four direct dependencies.
 - A misspelt or dropped field is caught only when the operation runs against Linear: a
-  read when `just record-fixtures` records it, a write when `just smoke` runs it. `just
+  read when `just record-fixtures` records it, a write when `just smoke` sends it. `just
   test` does not catch it, because the fake answers by the operation's name, and its
-  answers to writes are not held to any recording. The four `user` writes above are run
-  against Linear by neither.
+  answers to writes are not held to any recording. The four `user` writes above reach
+  Linear through neither `just record-fixtures` nor `just smoke`, and `TeamCreate` only
+  through the first smoke run against a workspace.
 - Revisit when a released command fails against Linear on a field it selects, which is
   drift or a misspelling that went unnoticed; when Linear's schema lists every field
   muster selects and the operations pass about two hundred; or when a command must
