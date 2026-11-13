@@ -61,15 +61,15 @@ operations, and a check against it would fail the same 5. Muster adds no schema 
 - **Keep writing by hand, and check every operation against a copy of Linear's schema
   kept in the repository, in `just test`.** It is the one alternative that would run in
   CI, and it would catch a misspelt field in any operation when the tests run, the
-  writes `just smoke` does not send to Linear included (see the Evidence). It lost on three counts. First, it had
-  nothing to catch: on 2026-11-13 every field muster selects is either in Linear's
-  schema or served by Linear without being in it. Second, it needs a list of fields
-  Linear serves but does not publish, kept by hand, and a copy of the schema that lags
-  Linear: Linear's published schema and the one its API reports differ in 82 types. A
-  field Linear drops is seen only when that copy is fetched again, which is the same
-  manual step as recording the fixtures again. Third, it needs a GraphQL parser: a new
-  dependency, or a Python package outside the standard library the scripts keep to
-  (ADR 0003).
+  writes `just smoke` does not send to Linear included (see the Evidence). It lost on
+  three counts. First, it had nothing to catch: on 2026-11-13 every field muster
+  selects is either in Linear's schema or served by Linear without being in it.
+  Second, it needs a list of fields Linear serves but does not publish, kept by hand,
+  and a copy of the schema that lags Linear: Linear's published schema and the one its
+  API reports differ in 82 types. A field Linear drops is seen only when that copy is
+  fetched again, which is the same manual step as recording the fixtures again. Third,
+  it needs a GraphQL parser: a new dependency, or a Python package outside the standard
+  library the scripts keep to (ADR 0003).
 
 ## Evidence
 
